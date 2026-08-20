@@ -155,10 +155,10 @@ for inst in $INSTANCES; do
 
   echo ""
   echo "==> [$inst] exporting for $BASE"
-  # Per instance, because experiments.baseUrl is baked into every asset link.
-  # One export cannot serve both: a bundle built for /AcctMind and served
-  # under /test/ requests production's chunks, which is the sandbox silently
-  # running production's code.
+  # Per instance, because experiments.baseUrl is baked into the asset links.
+  # Today that means index.html alone — the bundle is byte-identical, this
+  # app having no async chunks yet — but index.html is the file served, and
+  # the first lazy import puts the path into the JS too.
   ACCTMIND_BASE_URL="$BASE" npm run -s export:web > /dev/null
 
   built=$(node -e "process.stdout.write(require('$ROOT/apps/app/dist/build.json').baseUrl)")

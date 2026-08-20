@@ -72,12 +72,25 @@ Two copies with a test between them.
 - **The phone and the watch, on real hardware.** The web harness runs a phone
   VIEWPORT, which is not a phone: a browser has no status bar to hide under,
   and `hitSlop` is a no-op under react-native-web while it works on native.
-  Open the simulator and look.
+  Open the simulator and look — the iOS app and both modals were checked that
+  way on 2026-08-20, on an iPhone 17 Pro simulator, and the add form does
+  clear the status bar.
+
+  When you do, build **Release** (`npx expo run:ios --configuration Release`).
+  A dev build asks a Metro server for its bundle and does not check which
+  project answered — with CalMind's bundler on the default port, AcctMind's
+  app loaded CalMind's bundle and died on a native module it does not have.
+  Release embeds the bundle, so there is nothing to get wrong. See
+  `apps/app/AGENTS.md`.
 - **The watch's transport.** The feed shape is proven and the decoder is
   proven. Nothing yet carries the feed from the phone to the wrist — see
   `apps/app/targets/watch/AcctMindWatch.swift`.
-- **iOS and Android builds.** `ios/` and `android/` are `expo prebuild`
-  output and disposable; nothing builds them on a schedule.
+- **iOS and Android builds, on a schedule.** `ios/` and `android/` are
+  `expo prebuild` output and disposable; nothing rebuilds them automatically.
+  Both have been built and run by hand (2026-08-20).
+
+- **The Windows bundle.** The workflow exists and has never run: it needs a
+  GitHub remote, and this repo has none yet.
 
 ## Before you trust a new check
 

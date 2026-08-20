@@ -1,14 +1,21 @@
 /**
  * Expo config, computed rather than static.
  *
- * `experiments.baseUrl` is baked into every asset URL in the export, and
- * AcctMind is served at two paths — `/AcctMind` in production and
- * `/test/AcctMind` in the sandbox. One export cannot satisfy both: a bundle
- * built for `/AcctMind` and served under `/test/` asks for
- * `/AcctMind/_expo/...`, which is production's bundle. That is not a broken
- * page, it is the WRONG page — the sandbox silently running production's
- * code — so the base URL is an input, and deploy.sh exports once per
- * instance rather than trying to share one.
+ * `experiments.baseUrl` is baked into the export's asset URLs, and AcctMind
+ * is served at two paths — `/AcctMind` in production and `/test/AcctMind` in
+ * the sandbox. A bundle built for one and served at the other asks for the
+ * other instance's chunks: not a broken page but the WRONG page, the sandbox
+ * silently running production's code. So the base URL is an input, and
+ * deploy.sh exports once per instance.
+ *
+ * Measured, 2026-08-20, because the reason is narrower than it looks: TODAY
+ * the two exports produce a byte-identical bundle and differ only in
+ * index.html, since this app has no lazy imports and therefore no async
+ * chunks for the base path to appear in. index.html is the file that gets
+ * served, so per-instance export is still required — and the first `import()`
+ * anyone adds puts the path into the JS as well, at which point sharing one
+ * export would break in a way no test would obviously name. Cheap insurance,
+ * accurately described.
  *
  *   ACCTMIND_BASE_URL=/test/AcctMind npm run export:web
  */
@@ -25,6 +32,9 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.seancheren.acctmind',
+      // Sean's Apple team, the same one CalMind signs with. Needed to sign
+      // the watch target for a device; the simulator does not care.
+      appleTeamId: 'APPLE_TEAM_ID',
     },
     android: {
       package: 'com.seancheren.acctmind',
@@ -36,5 +46,10 @@ module.exports = {
     experiments: {
       baseUrl,
     },
+    // The watch app is a real Apple target, generated INTO the Xcode project
+    // from targets/watch/ during `expo prebuild`. Without this plugin that
+    // directory is just three files nothing reads — which is exactly what it
+    // was until this line was added.
+    plugins: ['@bacons/apple-targets'],
   },
 };

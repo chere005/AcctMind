@@ -99,11 +99,17 @@ learned goes in the commit that learns it.
   `.htaccess` pins `DirectoryIndex index.php`, and the deploy checks the
   server afterwards. Three locks, because the failure is silent and total.
 
-- **The base URL is baked into the JS, not just the HTML.** One export cannot
-  serve two paths: a bundle built for `/AcctMind` and served under `/test/`
-  requests production's chunks — the sandbox silently running production's
-  code. `deploy.sh` exports once per instance and refuses an export whose
-  stamp names the wrong base.
+- **One export cannot serve both paths.** A bundle built for `/AcctMind` and
+  served under `/test/` requests the other instance's chunks — the sandbox
+  silently running production's code. `deploy.sh` exports once per instance
+  and refuses an export whose stamp names the wrong base.
+
+  Measured rather than assumed, 2026-08-20: today the two exports are a
+  byte-identical bundle differing only in `index.html`, because this app has
+  no lazy imports and so no async chunks for the path to land in. CalMind's
+  version of this note says the path is in the JS — true there, not yet true
+  here. It becomes true the moment anyone writes an `import()`, and
+  `index.html` differs regardless, so the per-instance export stays.
 
 - **Core's imports are extensionless, and two toolchains disagree about
   that.** Metro cannot resolve `./money.js` in TypeScript source; Node's ESM
