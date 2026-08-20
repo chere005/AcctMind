@@ -17,14 +17,17 @@ declare(strict_types=1);
  */
 
 $root  = dirname(__DIR__, 2);
-$lib   = getenv('SUITE_LIB') ?: '../seancheren-site/lib';
+// The suite checked out beside this repo, which is how it is usually laid
+// out. SUITE_LIB overrides it; nothing here assumes a particular machine.
+$lib   = getenv('SUITE_LIB') ?: dirname($root) . '/seancheren-site/lib';
 $port  = (int) (getenv('PORT') ?: 8799);
 
 if (!is_file($lib . '/auth.php')) {
     fwrite(STDERR,
         "server suite: the suite's auth library is not at $lib.\n"
       . "AcctMind's sign-in IS the suite's sign-in, so this suite tests against the real\n"
-      . "thing. Point SUITE_LIB at seancheren-site/lib, or clone it. (Refusing to stub it:\n"
+      . "thing. Point SUITE_LIB at the suite's lib/ directory, or clone it beside this\n"
+      . "repo. (Refusing to stub it:\n"
       . "a mocked auth check here would pass whether or not the doorway actually works.)\n");
     exit(1);
 }

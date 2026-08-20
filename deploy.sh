@@ -46,11 +46,11 @@ done
 # the old instance long after the destination moved.
 TEST_WEB="/home/public/test/AcctMind"
 TEST_SHELL_DIR="/home/protected/acctmind-test"
-TEST_URL="https://example.com/test/AcctMind/"
+TEST_PATH="/test/AcctMind/"
 
 PROD_WEB="/home/public/AcctMind"
 PROD_SHELL_DIR="/home/protected/acctmind"
-PROD_URL="https://example.com/AcctMind/"
+PROD_PATH="/AcctMind/"
 
 # The guards run BEFORE deploy.conf is read, deliberately: they are about
 # these constants and nothing else, so tools/check-deploy-guards.sh can prove
@@ -64,18 +64,20 @@ PROD_URL="https://example.com/AcctMind/"
 # question about which /bin/sh you are on. A deploy script should not have one
 # of those in it.
 guard_web() {
-  # The two that would be catastrophic rather than merely wrong are named
-  # first, so the message says WHICH mistake this is.
+  # DEFAULT DENY. Exactly two paths are writable and everything else is
+  # refused — including the site root, and including the other applications
+  # that share this host, which this repo must never touch.
+  #
+  # An allow-list rather than a list of forbidden paths, deliberately: a
+  # deny-list only refuses the mistakes somebody thought of, and the one that
+  # matters is always the one nobody thought of. The site root is called out
+  # separately only because it is worth its own sentence.
   if [ "$1" = "/home/public" ]; then
     echo "guard: that is the site root" >&2; exit 1
   fi
-  if [ "$1" = "/home/public/otherapp" ] || [ "$1" = "/home/public/dev/otherapp" ] \
-     || [ "$1" = "/home/public/test/otherapp" ]; then
-    echo "guard: that is the CalMind suite's area, not this app's" >&2; exit 1
-  fi
   case "$1" in
     /home/public/AcctMind|/home/public/test/AcctMind) ;;
-    *) echo "guard: not an AcctMind web root ($1)" >&2; exit 1 ;;
+    *) echo "guard: '$1' is not one of this app's two web roots — refusing" >&2; exit 1 ;;
   esac
 }
 guard_shell() {
@@ -102,13 +104,18 @@ if [ ! -f "$ROOT/deploy.conf" ]; then
 fi
 . "$ROOT/deploy.conf"
 if [ -z "${SSH_DEST:-}" ]; then echo "deploy.conf sets no SSH_DEST" >&2; exit 1; fi
+# The site's own address lives in the config too, so this repo names no host.
+# It is only used to PROVE a deploy landed; where files are written is decided
+# by the guarded constants above and never by anything read from a file.
+if [ -z "${SITE_URL:-}" ]; then echo "deploy.conf sets no SITE_URL" >&2; exit 1; fi
+SITE_URL="${SITE_URL%/}"
 
 # ------------------------------------------------------------------- --verify
 if [ "$VERIFY" = "1" ]; then
   for inst in $INSTANCES; do
     case "$inst" in
-      test) url="$TEST_URL" ;;
-      prod) url="$PROD_URL" ;;
+      test) url="$SITE_URL$TEST_PATH" ;;
+      prod) url="$SITE_URL$PROD_PATH" ;;
     esac
     echo "==> [$inst] $url"
     code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo "---")
@@ -148,8 +155,8 @@ fi
 # --------------------------------------------------------------------- upload
 for inst in $INSTANCES; do
   case "$inst" in
-    test) WEB="$TEST_WEB"; SHELL_DIR="$TEST_SHELL_DIR"; URL="$TEST_URL"; BASE="/test/AcctMind" ;;
-    prod) WEB="$PROD_WEB"; SHELL_DIR="$PROD_SHELL_DIR"; URL="$PROD_URL"; BASE="/AcctMind" ;;
+    test) WEB="$TEST_WEB"; SHELL_DIR="$TEST_SHELL_DIR"; URL="$SITE_URL$TEST_PATH"; BASE="/test/AcctMind" ;;
+    prod) WEB="$PROD_WEB"; SHELL_DIR="$PROD_SHELL_DIR"; URL="$SITE_URL$PROD_PATH"; BASE="/AcctMind" ;;
   esac
   guard_web "$WEB"; guard_shell "$SHELL_DIR"
 

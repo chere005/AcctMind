@@ -35,8 +35,7 @@ one small interface (`apps/app/src/persist.ts`) for that reason.
 
 ## The sign-in, and what it is for
 
-`example.com/AcctMind` is on the open internet, so the **web** surface asks
-who you are. It reuses the live suite's sign-in exactly: same accounts, same
+The web build is on the open internet, so that surface asks who you are. It reuses the live suite's sign-in exactly: same accounts, same
 password, same session cookie — which already covers the whole domain, so
 being signed into the suite signs you into this.
 
@@ -98,16 +97,22 @@ it directly.
 ## Deploying
 
 ```sh
-cp deploy.conf.sample deploy.conf   # once: set SSH_DEST
+cp deploy.conf.sample deploy.conf   # once: set SSH_DEST and SITE_URL
 ./deploy.sh                         # the sandbox AND production, sandbox first
 ./deploy.sh --quick                 # the fast lane for a small fix
 ./deploy.sh --verify                # read-only: what is each instance serving?
 ```
 
 Both instances, every time — Sean's call, 2026-08-20, and it stays that way
-until he says to switch to test-only. The destinations are guarded constants:
-the site root, the CalMind suite's areas and anything that is not an AcctMind
-path are all refused, and every one of those guards is proven on every run of
+until he says to switch to test-only.
+
+The two destinations are guarded constants in `deploy.sh`, and the guard is an
+ALLOW-LIST: those two paths are writable and every other path on the host —
+the site root, a neighbouring app's area, even a differently-cased spelling of
+our own — is refused. A deny-list would only refuse the mistakes somebody
+thought of. The host's address is not in this repo at all; it lives in
+`deploy.conf`, and it is used only to prove a deploy landed, never to decide
+where anything is written. Every guard is re-proven on each run of
 `npm run test:deploy` by breaking a copy of the script and watching it stop.
 
 `TESTING.md` is what the tests are worth. `AGENTS.md` is how to work in here.

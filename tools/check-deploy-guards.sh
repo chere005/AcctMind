@@ -79,17 +79,22 @@ echo "deploy guards (every one proven by breaking a copy)"
 refuses "the site root is refused" \
   's|^PROD_WEB=.*|PROD_WEB="/home/public"|' "site root"
 
-refuses "the live PHP suite's area is refused" \
-  's|^PROD_WEB=.*|PROD_WEB="/home/public/otherapp"|' "CalMind suite"
+# The allow-list has to refuse every neighbour on the host, not just the ones
+# somebody remembered to name. These stand in for "another app's area".
+refuses "a sibling app's area is refused" \
+  's|^PROD_WEB=.*|PROD_WEB="/home/public/otherapp"|' "not one of this app"
 
-refuses "the suite's dev area is refused" \
-  's|^PROD_WEB=.*|PROD_WEB="/home/public/dev/otherapp"|' "CalMind suite"
+refuses "a sibling app's dev area is refused" \
+  's|^PROD_WEB=.*|PROD_WEB="/home/public/dev/otherapp"|' "not one of this app"
 
-refuses "the CalMind app's sandbox is refused" \
-  's|^TEST_WEB=.*|TEST_WEB="/home/public/test/otherapp"|' "CalMind suite"
+refuses "a sibling app's sandbox is refused" \
+  's|^TEST_WEB=.*|TEST_WEB="/home/public/test/otherapp"|' "not one of this app"
 
-refuses "an unrelated web root is refused" \
-  's|^PROD_WEB=.*|PROD_WEB="/home/public/SomethingElse"|' "not an AcctMind web root"
+refuses "a near-miss on our own name is refused" \
+  's|^PROD_WEB=.*|PROD_WEB="/home/public/AcctMind2"|' "not one of this app"
+
+refuses "a lowercase spelling of our own path is refused" \
+  's|^PROD_WEB=.*|PROD_WEB="/home/public/acctmind"|' "not one of this app"
 
 refuses "a sandbox pointed at production is refused" \
   's|^TEST_WEB=.*|TEST_WEB="/home/public"|' "site root"

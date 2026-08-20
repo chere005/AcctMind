@@ -8,6 +8,10 @@
 #   <member>_<site>@ssh.<region>.nearlyfreespeech.net
 SSH_DEST="user_site@ssh.region.nearlyfreespeech.net"
 
+# Where the deployed app is served from, with no trailing slash. Used ONLY to
+# prove a deploy landed — never to decide where anything is written.
+SITE_URL="https://example.com"
+
 # Nothing else belongs here. WHERE each instance is written is a guarded
 # constant inside deploy.sh, never a variable and never read from a file —
 # see tools/check-deploy-guards.sh, which proves the guards by breaking

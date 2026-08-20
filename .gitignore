@@ -30,3 +30,7 @@ playwright-report/
 
 # Tauri regenerates these on every build.
 desktop/src-tauri/gen/schemas/
+
+# Local, per-machine build settings (APPLE_TEAM_ID and the like).
+.env
+.env.local

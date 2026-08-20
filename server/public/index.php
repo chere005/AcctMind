@@ -30,7 +30,12 @@ declare(strict_types=1);
  * no second door into the page itself.
  *
  * Credential handling is the SUITE's, not this app's. AcctMind never stores a
- * password and never decides what counts as a match.
+ * password, never hashes one, and never decides what counts as a match — it
+ * hands the question to the suite's auth and does as it is told. Anything to
+ * improve about how credentials are kept belongs in that repo, where one
+ * change improves every app on the domain at once. Do not fork the check into
+ * this file to "fix it here": a second implementation of a login is a second
+ * thing to get wrong, and the two would drift.
  */
 
 // ---------------------------------------------------------------- instance

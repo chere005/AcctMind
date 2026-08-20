@@ -32,9 +32,11 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.seancheren.acctmind',
-      // Sean's Apple team, the same one CalMind signs with. Needed to sign
-      // the watch target for a device; the simulator does not care.
-      appleTeamId: 'APPLE_TEAM_ID',
+      // Needed to sign the watch target for a DEVICE; the simulator does not
+      // care, so a checkout with no team set still builds and runs. Kept in
+      // the environment rather than the repo so this config names nobody's
+      // account: export APPLE_TEAM_ID, or set it in .env.local.
+      ...(process.env.APPLE_TEAM_ID ? { appleTeamId: process.env.APPLE_TEAM_ID } : {}),
     },
     android: {
       package: 'com.seancheren.acctmind',
