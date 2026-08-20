@@ -1,0 +1,32 @@
+# Nothing here exists yet — this file is written ahead of the template so the
+# first commit that HAS build output does not have to notice in a hurry.
+
+# Dependencies and build output
+node_modules/
+.expo/
+apps/app/dist/
+apps/app/web-build/
+desktop/dist-desktop/
+desktop/src-tauri/target/
+
+# Continuous native generation: ios/ and android/ are `expo prebuild` output
+# and are disposable — until a watch target forces hand-kept Xcode projects,
+# at which point this line comes out and they get committed.
+apps/app/ios/
+apps/app/android/
+
+# Server secrets and live data. No config and no data dir ever rides along
+# with source — CalMind's rule, and the one that keeps a deploy honest.
+server/deploy.conf
+server/lib/config.php
+server/data/
+
+# Test artefacts, never source
+test-results/
+*.log
+
+# Claude Code machine-local state; launch.json is repo config and IS tracked
+.claude/*
+!.claude/launch.json
+
+.DS_Store
