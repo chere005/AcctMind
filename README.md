@@ -2,77 +2,112 @@
 
 A ledger. One list of transactions, on every screen Sean owns.
 
-This is the first commit: documentation and nothing else. The template it
-describes gets built next, deliberately in that order — the shape is agreed
-before there is code to argue with.
+Six surfaces — web, iOS, Android, watch, macOS, Windows — from two builds and
+a shell. Every rule the product has is written once, in TypeScript, and every
+surface renders it. The whole feature set today is a list and an add form,
+deliberately: the point of this commit is a template that already deploys and
+already has a suite watching it, so that everything after it can be a small
+request.
 
-AcctMind is CalMind's architecture applied to money. CalMind
-(`~/GIT/CalMind`) proved that one TypeScript brain can drive web, iOS,
-Android, macOS, Windows and a watch without any surface owning a rule.
-AcctMind starts from that shape rather than rediscovering it, and starts
-*small*: the whole product, for now, is a list and an add form.
+The architecture is CalMind's (`~/GIT/CalMind`), applied to money and started
+from scratch rather than rediscovered.
 
 ## What it does, in full
 
-One screen, headed **Transactions**, listing them. A **+** opens a form:
+One screen, headed **Transactions**, listing them, with the running total
+under the title. A **+** opens a form: **Name** (required), **Description**,
+**Amount**, and a **Date** button that opens a month grid and starts on today.
 
-| field | notes |
-|---|---|
-| Name | required |
-| Description | free text |
-| Amount | currency |
-| Date | a picker, defaulting to today |
+## Where the data lives
 
-That is the entire feature set on purpose. Everything after this is a small
-incremental request against a template that already deploys and already has
-a test suite watching it — which is the actual point of the exercise.
+**On the device, and nowhere else.** There is no API, no database, and no
+sync. The web app keeps its ledger in the browser's own storage; the phone
+and the desktop shells keep theirs on the machine. Nothing about a
+transaction is ever sent anywhere.
 
-## Where it goes
+That has one consequence worth stating plainly, because the code is shaped
+around it: **the device is the only copy**, so a store that will not parse is
+never treated as an empty one. `parseStore` returns an error rather than an
+empty ledger, and the app refuses to write until a person says to discard it.
 
-`https://example.com/AcctMind` — NearlyFreeSpeech, same host as the
-CalMind suite. Nothing in this repo may write CalMind's areas.
+Sync later — if it comes — should not need Sean's server. The store is behind
+one small interface (`apps/app/src/persist.ts`) for that reason.
 
-## The six surfaces
+## The sign-in, and what it is for
 
-Planned, none built yet. The mapping is CalMind's, which is why it is short:
+`example.com/AcctMind` is on the open internet, so the **web** surface asks
+who you are. It reuses the live suite's sign-in exactly: same accounts, same
+password, same session cookie — which already covers the whole domain, so
+being signed into the suite signs you into this.
 
-| surface | how |
-|---|---|
-| web | Expo web export (react-native-web), served at `/AcctMind` |
-| iOS | the same Expo app, prebuilt to Xcode |
-| Android | the same Expo app |
-| watch | a SwiftUI target inside the iOS app |
-| macOS | a Tauri shell around the identical web export |
-| Windows | the same Tauri shell, built on a Windows CI runner |
+That is the entire server side. `server/public/index.php` decides whether to
+hand over the page and serves it; there is nothing else there, and no user
+data for it to hold. **No other surface has a login** — the phone, the watch
+and both desktop shells read a ledger that never left the machine, and a
+password on those would protect nothing.
 
-Six surfaces, two builds and a shell. No surface gets its own copy of a
-rule; if it needs one, the rule was in the wrong place.
-
-## The planned map
+## The map
 
 ```
-packages/core/   The brain. Money, dates, sort order, validation — shared
-                 verbatim, consumed as TypeScript source, no build step.
-spec/            The behavior contract as JSON vectors. Changing what
-                 AcctMind DOES starts here, not in a screen.
-apps/app/        One Expo app -> iOS, Android, web. Screens and gestures
-                 only; behavior is imported from core.
-apps/app/targets/  The SwiftUI watch app, generated into the Xcode project.
-server/          The API in plain PHP, deployable to NFSN unchanged.
-desktop/         Tauri 2 shell around the web export -> macOS and Windows.
-e2e/             Playwright, driving the real export against the real API.
-tools/           The checks no browser can reach, and the deploy guards.
+packages/core/   The brain, shared verbatim by every surface: money in
+                 integer cents, days as local YYYY-MM-DD, the month grid,
+                 validation, ordering, the store's damage handling, and the
+                 watch feed. No dependencies, no build step — consumed as
+                 TypeScript source. Its typecheck forbids Node, DOM and
+                 React Native types, so "core is platform-neutral" is a
+                 checked property rather than a convention.
+spec/            The behavior contract as JSON vectors — the same file a
+                 native port would replay. Changing what AcctMind DOES
+                 starts HERE, not in a screen.
+apps/app/        One Expo app -> iOS, Android and web. Screens, gestures and
+                 styling only; every rule is imported from core.
+apps/app/targets/watch/   The SwiftUI watch app, generated into the Xcode
+                 project by @bacons/apple-targets. Read-only. Its formatter
+                 is a deliberate twin of core's, held to it by
+                 tools/check-watch-feed.sh.
+server/          The doorway, in plain PHP. Roughly forty lines that reuse
+                 the suite's sign-in and serve the app shell.
+desktop/         A Tauri 2 shell around the identical web export -> macOS
+                 locally, Windows on a CI runner.
+e2e/             Playwright: the real export at the real base path, driven
+                 by real mouse events, on desktop and phone viewports.
+tools/           The checks no browser can reach — the deploy guards, the
+                 Swift seam, the export's head patch and build stamp.
 ```
 
-## The two suites
+## Running it
 
-Both are built alongside the features, never after — a suite retrofitted to
-code that already shipped tests what the code does, not what it should.
+```sh
+npm install                       # once, at the root
+npm run test:dev                  # the between-runs suite — under a minute, no browser
+npm test                          # core + server + the full gesture run
+npm run web                       # Expo web on :8081
+npm run export:web                # the dist every shell and the e2e suite run on
+npx playwright test --ui          # the gesture suite, watchable
+npm run test:watch                # core's real feed through the watch's real Swift
+sh desktop/check-assets.sh        # the desktop's cheap checks
+./desktop/smoke.sh                # macOS: build, carry THIS export, launch, quit
+cd apps/app && npx expo start     # then i / a for the iOS / Android simulator
+```
 
-- **Quick** (`npm run deploy:quick`) — the fast lane for a one-line fix.
-  Every gate that costs seconds, plus a spot test, then it ships. Minutes.
-- **Full** (`npm test`) — everything: core, server, gestures, WebKit, the
-  native seams, the deploy guards. Runs before anything that matters.
+`export:web` is the export PLUS `tools/patch-web-html.mjs` — the head patch
+and the build stamp ride in it, and a bare `expo export` ships an index.html
+that renders a white strip above a dark app on an iPhone. Nothing should call
+it directly.
 
-`AGENTS.md` is how to work in here. `TESTING.md` will be the map of which
-harness watches what, once there are harnesses to map.
+## Deploying
+
+```sh
+cp deploy.conf.sample deploy.conf   # once: set SSH_DEST
+./deploy.sh                         # the sandbox AND production, sandbox first
+./deploy.sh --quick                 # the fast lane for a small fix
+./deploy.sh --verify                # read-only: what is each instance serving?
+```
+
+Both instances, every time — Sean's call, 2026-08-20, and it stays that way
+until he says to switch to test-only. The destinations are guarded constants:
+the site root, the CalMind suite's areas and anything that is not an AcctMind
+path are all refused, and every one of those guards is proven on every run of
+`npm run test:deploy` by breaking a copy of the script and watching it stop.
+
+`TESTING.md` is what the tests are worth. `AGENTS.md` is how to work in here.

@@ -1,0 +1,10 @@
+{
+  // SRC ONLY, and with no `types` — so nothing in core can reach for a Node,
+  // DOM or React Native API without this typecheck failing. Core is consumed
+  // verbatim by six surfaces; the moment it can see `fs` or `window`, one of
+  // them breaks at runtime instead of here. The tests live in
+  // tsconfig.test.json, which is allowed Node because it runs on Node.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "types": [] },
+  "include": ["src"]
+}

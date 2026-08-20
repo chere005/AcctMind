@@ -1,0 +1,68 @@
+# AcctMind Desktop for Windows — manual only.
+#
+# Tauri cannot cross-compile from the Mac, so the .msi/.exe are built on a
+# Windows runner from the same web export the site serves. Trigger it from
+# the Actions tab when a Windows build is actually wanted; it never runs on
+# push, because nothing here is on the critical path of a deploy.
+name: desktop-windows
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install deps
+        run: npm ci
+
+      # The gates that do not need a browser. A Windows bundle built from
+      # code that fails the typecheck is a bundle nobody should install.
+      - name: Typecheck and core
+        run: |
+          npm run typecheck
+          npm run test:core
+
+      # export:web, not a bare `expo export` — the head patch and the build
+      # stamp ride in it, and the Windows bundle should carry the same
+      # index.html the site serves.
+      - name: Export the web app
+        run: npm run export:web
+
+      - name: Build the Windows bundle
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: desktop
+
+      # The runner IS a Windows machine with a desktop session, so the smoke
+      # that would otherwise wait for a person runs here: install the MSI the
+      # way a user's machine would, launch what it installed, and hold it to
+      # the mac smoke's bar — it launches, it survives, it can be closed.
+      # A window showing an error page still passes, the same honest
+      # limitation desktop/smoke.sh states.
+      - name: Smoke the MSI on the runner
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1
+          if (-not $msi) { throw 'no MSI to smoke' }
+          Write-Host "installing $($msi.Name)"
+          Start-Process msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/quiet', '/norestart' -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA","$env:ProgramFiles" -Filter 'AcctMind.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'the MSI installed nothing named AcctMind.exe' }
+          $p = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 10
+          if ($p.HasExited) { throw "it exited on its own with $($p.ExitCode)" }
+          Write-Host 'alive after 10s'
+          Stop-Process -Id $p.Id -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acctmind-windows
+          path: |
+            desktop/src-tauri/target/release/bundle/msi/*.msi
+            desktop/src-tauri/target/release/bundle/nsis/*.exe

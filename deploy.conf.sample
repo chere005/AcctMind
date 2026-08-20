@@ -1,0 +1,14 @@
+# Copy to deploy.conf (gitignored) and set the real login.
+#
+#   cp deploy.conf.sample deploy.conf
+#   $EDITOR deploy.conf
+#
+# The deploy target names a real SSH account, so it stays OUT of the repo.
+# NearlyFreeSpeech logins look like:
+#   <member>_<site>@ssh.<region>.nearlyfreespeech.net
+SSH_DEST="user_site@ssh.region.nearlyfreespeech.net"
+
+# Nothing else belongs here. WHERE each instance is written is a guarded
+# constant inside deploy.sh, never a variable and never read from a file —
+# see tools/check-deploy-guards.sh, which proves the guards by breaking
+# copies of the real script and watching them refuse.

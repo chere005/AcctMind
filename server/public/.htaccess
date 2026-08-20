@@ -1,0 +1,28 @@
+# Deployed into the app's web root beside index.php.
+
+# index.php is the ONLY entry. Apache's stock DirectoryIndex lists index.html
+# first, so an index.html left in this directory would be served ahead of the
+# doorway and hand out the app with no sign-in at all. deploy.sh never ships
+# one — this line is the second lock, for the day someone copies a dist here
+# by hand. tools/check-deploy-guards.sh proves both.
+DirectoryIndex index.php
+
+# The bundle files carry content hashes and can cache forever. Nothing here
+# revalidates except through index.php, which sets its own no-cache.
+<FilesMatch "\.(js|png|ttf|woff2|svg|ico)$">
+  Header set Cache-Control "public, max-age=31536000, immutable"
+</FilesMatch>
+
+# Apache has no type for .webmanifest out of the box, and a manifest served as
+# text/plain is one a browser can refuse to install from.
+<Files "manifest.webmanifest">
+  AddType application/manifest+json .webmanifest
+  Header set Cache-Control "no-cache"
+</Files>
+
+# build.json is the deploy's own stamp — which instance and which source this
+# export came from. It must never be cached, or `deploy.sh --verify` reads a
+# stale answer and reports a deploy that did not land.
+<Files "build.json">
+  Header set Cache-Control "no-store"
+</Files>

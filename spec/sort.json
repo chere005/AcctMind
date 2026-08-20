@@ -1,0 +1,42 @@
+{
+  "_": "sortTxns is newest first: date descending, then created descending, then id ascending. The id key exists so the order is TOTAL — without it, two rows entered in the same millisecond order themselves by input order, which reshuffles between renders and lets two devices disagree.",
+  "cases": [
+    {
+      "name": "by date, newest first",
+      "in": [
+        { "id": "a", "date": "2026-08-18", "created": 100 },
+        { "id": "b", "date": "2026-08-20", "created": 100 },
+        { "id": "c", "date": "2026-08-19", "created": 100 }
+      ],
+      "out": ["b", "c", "a"]
+    },
+    {
+      "name": "same day falls back to entry time, newest first",
+      "in": [
+        { "id": "a", "date": "2026-08-20", "created": 100 },
+        { "id": "b", "date": "2026-08-20", "created": 300 },
+        { "id": "c", "date": "2026-08-20", "created": 200 }
+      ],
+      "out": ["b", "c", "a"]
+    },
+    {
+      "name": "same day and same millisecond falls back to id, ascending",
+      "in": [
+        { "id": "c", "date": "2026-08-20", "created": 100 },
+        { "id": "a", "date": "2026-08-20", "created": 100 },
+        { "id": "b", "date": "2026-08-20", "created": 100 }
+      ],
+      "out": ["a", "b", "c"]
+    },
+    {
+      "name": "a date's year and month sort before its day",
+      "in": [
+        { "id": "a", "date": "2025-12-31", "created": 0 },
+        { "id": "b", "date": "2026-01-01", "created": 0 },
+        { "id": "c", "date": "2026-09-01", "created": 0 },
+        { "id": "d", "date": "2026-10-01", "created": 0 }
+      ],
+      "out": ["d", "c", "b", "a"]
+    }
+  ]
+}

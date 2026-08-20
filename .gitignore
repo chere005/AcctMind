@@ -1,6 +1,3 @@
-# Nothing here exists yet — this file is written ahead of the template so the
-# first commit that HAS build output does not have to notice in a hurry.
-
 # Dependencies and build output
 node_modules/
 .expo/
@@ -8,21 +5,21 @@ apps/app/dist/
 apps/app/web-build/
 desktop/dist-desktop/
 desktop/src-tauri/target/
+desktop/.smoke-build.log
 
 # Continuous native generation: ios/ and android/ are `expo prebuild` output
-# and are disposable — until a watch target forces hand-kept Xcode projects,
-# at which point this line comes out and they get committed.
+# and are disposable. The watch target is NOT in there — it lives in
+# apps/app/targets/watch/ and is generated INTO the Xcode project, which is
+# why this line can stay.
 apps/app/ios/
 apps/app/android/
 
-# Server secrets and live data. No config and no data dir ever rides along
-# with source — CalMind's rule, and the one that keeps a deploy honest.
-server/deploy.conf
-server/lib/config.php
-server/data/
+# The deploy login. No config ever rides along with source.
+deploy.conf
 
 # Test artefacts, never source
 test-results/
+playwright-report/
 *.log
 
 # Claude Code machine-local state; launch.json is repo config and IS tracked
@@ -30,3 +27,6 @@ test-results/
 !.claude/launch.json
 
 .DS_Store
+
+# Tauri regenerates these on every build.
+desktop/src-tauri/gen/schemas/
