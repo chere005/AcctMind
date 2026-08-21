@@ -97,6 +97,22 @@ if (existsSync(plist)) {
     built === root,
     `apps/app/ios says ${built}; a build from here would ship that, not ${root}`,
   );
+
+  /*
+   * And the BUILD NUMBER in that plist, which was invisible until it wasn't.
+   *
+   * A `sed` meant to set the build number to 1 silently matched nothing, the
+   * config kept a different value, the app built and installed carrying it —
+   * and this check said "one version everywhere", because it compared the
+   * VERSION to the plist and never the build number. The one field whose
+   * entire job is telling two builds apart was the one field nothing checked.
+   */
+  const plistBuild = /<key>CFBundleVersion<\/key>\s*<string>([^<]*)<\/string>/.exec(xml)?.[1] ?? null;
+  check(
+    'the generated Info.plist has the buildNumber from app.config.js',
+    plistBuild === build,
+    `apps/app/ios says ${plistBuild}; app.config.js says ${String(build)} — run \`expo prebuild\``,
+  );
 }
 
 let tag = null;
