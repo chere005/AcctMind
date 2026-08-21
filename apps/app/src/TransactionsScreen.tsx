@@ -246,7 +246,17 @@ function Row({ txn, open, onOpen, onClose, onAction, onDrag }: {
    */
   const pan = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, g) => g.dx < -6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      /*
+       * Deliberately hard to trigger by accident.
+       *
+       * At six pixels this stole the LONG PRESS on real hardware: a finger
+       * held still for 700ms drifts further than that, the responder claimed
+       * the gesture, and the press was cancelled — so holding a row did
+       * nothing on a phone while passing every browser test, because a mouse
+       * does not drift. Fourteen pixels and a decisively horizontal ratio
+       * leaves the hold alone.
+       */
+      onMoveShouldSetPanResponder: (_e, g) => g.dx < -14 && Math.abs(g.dx) > Math.abs(g.dy) * 2.5,
       onPanResponderMove: (_e, g) => { if (g.dx < 0) dx.setValue(g.dx); },
       onPanResponderRelease: (_e, g) => {
         if (g.dx < -SWIPE_DELETE) {

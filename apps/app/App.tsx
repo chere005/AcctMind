@@ -297,7 +297,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <StatusBar style="light" />
-      <SafeAreaView style={styles.fill} edges={['top', 'left', 'right']}>
+      <SafeAreaView style={styles.fill} edges={['top', 'bottom', 'left', 'right']}>
         {phase.k === 'loading' && (
           <View style={styles.centre} testID="loading">
             <ActivityIndicator color={T.dim} />
@@ -325,8 +325,6 @@ export default function App() {
                 text="Saved on this device, but too large for iCloud — your other devices will not see it."
               />
             )}
-            <Tabs tab={tab} onTab={setTab} />
-
             {tab === 'budget' && (
               <BudgetScreen
                 txns={live(phase.store.txns)}
@@ -437,6 +435,12 @@ export default function App() {
                 }
               }}
             />
+            {/* LAST in the tree, so it is last on the screen. Restyling it
+                to look like a bottom bar while it stayed first in the JSX is
+                exactly what shipped: it looked wrong and read as the change
+                never arriving. */}
+            <Tabs tab={tab} onTab={setTab} />
+
             <Devices
               visible={showDevices}
               peers={peers}

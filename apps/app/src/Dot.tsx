@@ -2,17 +2,18 @@
  * The picker's face: one colour when one thing is selected, the full rainbow
  * when everything is.
  *
- * CalMind's rule and CalMind's exact conic sweep, drawn without SVG — this
- * project has no vector dependency and one dot does not justify adding one.
- * The rainbow is a ring of thin absolutely-positioned slivers, which at dot
- * size is indistinguishable from a gradient and renders identically on the
- * web, a phone and a Mac.
+ * CalMind's rule and CalMind's exact conic sweep, rendered the same way it is
+ * there — SVG, 48 interpolated slices. This was 24 rotated Views for a while,
+ * to avoid a dependency; that was optimising for the wrong thing. The whole
+ * point of the mark is that it matches the app sitting next to it on the same
+ * phone, and "close enough" is precisely what fails that.
  */
-import { StyleSheet, View } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 import { rainbowAt } from '@acctmind/core';
 import { T } from './theme';
 
-const SLICES = 24;
+/** 48 slices: indistinguishable from a gradient at dot size, on every surface. */
+const SLICES = 48;
 
 export function Dot({ colors, size = 16, testID }: {
   colors: readonly string[];
@@ -20,38 +21,49 @@ export function Dot({ colors, size = 16, testID }: {
   testID?: string | undefined;
 }) {
   const r = size / 2;
+
   // No colours at all is not an error — a section with nothing in it yet.
-  if (colors.length === 0) {
-    return <View testID={testID} style={[dotBase(size), { backgroundColor: T.faint }]} />;
+  const one = colors.length === 0 ? T.faint : colors.length === 1 ? colors[0] : null;
+  if (one !== undefined && one !== null) {
+    return (
+      <Svg width={size} height={size} testID={testID}>
+        <Circle cx={r} cy={r} r={r} fill={one} />
+      </Svg>
+    );
   }
-  if (colors.length === 1) {
-    return <View testID={testID} style={[dotBase(size), { backgroundColor: colors[0] }]} />;
-  }
+
+  // Several: a pie of every colour, which with everything on is the rainbow.
+  const slice = (i: number, n: number, fill: string) => {
+    // The seams overlap by a hair. Without it, antialiasing leaves a paler
+    // hairline between every pair of slices and the dot looks cross-hatched.
+    const a0 = (i / n) * 2 * Math.PI - Math.PI / 2 - 0.02;
+    const a1 = ((i + 1) / n) * 2 * Math.PI - Math.PI / 2 + 0.02;
+    const d = `M ${r} ${r} L ${r + r * Math.cos(a0)} ${r + r * Math.sin(a0)} `
+      + `A ${r} ${r} 0 0 1 ${r + r * Math.cos(a1)} ${r + r * Math.sin(a1)} Z`;
+    return <Path key={i} d={d} fill={fill} />;
+  };
+
+  const n = colors.length >= 6 ? SLICES : colors.length;
   return (
-    <View testID={testID} style={[dotBase(size), styles.clip]}>
-      {Array.from({ length: SLICES }, (_, i) => (
-        <View
-          key={i}
-          style={{
-            position: 'absolute',
-            left: r, top: 0, width: r, height: size,
-            backgroundColor: colors.length >= SLICES / 2
-              ? rainbowAt((i + 0.5) / SLICES)
-              : colors[i % colors.length],
-            transform: [
-              { translateX: -r }, { rotate: `${(i * 360) / SLICES}deg` }, { translateX: r },
-            ],
-          }}
-        />
-      ))}
-    </View>
+    <Svg width={size} height={size} testID={testID}>
+      {Array.from({ length: n }, (_, i) =>
+        slice(i, n, n === SLICES ? rainbowAt((i + 0.5) / n) : (colors[i] ?? T.faint)))}
+    </Svg>
   );
 }
 
 /** Every colour there is — what "all of them" looks like. */
 export function RainbowDot({ size = 16, testID }: { size?: number; testID?: string }) {
-  return <Dot colors={Array.from({ length: SLICES }, (_, i) => rainbowAt(i / SLICES))} size={size} testID={testID} />;
+  const r = size / 2;
+  return (
+    <Svg width={size} height={size} testID={testID}>
+      {Array.from({ length: SLICES }, (_, i) => {
+        const a0 = (i / SLICES) * 2 * Math.PI - Math.PI / 2 - 0.02;
+        const a1 = ((i + 1) / SLICES) * 2 * Math.PI - Math.PI / 2 + 0.02;
+        const d = `M ${r} ${r} L ${r + r * Math.cos(a0)} ${r + r * Math.sin(a0)} `
+          + `A ${r} ${r} 0 0 1 ${r + r * Math.cos(a1)} ${r + r * Math.sin(a1)} Z`;
+        return <Path key={i} d={d} fill={rainbowAt((i + 0.5) / SLICES)} />;
+      })}
+    </Svg>
+  );
 }
-
-const dotBase = (size: number) => ({ width: size, height: size, borderRadius: size / 2 });
-const styles = StyleSheet.create({ clip: { overflow: 'hidden' } });
