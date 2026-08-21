@@ -60,6 +60,14 @@ export default function App() {
    * which section it was opened from.
    */
   const [addingTo, setAddingTo] = useState('');
+  /**
+   * The category a + already knew, or null.
+   *
+   * Budget's per-category + is the only thing that sets it: pressing + beside
+   * Groceries has already answered "which category", and asking again in the
+   * form would be asking twice. Cleared with every other kind of add.
+   */
+  const [addingIn, setAddingIn] = useState<string | null>(null);
   /** Budget first, as asked. */
   const [tab, setTab] = useState<Tab>('budget');
   /** Which manager is open, if either. */
@@ -332,6 +340,15 @@ export default function App() {
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
+                onAdd={(category) => {
+                  if (phase.k !== 'ready') return;
+                  setEditing(null);
+                  // Every transaction needs an account; a category does not
+                  // name one, so it lands in the first and can be moved.
+                  setAddingTo(live(phase.store.accounts)[0]?.id ?? '');
+                  setAddingIn(category);
+                  setAdding(true);
+                }}
               />
             )}
 
@@ -342,6 +359,7 @@ export default function App() {
               onAdd={(account) => {
                 setEditing(null);
                 setAddingTo(account);
+                setAddingIn(null);
                 setAdding(true);
               }}
               onAction={onRowAction}
@@ -439,7 +457,21 @@ export default function App() {
                 to look like a bottom bar while it stayed first in the JSX is
                 exactly what shipped: it looked wrong and read as the change
                 never arriving. */}
-            <Tabs tab={tab} onTab={setTab} />
+            <Tabs
+              tab={tab}
+              onTab={setTab}
+              onAdd={() => {
+                if (phase.k !== 'ready') return;
+                // The + is in the bar on both tabs, so it has to answer for
+                // Budget too: a transaction is a transaction, and landing on
+                // a filled form behind the wrong screen would be a puzzle.
+                setTab('transactions');
+                setEditing(null);
+                setAddingTo(live(phase.store.accounts)[0]?.id ?? '');
+                setAddingIn(null);
+                setAdding(true);
+              }}
+            />
 
             <Devices
               visible={showDevices}
@@ -451,6 +483,7 @@ export default function App() {
               editing={editing ?? undefined}
               mode={prefs.amountMode}
               account={addingTo}
+              category={addingIn}
               categories={live(phase.store.categories)}
               onSave={onSave}
               onCancel={() => { setAdding(false); setEditing(null); }}

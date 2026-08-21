@@ -59,6 +59,16 @@ export async function addTransaction(
   await expect(page.getByTestId('save-button')).toBeHidden();
 }
 
+/** Choose a sort order from the dropdown in the bar. */
+export async function pickSort(page: Page, mode: 'custom' | 'date' | 'amount'): Promise<void> {
+  await page.getByTestId('sort-pick').click();
+  await page.getByTestId(`sort-${mode}`).click();
+  // The menu is a Modal, and react-native-web leaves a hidden one in the DOM
+  // — so this waits on VISIBILITY, never on presence. A presence check here
+  // would pass with the menu stuck open and with it closed.
+  await expect(page.getByTestId('sort-menu-backdrop')).toBeHidden();
+}
+
 /** Walk the month grid to a day and tap it. */
 export async function pickDay(page: Page, day: string): Promise<void> {
   await page.getByTestId('date-button').click();

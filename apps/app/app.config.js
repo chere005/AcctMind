@@ -64,7 +64,7 @@ module.exports = {
     // tools/check-version.mjs. It said 0.1.0 through three tagged releases,
     // so the build on a phone claimed to be a version from days earlier and
     // nothing anywhere disagreed.
-    version: '0.5.1',
+    version: '0.6.0',
     orientation: 'portrait',
     // Both generated from assets/logo-square.svg by tools/make-icons.sh.
     // Never edit a PNG here by hand — re-run the script, so one change to
@@ -88,7 +88,7 @@ module.exports = {
        * of the eleven times I built that release is on the phone". They are
        * different questions and need different numbers.
        */
-      buildNumber: '4',
+      buildNumber: '3',
       infoPlist: {
         /*
          * Local-network sync, and the reason it needs no paid membership.

@@ -13,15 +13,24 @@ import {
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
+import { BarRow, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
-export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManage }: {
+export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManage, onAdd }: {
   txns: readonly Txn[];
   categories: readonly Category[];
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the category manager — the only place a category is made. */
   onManage: () => void;
+  /**
+   * Add a transaction already filed under this category.
+   *
+   * Sean, 2026-08-21: "An add button by the category name is fine." It is the
+   * same gesture Accounts has on the other tab, and it carries the one thing
+   * the press already knows — pressing + beside Groceries means Groceries.
+   */
+  onAdd: (category: string) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -38,26 +47,30 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
 
   return (
     <View style={styles.fill}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title} testID="budget-title">Budget</Text>
-          <Text style={styles.total} testID="budget-assigned">{formatAmount(assigned)} assigned</Text>
-        </View>
+      {/* The same bar as Transactions, because they are two views of one
+          ledger — see TopBar. Budget has no controls of its own yet; the
+          picker sits where the picker always sits. */}
+      <TopBar
+        title="Budget"
+        titleTestID="budget-title"
+        picker={
+          <SectionPick
+            label="Categories"
+            sections={categories.map((c) => ({ id: c.id, name: c.name, color: c.color }))}
+            value={view}
+            onPick={setView}
+            visible={picking}
+            onOpen={() => setPicking(true)}
+            onClose={() => setPicking(false)}
+            onManage={onManage}
+            compact
+          />
+        }
+      />
 
-      </View>
-
-      <View style={styles.pickRow}>
-        <SectionPick
-          label="Categories"
-          sections={categories.map((c) => ({ id: c.id, name: c.name, color: c.color }))}
-          value={view}
-          onPick={setView}
-          visible={picking}
-          onOpen={() => setPicking(true)}
-          onClose={() => setPicking(false)}
-          onManage={onManage}
-        />
-      </View>
+      <BarRow>
+        <Text style={styles.total} testID="budget-assigned">{formatAmount(assigned)} assigned</Text>
+      </BarRow>
 
       {/* Scrolls only when there is something to scroll — see TransactionsScreen. */}
       <ScrollView contentContainerStyle={styles.list} scrollEnabled={shown.length > 0}>
@@ -72,22 +85,38 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
           const shut = collapsed.includes(c.id);
           const rows = txns.filter((t) => t.category === c.id);
           return (
-            <View key={c.id} testID="category-section">
-              <Pressable
-                onPress={() => toggle(c.id)}
-                style={styles.head}
-                accessibilityRole="button"
-                accessibilityState={{ expanded: !shut }}
-                testID={`category-head-${c.id}`}
-              >
-                <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
-                <Dot colors={[c.color]} size={12} />
-                <Text style={styles.headName} numberOfLines={1}>{c.name}</Text>
-                <Text style={styles.headSum}>
-                  {formatAmount(spentIn(c.id))} of {formatAmount(c.budget)}
-                </Text>
-              </Pressable>
+            <View key={c.id} testID="category-section" style={styles.section}>
+              <View style={styles.head}>
+                <Pressable
+                  onPress={() => toggle(c.id)}
+                  style={styles.headMain}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: !shut }}
+                  testID={`category-head-${c.id}`}
+                >
+                  <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
+                  <Dot colors={[c.color]} size={11} />
+                  <Text style={styles.headName} numberOfLines={1}>{c.name}</Text>
+                  <Text style={styles.headSum}>
+                    {formatAmount(spentIn(c.id))} of {formatAmount(c.budget)}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => onAdd(c.id)}
+                  style={styles.headAdd}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add to ${c.name}`}
+                  testID={`category-add-${c.id}`}
+                >
+                  <Text style={styles.headAddText}>+</Text>
+                </Pressable>
+              </View>
 
+              {!shut && rows.length === 0 && (
+                <Text style={styles.sectionEmpty} testID="category-empty">
+                  Nothing filed here yet
+                </Text>
+              )}
               {!shut && rows.map((t) => (
                 <View key={t.id} style={styles.row} testID="budget-row">
                   <Text style={styles.rowName} numberOfLines={1}>{t.name}</Text>
@@ -104,34 +133,33 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.md,
-  },
-  title: { color: T.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.5 },
-  total: { color: T.dim, fontSize: 15, marginTop: 2 },
-  add: {
-    width: TAP, height: TAP, borderRadius: TAP / 2, backgroundColor: T.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  addText: { color: '#ffffff', fontSize: 28, lineHeight: 32, fontWeight: '300' },
-  pickRow: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm },
-  list: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, flexGrow: 1 },
+  total: { color: T.dim, fontSize: 15 },
+  // The same list as Transactions, to the point — one ledger, two views of
+  // it, and a person should not have to learn the screen twice.
+  list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
+  section: { gap: SPACE.sm },
   head: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, minHeight: TAP,
-    marginTop: SPACE.md,
+    flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
   },
-  chev: { color: T.dim, fontSize: 13, width: 12 },
+  headMain: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flex: 1, minHeight: TAP },
+  chev: { color: T.dim, fontSize: 15, width: 20, height: 20, lineHeight: 20, textAlign: 'center' },
   chevShut: { transform: [{ rotate: '-90deg' }] },
-  headName: { color: T.text, fontSize: 15, fontWeight: '700', flex: 1 },
+  // Gold, like every section name in the app — see theme.ts.
+  headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flex: 1 },
   headSum: { color: T.dim, fontSize: 13, fontVariant: ['tabular-nums'] },
+  headAdd: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
+  headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: SPACE.md, paddingVertical: SPACE.sm,
+    gap: 10, paddingVertical: SPACE.sm, minHeight: 36,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
-  rowName: { color: T.text, fontSize: 15, flex: 1 },
-  rowAmount: { color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'] },
+  rowName: { color: T.text, fontSize: 16, lineHeight: 20, flex: 1 },
+  rowAmount: { color: T.dim, fontSize: 16, lineHeight: 20, fontVariant: ['tabular-nums'] },
+  // An open section with nothing in it says so. Left blank it reads as a
+  // section that failed to load rather than one nothing has been filed under.
+  sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm },
   empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },
   emptyBody: { color: T.dim, fontSize: 15 },

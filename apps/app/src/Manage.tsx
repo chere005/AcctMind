@@ -168,7 +168,11 @@ const styles = StyleSheet.create({
   budgetLabel: { color: T.dim, fontSize: 14, width: 74 },
   budget: {
     flex: 1, minHeight: TAP, color: T.text, fontSize: 17,
-    backgroundColor: T.field, borderRadius: 10, paddingHorizontal: SPACE.md,
+    // The card's own colour with a hairline, like every other field in the
+    // app. It was T.field — pure black inside a grey card, which read as a
+    // hole in the row rather than as somewhere to type.
+    backgroundColor: T.bg, borderRadius: 10, paddingHorizontal: SPACE.md,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
   },
   add: {
     minHeight: TAP, alignItems: 'center', justifyContent: 'center',

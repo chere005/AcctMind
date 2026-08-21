@@ -94,7 +94,11 @@ export function CategoryPick({ categories, value, onPick }: {
 const styles = StyleSheet.create({
   field: {
     flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
-    minHeight: TAP, backgroundColor: T.field, borderRadius: 10,
+    // T.card with a hairline, matching `styles.input` in AddTransaction.
+    // It was T.field — pure black, no border — so on the one form that shows
+    // all four boxes at once, Category was visibly a different control from
+    // Name, Description and Amount.
+    minHeight: TAP, backgroundColor: T.card, borderRadius: 10,
     paddingHorizontal: SPACE.md,
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
   },

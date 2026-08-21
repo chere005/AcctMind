@@ -87,7 +87,77 @@ not do it.
 - **Sorting** — three modes, now `spec/sortmodes.json` and replayed.
 
 What is left for the gesture suite in each case is only that the screen CALLS
-the rule, which is what a gesture suite is actually for.
+the rule, which is what a gesture suite is actually for — and on 2026-08-21
+that turned out to be worth its own check: `sort-date` and `sort-amount` were
+asserted NOWHERE, so the middle chip could have passed `custom` with core
+perfect and the suite green. `rowactions.spec.ts` now drives all three
+against a fixture where no two modes agree.
+
+## A harness quirk worth knowing before you debug the app
+
+Under the **mobile** project, `fill()` on a `Modal`'s `TextInput` can silently
+do nothing: the value reads back empty, React having re-rendered the
+controlled input from state that never changed. The only symptom is Save
+appearing to do nothing while the form says "Name is required" — the app is
+fine. CLICK the field first, then fill. Chromium does not need it, so a test
+written and checked there will fail on mobile for a reason that has nothing to
+do with the code under test. `sections.spec.ts` carries the note at the one
+place it bit.
+
+## What the harness cannot drive at all
+
+React-native-web's `PanResponder` does not engage under Playwright's synthetic
+mouse. Anything that is only a finger is therefore invisible here, and the
+honest response is to move the DECISION into core and check the wiring by eye:
+
+- **Swipe to delete** — `claimsSwipe` / `swipeDeletes` in core. Two browser
+  tests were deleted for passing while nothing happened.
+- **Drag to reorder** (the grip, 2026-08-21) — `reorder` and `orderBetween` in
+  core; `rowdrag.ts` turns a finger into a destination index and nothing else.
+  What the suite still checks is whether the handle is OFFERED, per sort mode,
+  and that hiding it does not move the row's contents. The drag itself was
+  checked on a simulator, by hand.
+
+## A check that was watched failing at nothing
+
+Worth keeping as a worked example, because it looked like a good test.
+
+"Opening a row moves nothing" was written by measuring every row's rect before
+and after the long press and asserting they matched. It passed. Then the bug
+it was written for — buttons with `minHeight: 44` inside a row laid out at 36
+— was put BACK, and it still passed: an absolutely positioned child that
+overflows does not change its container's rect, so the measurement could not
+see the thing it was measuring for.
+
+It now asserts CONTAINMENT — each control's box against its row's box — which
+is the property that actually differs.
+
+The companion trap, from the same afternoon: **a flex child's box is not its
+text.** `txn-name` carries `flex: 1`, so its bounding box is the whole left
+half of the row however short the word inside it is. An assertion that the
+action cluster "starts to the right of the name" therefore fails on a working
+app and would pass on a broken one at a different width. Measure against the
+ROW. Two honest notes on it: real rows come
+out around 53 points tall (two stacked lines plus padding), so 44-point
+buttons genuinely fit and the restored bug does not trip it either. The check
+is a true invariant that would catch a control drawn larger than its row; it
+is NOT evidence that the reported shifting is fixed. That was checked by eye
+on a simulator.
+
+## Checks that had to be about a computed style
+
+Two things in this app differ between working and broken ONLY in CSS that no
+visibility assertion reads. Both are in `rowactions.spec.ts` and
+`sections.spec.ts`:
+
+- **A transaction row paints its own background.** The swipe's red delete
+  backdrop sits behind every row and is correctly visible at all times; with a
+  transparent row on top, the whole ledger drew red. `toBeVisible()` is true
+  on both layers in the broken app and in the fixed one — see AGENTS.md.
+- **A colour picked in Manage rides on the RECORD.** Twelve swatch controls
+  were asserted by nothing. The assertion is on the STORE, not on the dot:
+  a colour that lived only on the device that picked it would make one ledger
+  look like two.
 
 ## What nobody is watching
 
@@ -104,13 +174,16 @@ the rule, which is what a gesture suite is actually for.
   opening a path the embedded assets do not have — by reading the asset paths
   out of the built binary. It does not watch pixels. Proving that needs
   screen-recording permission or a probe build.
-- **Anything that only breaks on a finger.** Two bugs shipped through 118
-  green gesture tests on 2026-08-21: a tab bar restyled as a bottom bar but
-  left first in the JSX, and a swipe handler that claimed the gesture at six
+- **Anything that only breaks on a finger.** Three bugs shipped through a
+  green gesture suite on 2026-08-21: a tab bar restyled as a bottom bar but
+  left first in the JSX; a swipe handler that claimed the gesture at six
   pixels and so cancelled every long press — a held finger drifts further
-  than that, a mouse does not. Both were invisible to the suite because a
-  phone VIEWPORT is not a phone. This is the same trap `hitSlop` set, in a
-  new costume.
+  than that, a mouse does not; and a transparent row that let the delete
+  backdrop show through, which no visibility check could see. The first two
+  were invisible because a phone VIEWPORT is not a phone; the third because
+  the suite was asking the wrong question. All three now have a check, and
+  all three were watched failing. This is the same trap `hitSlop` set, in
+  three new costumes.
 
 - **The phone and the watch, on real hardware.** The web harness runs a phone
   VIEWPORT, which is not a phone: a browser has no status bar to hide under,

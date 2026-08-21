@@ -36,6 +36,8 @@ type Props = {
   editing?: Txn | undefined;
   /** The account a new transaction goes into — the section whose + was pressed. */
   account: string;
+  /** The category it starts filed under, when the + that opened this knew one. */
+  category?: string | null | undefined;
   /** Everything a transaction can be filed under. */
   categories: readonly Category[];
   /**
@@ -45,8 +47,10 @@ type Props = {
   mode: AmountMode;
 };
 
-export function AddTransaction({ visible, onSave, onCancel, editing, mode, account, categories }: Props) {
-  const [draft, setDraft] = useState<Draft>(() => emptyDraft(today(), account));
+export function AddTransaction({
+  visible, onSave, onCancel, editing, mode, account, category = null, categories,
+}: Props) {
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(today(), account, category));
   const [errors, setErrors] = useState<DraftErrors>({});
   const [picking, setPicking] = useState(false);
   /**
@@ -67,7 +71,9 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
   if (visible !== wasVisible) {
     setWasVisible(visible);
     if (visible) {
-      const start = editing === undefined ? emptyDraft(today(), account) : draftOf(editing);
+      const start = editing === undefined
+        ? emptyDraft(today(), account, category)
+        : draftOf(editing);
       setDraft(start);
       setErrors({});
       setPicking(false);
@@ -172,9 +178,14 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
                 testID="date-button"
               >
                 <CalendarIcon day={draft.date} />
+                {/* The date reads INSIDE the button that changes it. It used
+                    to be a line of dim text under the whole field — an
+                    unlabelled `Aug 21` floating below the name box, which is
+                    a thing to wonder about rather than a thing to read. Next
+                    to the icon it is the button's own caption. */}
+                <Text style={styles.calDate} testID="date-value">{formatDay(draft.date)}</Text>
               </Pressable>
               </View>
-              <Text style={styles.dateUnder} testID="date-value">{formatDay(draft.date)}</Text>
             </Field>
 
             <Field label="Category">
@@ -320,14 +331,18 @@ const styles = StyleSheet.create({
   field: { gap: SPACE.xs },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   nameField: { flex: 1 },
-  calBtn: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
+  calBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
+    minHeight: TAP, paddingHorizontal: SPACE.sm, borderRadius: 10,
+    backgroundColor: T.card, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
+  calDate: { color: T.text, fontSize: 14, fontWeight: '600' },
   cal: {
     width: 26, height: 26, borderRadius: 5, overflow: 'hidden',
     borderWidth: 1.5, borderColor: T.dim, alignItems: 'center', justifyContent: 'flex-end',
   },
   calTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 6, backgroundColor: T.dim },
   calDay: { color: T.text, fontSize: 13, fontWeight: '700', lineHeight: 17 },
-  dateUnder: { color: T.dim, fontSize: 13 },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   amountField: { flex: 1 },
   // A non-breaking space holds the line's height when there is nothing to

@@ -70,23 +70,18 @@ export function makeTxn(draft: Draft, id: string, created: number): Txn {
 }
 
 /** A blank draft, dated today. What the + button opens. */
-export function emptyDraft(day: string, account: string): Draft {
+export function emptyDraft(day: string, account: string, category: string | null = null): Draft {
   // The account is required rather than defaulted. A form that invented one
   // would put transactions somewhere nobody chose, and the screen always
   // knows which section the + was pressed in.
-  return { name: '', description: '', amount: '', date: day, account, category: null };
+  //
+  // The category is OPTIONAL and defaults to none, because most + presses
+  // happen on an account and say nothing about a category. Budget's own + is
+  // the case that does know one: pressing + beside Groceries means this is a
+  // Groceries transaction, and making someone pick it again from a dropdown
+  // is asking a question they have already answered.
+  return { name: '', description: '', amount: '', date: day, account, category };
 }
-
-/**
- * Newest first: by day, then by when it was entered, then by id.
- *
- * The id is the last key on purpose. Without it two transactions entered in
- * the same millisecond order themselves by whatever the input array happened
- * to be, so the list could reshuffle between renders — and, once anything
- * syncs, two devices holding identical data could disagree about the order.
- * A total order costs one comparison and removes both.
- */
-
 
 /** The sum, in cents. Integers throughout — see money.ts. */
 export function total(txns: readonly Txn[]): number {
@@ -354,8 +349,8 @@ export function filterByName<R extends { name: string }>(rows: readonly R[], que
  */
 export const SWIPE_CLAIM_PX = 14;
 
-/** How far it must travel before letting go deletes. */
-export const SWIPE_DELETE_PX = 96;
+/** How far it must travel before letting go arms the delete. */
+export const SWIPE_ARM_PX = 96;
 
 /**
  * Should this movement be taken as a swipe rather than left alone?
@@ -368,7 +363,18 @@ export function claimsSwipe(dx: number, dy: number): boolean {
   return dx < -SWIPE_CLAIM_PX && Math.abs(dx) > Math.abs(dy) * 2.5;
 }
 
-/** Does letting go here delete, or spring back? Short of the line is a no. */
-export function swipeDeletes(dx: number): boolean {
-  return dx < -SWIPE_DELETE_PX;
+/**
+ * Does letting go here ARM the delete, or come to nothing?
+ *
+ * It was `swipeDeletes`, and the swipe deleted the row outright. Sean,
+ * 2026-08-21: a swipe should bring up a delete BUTTON. So the gesture no
+ * longer destroys anything — it parks a control that does, and one more tap
+ * is what actually deletes.
+ *
+ * Renamed rather than left alone, because a function still called
+ * `swipeDeletes` that no longer deletes is the exact drift between a name and
+ * its behaviour that this repo has been bitten by before.
+ */
+export function swipeArms(dx: number): boolean {
+  return dx < -SWIPE_ARM_PX;
 }

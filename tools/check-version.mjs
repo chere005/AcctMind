@@ -48,6 +48,33 @@ check("apps/app/package.json agrees", app === root, `it says ${app}`);
 check("app.config.js agrees — this is the one a device shows", config === root, `it says ${config}`);
 
 /*
+ * And the Mac app, which is a separate bundle carrying its own version.
+ *
+ * `desktop/src-tauri/tauri.conf.json` is what macOS shows in About and in
+ * Finder's Get Info. It sat at 0.1.0 while the phone shipped 0.5.1 — through
+ * five releases — because this check compared the three PHONE files to each
+ * other and never looked at the Mac. That is worse than carrying no version:
+ * it answers "which build am I looking at?" confidently and wrongly, which is
+ * the exact failure the buildNumber rule above exists to prevent.
+ *
+ * Cargo.toml is checked too. Tauri v2 takes the bundle version from the JSON,
+ * so the crate version is not what ships — but a crate that disagrees with
+ * the bundle it builds is a trap for the next person reading either file.
+ */
+const tauri = JSON.parse(
+  readFileSync(new URL('../desktop/src-tauri/tauri.conf.json', import.meta.url), 'utf8'),
+).version;
+check('the Mac bundle agrees — this is the one About shows', tauri === root, `it says ${tauri}`);
+
+const desktopPkg = require('../desktop/package.json').version;
+check('desktop/package.json agrees', desktopPkg === root, `it says ${desktopPkg}`);
+
+const cargo = /^version = "([^"]*)"/m.exec(
+  readFileSync(new URL('../desktop/src-tauri/Cargo.toml', import.meta.url), 'utf8'),
+)?.[1] ?? null;
+check('the desktop crate agrees', cargo === root, `it says ${cargo}`);
+
+/*
  * And the GENERATED plist, which is the one that actually ships.
  *
  * `app.config.js` is source; `apps/app/ios/` is `expo prebuild` output, and

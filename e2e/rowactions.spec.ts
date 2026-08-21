@@ -8,7 +8,7 @@
  * an absence.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, reload, rows, stored } from './helpers';
+import { addTransaction, fresh, pickSort, reload, rows, stored } from './helpers';
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
@@ -183,43 +183,166 @@ test('the add button still adds, after an edit', async ({ page }) => {
   await expect(page.getByTestId('txn-row')).toHaveCount(2);
 });
 
-test('rows can be moved by hand, but only in custom order', async ({ page }) => {
+test('the drag grip is offered in custom order, and only there', async ({ page }) => {
+  // Moving a row is a DRAG on the grip now — Sean, 2026-08-21, matching
+  // CalMind. That gesture cannot be driven from here: react-native-web's
+  // PanResponder does not engage under Playwright's synthetic mouse, which is
+  // exactly why two swipe tests were deleted rather than kept green. So this
+  // asserts the part that IS observable — whether the handle is offered — and
+  // the arithmetic that turns a finger into a destination lives in core's
+  // `reorder`, which has its own tests.
+  //
+  // OPACITY, not visibility: the grip is always in the tree and always laid
+  // out, because a handle that appears and disappears slides every name in
+  // the ledger sideways the moment the sort changes. Playwright's
+  // `toBeVisible()` does not read opacity, so it cannot tell the two states
+  // apart — the computed style can.
   await fresh(page);
   await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
   await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
 
-  // Date order: newest first, and no way to move a row — a hand order the
-  // next render would undo is worse than none.
-  await hold(page);
-  await expect(page.getByTestId('row-up')).toBeHidden();
-  // The row is under the overlay, so it closes from the overlay's own layer.
-  await dismiss(page);
+  const gripOpacity = () => page.getByTestId('row-grip').first()
+    .evaluate((el) => getComputedStyle(el).opacity);
 
-  await page.getByTestId('sort-custom').click();
-  await hold(page);
-  await expect(page.getByTestId('row-down')).toBeVisible();
-  await page.getByTestId('row-down').click();
+  // Date order: no hand order to keep, so no handle. A row moved here would
+  // be put back by the next render, which reads as the app ignoring you.
+  expect(await gripOpacity()).toBe('0');
 
-  // 'first' was on top and is now below 'second'.
-  const names = await page.getByTestId('txn-name').allTextContents();
-  expect(names).toEqual(['second', 'first']);
+  await pickSort(page, 'custom');
+  expect(await gripOpacity()).toBe('1');
+
+  await pickSort(page, 'amount');
+  expect(await gripOpacity()).toBe('0');
 });
 
-test('and the hand order survives a reload', async ({ page }) => {
+test('the grip keeps its space, so changing sort moves nothing else', async ({ page }) => {
+  // The reason the grip is hidden by opacity rather than by being absent.
+  // Measured, because "it does not shift" is a claim about geometry and
+  // nothing else in the suite would notice a four-pixel jump.
   await fresh(page);
   await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
   await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
-  await page.getByTestId('sort-custom').click();
-  await hold(page);
-  await page.getByTestId('row-down').click();
 
-  await reload(page);
-  await expect(page.getByTestId('txn-name').first()).toBeVisible();
-  // The order rides on the RECORD, not on a device preference, so the Mac
-  // would agree with the phone about it.
-  expect(await page.getByTestId('txn-name').allTextContents()).toEqual(['second', 'first']);
+  const nameX = async () => {
+    const box = await page.getByTestId('txn-name').first().boundingBox();
+    return box?.x ?? -1;
+  };
+  const before = await nameX();
+  await pickSort(page, 'custom');
+  expect(await nameX()).toBe(before);
 });
 
+test('the date and amount chips each sort by what they say', async ({ page }) => {
+  // The sorting RULES are pinned in core by spec/sortmodes.json. What that
+  // leaves unproven is the WIRING — three chips, three modes — and nothing
+  // checked it: `sort-date` and `sort-amount` were asserted nowhere, so the
+  // middle chip could have passed 'custom' and every suite would have stayed
+  // green. Core being right does not make the screen right.
+  await fresh(page);
+  // Chosen so no two modes agree. The largest amount is on the OLDEST row and
+  // the second largest is NEGATIVE, so a fixture-shaped mistake — the two
+  // chips swapped, or absolute value dropped — changes the answer here.
+  await addTransaction(page, { name: 'alpha', amount: '900', day: '2026-08-18' });
+  await addTransaction(page, { name: 'bravo', amount: '100', day: '2026-08-20' });
+  await addTransaction(page, { name: 'charlie', amount: '-500', day: '2026-08-19' });
+
+  await pickSort(page, 'date');
+  expect(await page.getByTestId('txn-name').allTextContents())
+    .toEqual(['bravo', 'charlie', 'alpha']);
+
+  await pickSort(page, 'amount');
+  // -$5.00 above $1.00: the question the chip answers is how BIG the amount
+  // was, not which way the money went.
+  expect(await page.getByTestId('txn-name').allTextContents())
+    .toEqual(['alpha', 'charlie', 'bravo']);
+});
+
+test('opening a row moves nothing, and stays inside the row', async ({ page }) => {
+  // Sean, 2026-08-21: "things shouldn't shift around when entering edit mode."
+  //
+  // TWO claims here, and only the second catches the bug that prompted it.
+  // The cluster was already absolutely positioned, so nothing REFLOWED — but
+  // each button carried `minHeight: 44` inside a row that had shrunk to 36,
+  // so the buttons overflowed their own row and hung over the neighbours.
+  //
+  // The first version of this test measured the rows before and after and
+  // PASSED with the 44 put back, because an absolutely-positioned child that
+  // overflows does not change its container's rect. It was watched failing at
+  // nothing, which is the only reason it is written this way now. What
+  // separates the two states is CONTAINMENT: where the buttons are, relative
+  // to the row they belong to.
+  await fresh(page);
+  await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
+  await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+
+  const boxes = async () => page.getByTestId('txn-row').evaluateAll((els) =>
+    els.map((el) => { const r = el.getBoundingClientRect(); return { y: r.y, h: r.height }; }));
+
+  const before = await boxes();
+  await hold(page);
+  await expect(page.getByTestId('row-actions')).toBeVisible();
+
+  // Nothing reflowed…
+  expect(await boxes()).toEqual(before);
+
+  // …and every control sits inside the row it acts on, so none of them is
+  // hanging over the row above or below.
+  const row = await page.getByTestId('txn-row').first().boundingBox();
+  for (const id of ['row-edit', 'row-duplicate', 'row-copy', 'row-delete']) {
+    const btn = await page.getByTestId(id).boundingBox();
+    expect(btn, id).not.toBeNull();
+    expect(btn!.y, `${id} top`).toBeGreaterThanOrEqual(row!.y - 0.5);
+    expect(btn!.y + btn!.height, `${id} bottom`)
+      .toBeLessThanOrEqual(row!.y + row!.height + 0.5);
+  }
+});
+
+test('the action cluster hides what it covers, and leaves the name alone', async ({ page }) => {
+  // TWO things, both of which read as "things shifted" when they were wrong.
+  //
+  // It was `T.bg + 'ee'` across the FULL width of the row, so opening a row
+  // blanked the whole thing — name and amount gone, four labelled buttons
+  // where a transaction had been. Now the cluster is pinned right, only as
+  // wide as its buttons, and fully opaque.
+  //
+  // Visibility cannot tell those apart: the cluster is visible either way and
+  // so is the row. The computed background is the only difference, which is
+  // the same shape of check the transparent-row bug needed.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '450' });
+  await hold(page);
+  const bg = await page.getByTestId('row-action-cluster')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+  // No alpha channel: `rgba(…, 0.93)` would be the old translucent one back.
+  expect(bg).toMatch(/^rgb\(/);
+
+  // And it does not span the row. Measured against the ROW, not against the
+  // name: `txn-name` is a flex child that stretches to fill the space, so its
+  // box is the whole left side of the row however short the word in it is —
+  // comparing against that box proves nothing about what is covered.
+  const row = await page.getByTestId('txn-row').first().boundingBox();
+  const cluster = await page.getByTestId('row-action-cluster').boundingBox();
+  expect(cluster!.x).toBeGreaterThan(row!.x + row!.width * 0.3);
+});
+
+test('a row paints its own background, so a lifted row is not see-through', async ({ page }) => {
+  // Originally written for the swipe's red delete backdrop, which showed
+  // through every row because the row had no background of its own — the
+  // whole ledger drew solid red under its own text. That backdrop is gone
+  // (the swipe parks a button now and destroys nothing), but the rule it
+  // taught still holds: a row RIDES OVER its neighbours while it is being
+  // dragged, and a transparent one would print itself on top of them.
+  //
+  // As before, this cannot be a visibility check — the row is visible whether
+  // or not it paints. Only the computed style separates the two.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '450' });
+  const bg = await page.getByTestId('txn-row-body').first()
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(bg).not.toBe('rgba(0, 0, 0, 0)');
+  expect(bg).not.toBe('transparent');
+});
 
 test('an opened row can be closed without choosing anything', async ({ page }) => {
   // The actions cover the row, so the way out has to be in the overlay. With

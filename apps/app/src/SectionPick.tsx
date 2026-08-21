@@ -6,7 +6,7 @@
  * Budget — because they are the same gesture on the same shape of record,
  * and two copies would drift the moment one of them got a feature.
  */
-import { Modal, Pressable, ScrollView, StyleSheet, Text } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Dot, RainbowDot } from './Dot';
 import { SPACE, T, TAP } from './theme';
@@ -14,7 +14,7 @@ import { SPACE, T, TAP } from './theme';
 export type Section = { id: string; name: string; color: string };
 
 export function SectionPick({
-  label, sections, value, onPick, visible, onOpen, onClose, onManage,
+  label, sections, value, onPick, visible, onOpen, onClose, onManage, compact = false,
 }: {
   /** What these sections are called, for the All row and the screen reader. */
   label: string;
@@ -27,6 +27,15 @@ export function SectionPick({
   onClose: () => void;
   /** The last row of the menu, exactly as the suite's folder pick has it. */
   onManage: () => void;
+  /**
+   * The top bar's face: the dot in a ring, with no name beside it.
+   *
+   * CalMind's folder picker is exactly this — a ringed circle in the bar —
+   * and the bar has no room for a name next to four other controls on a
+   * phone. Which section is chosen is still legible from the list itself,
+   * which shows that section and no other.
+   */
+  compact?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const active = sections.find((s) => s.id === value) ?? null;
@@ -35,19 +44,30 @@ export function SectionPick({
     <>
       <Pressable
         onPress={onOpen}
-        style={styles.button}
+        style={compact ? styles.hit : styles.button}
         accessibilityRole="button"
         accessibilityLabel={active === null ? `All ${label}` : active.name}
         testID="section-pick"
       >
-        {/* One section shows its colour; all of them show the rainbow. */}
-        {active === null
-          ? <RainbowDot size={18} testID="section-dot" />
-          : <Dot colors={[active.color]} size={18} testID="section-dot" />}
-        <Text style={styles.buttonText} numberOfLines={1} testID="section-pick-label">
-          {active === null ? `All ${label}` : active.name}
-        </Text>
-        <Text style={styles.chev}>⌄</Text>
+        {compact ? (
+          // 44 to press, 32 to look at — see TopBar for why the two differ.
+          <View style={styles.ring}>
+            {active === null
+              ? <RainbowDot size={18} testID="section-dot" />
+              : <Dot colors={[active.color]} size={18} testID="section-dot" />}
+          </View>
+        ) : (
+          <>
+            {/* One section shows its colour; all of them show the rainbow. */}
+            {active === null
+              ? <RainbowDot size={18} testID="section-dot" />
+              : <Dot colors={[active.color]} size={18} testID="section-dot" />}
+            <Text style={styles.buttonText} numberOfLines={1} testID="section-pick-label">
+              {active === null ? `All ${label}` : active.name}
+            </Text>
+            <Text style={styles.chev}>⌄</Text>
+          </>
+        )}
       </Pressable>
 
       {visible && (
@@ -112,6 +132,12 @@ const styles = StyleSheet.create({
     minHeight: TAP, paddingRight: SPACE.sm,
   },
   buttonText: { color: T.text, fontSize: 15, fontWeight: '600', maxWidth: 160 },
+  hit: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
+  ring: {
+    width: 32, height: 32, borderRadius: 16,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+    backgroundColor: T.card, alignItems: 'center', justifyContent: 'center',
+  },
   chev: { color: T.dim, fontSize: 13 },
   backdrop: { flex: 1, backgroundColor: '#00000088' },
   menu: {

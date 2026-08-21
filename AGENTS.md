@@ -101,6 +101,45 @@ version check reads the generated `Info.plist` for that reason.
   the add form stayed open. Updaters are pure. Compute from current state in
   the handler and call the effect there. Pinned by `e2e/add.spec.ts`.
 
+- **`npx expo run:ios --device` HANGS on a locked phone, after a successful
+  build.** The build finishes, the install starts, and then it sits on
+  `Connecting to: iPhoooooone` for ever because the launch step cannot reach a
+  locked device. A background task waiting on that looks exactly like a build
+  still compiling. Build and install as two steps — `xcodebuild … build`, then
+  `xcrun devicectl device install app` — and `devicectl` will install onto a
+  locked phone quite happily; it is only the LAUNCH that needs it awake.
+
+- **CocoaPods dies with `Encoding::CompatibilityError` unless `LANG` is
+  UTF-8.** `Unicode Normalization not appropriate for ASCII-8BIT`, thrown from
+  `Pod::Config#installation_root`, with a stack trace and no mention of the
+  locale except one `export LANG=en_US.UTF-8` buried in its own advice. Every
+  script here that runs `pod install` exports it.
+
+- **A build script that ends in `echo` reports success no matter what
+  happened.** A backgrounded `xcodebuild` was reported as exit code 0 while
+  its log said `'ios/AcctMind.xcworkspace' does not exist` — a relative path
+  resolved from the wrong directory (the persisting-`cd` trap, again), and the
+  script's own last statement was the thing being asked for a status. Capture
+  the status of the command you care about into the log — `echo
+  "BUILD_STATUS=$?"` — and grep for THAT, never the task's exit code.
+
+- **A backdrop revealed by a gesture needs the thing in front of it to be
+  OPAQUE, and no visibility check can tell you it is not.** The swipe-to-
+  delete layer is absolutely positioned behind every row. The row had no
+  background, so the red showed through at rest: the whole ledger drew solid
+  red with `Delete` printed across each amount. Sean found it on the phone
+  and described it as "transactions don't show up well under a section" — a
+  sentence that sounds like spacing.
+
+  What makes it worth writing down is why 147 green checks said nothing. The
+  backdrop is CORRECTLY present and CORRECTLY visible in both the broken app
+  and the fixed one; so is the row. `toBeVisible()` and `toBeHidden()` cannot
+  separate the two states, and neither can a screenshot diff nobody takes.
+  The only difference is whether the row PAINTS, so that is what
+  `rowactions.spec.ts` reads — `getComputedStyle(...).backgroundColor` is not
+  `rgba(0, 0, 0, 0)`. **When two states differ only in a computed style, the
+  assertion has to be about that style.**
+
 - **`react-native-web` leaves a hidden `Modal` in the DOM.** So
   `querySelector('[data-testid="save-button"]')` finds the add form long
   after it has closed, and a presence check reports "still open" forever —

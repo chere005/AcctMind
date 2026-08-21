@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
-  REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_DELETE_PX, claimsSwipe, filterByName, newId,
-  reorder, respace, sortTxns, swipeDeletes, total, txnText, validateDraft,
+  REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
+  reorder, respace, sortTxns, swipeArms, total, txnText, validateDraft,
 } from '../src/index';
 
 /** The form always knows its account, so the test fixture supplies one too. */
@@ -375,18 +375,18 @@ describe('the swipe, as rules rather than as a gesture', () => {
   });
 
   it('deletes only past the line, and a half-swipe is a decision not to', () => {
-    expect(swipeDeletes(-200)).toBe(true);
-    expect(swipeDeletes(-97)).toBe(true);
-    expect(swipeDeletes(-96)).toBe(false);
-    expect(swipeDeletes(-40)).toBe(false);
-    expect(swipeDeletes(0)).toBe(false);
+    expect(swipeArms(-200)).toBe(true);
+    expect(swipeArms(-97)).toBe(true);
+    expect(swipeArms(-96)).toBe(false);
+    expect(swipeArms(-40)).toBe(false);
+    expect(swipeArms(0)).toBe(false);
     // And a rightward drag never deletes, whatever its size.
-    expect(swipeDeletes(500)).toBe(false);
+    expect(swipeArms(500)).toBe(false);
   });
 
   it('cannot be claimed and yet too short to matter', () => {
     // The claim distance must sit below the delete distance, or a swipe would
     // engage and then be incapable of ever completing.
-    expect(SWIPE_CLAIM_PX).toBeLessThan(SWIPE_DELETE_PX);
+    expect(SWIPE_CLAIM_PX).toBeLessThan(SWIPE_ARM_PX);
   });
 });
