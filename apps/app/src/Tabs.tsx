@@ -1,5 +1,10 @@
 /**
- * The two tabs: Budget, then Transactions.
+ * The bottom tab bar: Budget, then Transactions.
+ *
+ * At the BOTTOM, where a thumb is — the place iOS puts a UITabBar and the
+ * only part of a phone screen that is comfortably reachable one-handed. It
+ * sat under the title first, which put the app's most-used control in the
+ * hardest place to press.
  *
  * A bar rather than a navigator. There are two screens and no history to
  * keep, so a router would be a dependency and a set of edge cases bought for
@@ -35,22 +40,23 @@ function TabButton({ label, on, onPress, testID }: {
       accessibilityState={{ selected: on }}
       testID={testID}
     >
-      <Text style={[styles.text, on && styles.textOn]}>{label}</Text>
-      {/* The underline is drawn always and hidden by colour, so selecting a
-          tab cannot change the bar's height and shift the list beneath it. */}
+      {/* The rule is drawn always and hidden by colour, so selecting a tab
+          cannot change the bar's height and shift the list above it. */}
       <View style={[styles.rule, on && styles.ruleOn]} />
+      <Text style={[styles.text, on && styles.textOn]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
-    flexDirection: 'row', paddingHorizontal: SPACE.lg, gap: SPACE.xl,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
+    flexDirection: 'row', paddingHorizontal: SPACE.lg,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.cardEdge,
+    backgroundColor: T.bg,
   },
-  tab: { minHeight: TAP, justifyContent: 'flex-end', gap: SPACE.xs },
+  tab: { flex: 1, minHeight: TAP + 6, justifyContent: 'center', alignItems: 'center', gap: SPACE.xs },
   text: { color: T.dim, fontSize: 16, fontWeight: '600' },
   textOn: { color: T.text },
-  rule: { height: 2, borderRadius: 1, backgroundColor: 'transparent' },
+  rule: { height: 2, width: 24, borderRadius: 1, backgroundColor: 'transparent' },
   ruleOn: { backgroundColor: T.accent },
 });

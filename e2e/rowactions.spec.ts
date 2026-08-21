@@ -26,6 +26,20 @@ async function hold(page: Page, index = 0): Promise<void> {
   await expect(page.getByTestId('row-actions')).toBeVisible();
 }
 
+
+/**
+ * Close an open row.
+ *
+ * Clicked to the LEFT on purpose: the buttons are right-aligned and on a
+ * phone they reach most of the way across, so the middle of the row — where a
+ * click lands by default — is a button. A person dismisses by tapping the
+ * empty part, and so does this.
+ */
+async function dismiss(page: Page): Promise<void> {
+  await page.getByTestId('row-actions-dismiss').click({ position: { x: 6, y: 10 } });
+  await expect(page.getByTestId('row-actions')).toBeHidden();
+}
+
 test('a held row offers the four actions, delete furthest right', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
@@ -167,4 +181,53 @@ test('the add button still adds, after an edit', async ({ page }) => {
 
   await addTransaction(page, { name: 'Tea', amount: '300' });
   await expect(page.getByTestId('txn-row')).toHaveCount(2);
+});
+
+test('rows can be moved by hand, but only in custom order', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
+  await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+
+  // Date order: newest first, and no way to move a row — a hand order the
+  // next render would undo is worse than none.
+  await hold(page);
+  await expect(page.getByTestId('row-up')).toBeHidden();
+  // The row is under the overlay, so it closes from the overlay's own layer.
+  await dismiss(page);
+
+  await page.getByTestId('sort-custom').click();
+  await hold(page);
+  await expect(page.getByTestId('row-down')).toBeVisible();
+  await page.getByTestId('row-down').click();
+
+  // 'first' was on top and is now below 'second'.
+  const names = await page.getByTestId('txn-name').allTextContents();
+  expect(names).toEqual(['second', 'first']);
+});
+
+test('and the hand order survives a reload', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
+  await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+  await page.getByTestId('sort-custom').click();
+  await hold(page);
+  await page.getByTestId('row-down').click();
+
+  await reload(page);
+  await expect(page.getByTestId('txn-name').first()).toBeVisible();
+  // The order rides on the RECORD, not on a device preference, so the Mac
+  // would agree with the phone about it.
+  expect(await page.getByTestId('txn-name').allTextContents()).toEqual(['second', 'first']);
+});
+
+
+test('an opened row can be closed without choosing anything', async ({ page }) => {
+  // The actions cover the row, so the way out has to be in the overlay. With
+  // no dismiss, opening a row by accident leaves four choices and one of them
+  // deletes.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '450' });
+  await hold(page);
+  await dismiss(page);
+  await expect(page.getByTestId('txn-row')).toHaveCount(1);
 });

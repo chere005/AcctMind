@@ -15,12 +15,13 @@ import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { SPACE, T, TAP } from './theme';
 
-export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onAddCategory }: {
+export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManage }: {
   txns: readonly Txn[];
   categories: readonly Category[];
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
-  onAddCategory: () => void;
+  /** Open the category manager — the only place a category is made. */
+  onManage: () => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -42,15 +43,7 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onAddCa
           <Text style={styles.title} testID="budget-title">Budget</Text>
           <Text style={styles.total} testID="budget-assigned">{formatAmount(assigned)} assigned</Text>
         </View>
-        <Pressable
-          onPress={onAddCategory}
-          style={styles.add}
-          accessibilityRole="button"
-          accessibilityLabel="Add category"
-          testID="category-add"
-        >
-          <Text style={styles.addText}>+</Text>
-        </Pressable>
+
       </View>
 
       <View style={styles.pickRow}>
@@ -62,6 +55,7 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onAddCa
           visible={picking}
           onOpen={() => setPicking(true)}
           onClose={() => setPicking(false)}
+          onManage={onManage}
         />
       </View>
 
@@ -70,7 +64,7 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onAddCa
         {shown.length === 0 && (
           <View style={styles.empty} testID="budget-empty">
             <Text style={styles.emptyTitle}>No categories yet</Text>
-            <Text style={styles.emptyBody}>Tap + to make the first one.</Text>
+            <Text style={styles.emptyBody}>Make one in Manage Categories.</Text>
           </View>
         )}
 

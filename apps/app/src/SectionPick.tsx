@@ -13,7 +13,9 @@ import { SPACE, T, TAP } from './theme';
 
 export type Section = { id: string; name: string; color: string };
 
-export function SectionPick({ label, sections, value, onPick, visible, onOpen, onClose }: {
+export function SectionPick({
+  label, sections, value, onPick, visible, onOpen, onClose, onManage,
+}: {
   /** What these sections are called, for the All row and the screen reader. */
   label: string;
   sections: readonly Section[];
@@ -23,6 +25,8 @@ export function SectionPick({ label, sections, value, onPick, visible, onOpen, o
   visible: boolean;
   onOpen: () => void;
   onClose: () => void;
+  /** The last row of the menu, exactly as the suite's folder pick has it. */
+  onManage: () => void;
 }) {
   const insets = useSafeAreaInsets();
   const active = sections.find((s) => s.id === value) ?? null;
@@ -71,6 +75,16 @@ export function SectionPick({ label, sections, value, onPick, visible, onOpen, o
                     <Dot colors={[s.color]} size={16} />
                   </Row>
                 ))}
+                {/* Last, and the only way in: accounts and categories are
+                    made on the manage screen, so there is one place that
+                    knows how to name and colour one. */}
+                <Pressable
+                  onPress={() => { onClose(); onManage(); }}
+                  style={[styles.row, styles.manage]}
+                  testID="section-manage"
+                >
+                  <Text style={styles.manageText}>Manage {label}</Text>
+                </Pressable>
               </ScrollView>
             </Pressable>
           </Pressable>
@@ -113,4 +127,6 @@ const styles = StyleSheet.create({
   rowText: { color: T.text, fontSize: 16, flex: 1 },
   rowOn: { fontWeight: '700' },
   tick: { color: T.accent, fontSize: 16, fontWeight: '700' },
+  manage: { borderBottomWidth: 0 },
+  manageText: { color: T.accent, fontSize: 16, fontWeight: '600' },
 });

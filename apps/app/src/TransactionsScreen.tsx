@@ -22,6 +22,8 @@ type Props = {
   onAdd: (account: string) => void;
   /** A row was held down and an action chosen. */
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
+  /** A row was dragged to a new place in its account. */
+  onMove?: ((txn: Txn, shown: readonly Txn[], index: number) => void) | undefined;
   /**
    * Open the pairing screen. Absent on the surfaces that cannot sync over a
    * local network — the web and Android — so the control is missing rather
@@ -48,11 +50,13 @@ type Props = {
   /** Which accounts are folded shut, by id. */
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
+  /** Open the account manager — the only place an account is made. */
+  onManage: () => void;
 };
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const sum = total(txns);
@@ -139,6 +143,7 @@ export function TransactionsScreen({
           visible={picking}
           onOpen={() => setPicking(true)}
           onClose={() => setPicking(false)}
+          onManage={onManage}
         />
         <SortPick mode={sort} onPick={onSort} />
       </View>
@@ -190,7 +195,7 @@ export function TransactionsScreen({
                 </Pressable>
               </View>
 
-              {!shut && rows.map((t) => (
+              {!shut && rows.map((t, i) => (
                 <Row
                   key={t.id}
                   txn={t}
@@ -198,6 +203,16 @@ export function TransactionsScreen({
                   onOpen={onAction === undefined ? undefined : () => setOpenId(t.id)}
                   onClose={() => setOpenId(null)}
                   onAction={(a) => { setOpenId(null); onAction?.(a, t); }}
+                  /*
+                   * Dragging is offered only in CUSTOM order, and only while
+                   * the row is open. Anywhere else a drag would be a
+                   * statement the app cannot keep: move a row by hand in date
+                   * order and the next render puts it back, which reads as
+                   * the app ignoring you.
+                   */
+                  onDrag={sort === 'custom' && onMove !== undefined
+                    ? (steps) => onMove(t, rows, i + steps)
+                    : undefined}
                 />
               ))}
             </View>
@@ -212,12 +227,13 @@ export function TransactionsScreen({
 /** How far a row must travel before letting go deletes it. */
 const SWIPE_DELETE = 96;
 
-function Row({ txn, open, onOpen, onClose, onAction }: {
+function Row({ txn, open, onOpen, onClose, onAction, onDrag }: {
   txn: Txn;
   open: boolean;
   onOpen?: (() => void) | undefined;
   onClose: () => void;
   onAction: (action: RowAction) => void;
+  onDrag?: ((steps: number) => void) | undefined;
 }) {
   const dx = useRef(new Animated.Value(0)).current;
   /*
@@ -290,10 +306,31 @@ function Row({ txn, open, onOpen, onClose, onAction }: {
       {open && (
         <View style={styles.rowActions} testID="row-actions" pointerEvents="box-none">
           {/*
+            Tapping the row is how you close it — but the row is UNDER this
+            overlay now and cannot be reached, so the way out has to live in
+            here. Without it a person who opens a row by accident has no
+            choice but to pick one of four actions, one of which deletes.
+          */}
+          <Pressable
+            onPress={onClose}
+            style={StyleSheet.absoluteFill}
+            accessibilityLabel="Close actions"
+            testID="row-actions-dismiss"
+          />
+          {/*
             Right to left: delete, copy, duplicate, edit. Delete is the one
             that cannot be undone, so it sits furthest from where a thumb
             rests, and edit — the one reached for most — sits nearest.
           */}
+          {onDrag !== undefined && (
+            <>
+              {/* Up and down rather than a free drag: a list this short is
+                  moved a place at a time, and two buttons work identically on
+                  a mouse, a finger and a screen reader. */}
+              <Action label="↑" onPress={() => onDrag(-1)} testID="row-up" />
+              <Action label="↓" onPress={() => onDrag(1)} testID="row-down" />
+            </>
+          )}
           <Action label="Edit" onPress={() => onAction('edit')} testID="row-edit" />
           <Action label="Duplicate" onPress={() => onAction('duplicate')} testID="row-duplicate" />
           <Action label="Copy" onPress={() => onAction('copy')} testID="row-copy" />
@@ -417,13 +454,19 @@ const styles = StyleSheet.create({
     gap: SPACE.xs, paddingRight: SPACE.xs,
     backgroundColor: T.bg + 'ee',
   },
-  // Drawn at TAP height, never padded up to it — hitSlop is a no-op on the web.
+  /*
+   * Compact, because six of them have to fit a phone.
+   *
+   * With Edit at full size the row overflowed a 375-point screen and Edit —
+   * the one people reach for most — was the one pushed off the end. A control
+   * that is present and unreachable is worse than one that is missing.
+   */
   action: {
-    minHeight: TAP, justifyContent: 'center', paddingHorizontal: SPACE.md,
+    minHeight: TAP, justifyContent: 'center', paddingHorizontal: SPACE.sm,
     borderRadius: 8, backgroundColor: T.card,
   },
   actionDanger: { backgroundColor: T.danger },
-  actionText: { color: T.text, fontSize: 15, fontWeight: '600' },
+  actionText: { color: T.text, fontSize: 14, fontWeight: '600' },
   actionTextDanger: { color: '#ffffff' },
   rowMain: { flex: 1, gap: 2 },
   rowSide: { alignItems: 'flex-end', gap: 2 },

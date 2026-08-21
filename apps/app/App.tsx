@@ -23,8 +23,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
-  PALETTE, addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn,
-  newId, nextColor, putCategory, tombstone, txnText, updateTxn,
+  addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn,
+  newId, nextColor, putAccount, putCategory, reorder, tombstone, touch, txnText,
+  updateTxn,
   type Draft, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
@@ -34,6 +35,7 @@ import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
 import { BudgetScreen } from './src/BudgetScreen';
+import { Manage } from './src/Manage';
 import { Tabs, type Tab } from './src/Tabs';
 import { TransactionsScreen, type RowAction } from './src/TransactionsScreen';
 import { load, save } from './src/persist';
@@ -60,6 +62,8 @@ export default function App() {
   const [addingTo, setAddingTo] = useState('');
   /** Budget first, as asked. */
   const [tab, setTab] = useState<Tab>('budget');
+  /** Which manager is open, if either. */
+  const [managing, setManaging] = useState<'accounts' | 'categories' | null>(null);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
   /** The ledger outgrew iCloud's megabyte. Also shown, for the same reason. */
@@ -329,20 +333,7 @@ export default function App() {
                 categories={live(phase.store.categories)}
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
-                onAddCategory={() => {
-                  const cats = live(phase.store.categories);
-                  commit(phase, putCategory(phase.store, {
-                    id: `cat-${newId()}`,
-                    name: `Category ${cats.length + 1}`,
-                    // Cycle the palette rather than always opening blue, so a
-                    // list of new categories is telling apart at a glance.
-                    color: nextColor(cats.map((c) => c.color)) ?? PALETTE[0],
-                    budget: 0,
-                    order: cats.length,
-                    created: Date.now(),
-                    updated: Date.now(),
-                  }));
-                }}
+                onManage={() => setManaging('categories')}
               />
             )}
 
@@ -356,6 +347,14 @@ export default function App() {
                 setAdding(true);
               }}
               onAction={onRowAction}
+              onMove={(txn, shown, index) => {
+                if (phase.k !== 'ready') return;
+                // `reorder` returns only the row that changed, or null when
+                // nothing needs to move — so a drag that ends where it started
+                // costs no merge clock and no sync.
+                const moved = reorder(shown, txn.id, index, Date.now());
+                if (moved !== null) commit(phase, updateTxn(phase.store, moved));
+              }}
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
               amountMode={prefs.amountMode}
@@ -365,8 +364,79 @@ export default function App() {
               onSort={(m) => setPref('sort', m)}
               collapsed={prefs.collapsed}
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
+              onManage={() => setManaging('accounts')}
             />
             )}
+            <Manage
+              visible={managing !== null}
+              label={managing === 'categories' ? 'Categories' : 'Accounts'}
+              rows={managing === 'categories'
+                ? live(phase.store.categories).map((c) => ({
+                    id: c.id, name: c.name, color: c.color, budget: c.budget,
+                  }))
+                : live(phase.store.accounts).map((a) => ({
+                    id: a.id, name: a.name, color: a.color,
+                  }))}
+              onClose={() => setManaging(null)}
+              onAdd={() => {
+                const now = Date.now();
+                if (managing === 'categories') {
+                  const cats = live(phase.store.categories);
+                  commit(phase, putCategory(phase.store, {
+                    id: `cat-${newId()}`,
+                    name: '',
+                    // Cycle the palette rather than always opening blue, so a
+                    // list of new ones is telling apart at a glance.
+                    color: nextColor(cats.map((c) => c.color)),
+                    budget: 0,
+                    order: cats.length,
+                    created: now,
+                    updated: now,
+                  }));
+                } else {
+                  const accts = live(phase.store.accounts);
+                  commit(phase, putAccount(phase.store, {
+                    id: `acct-${newId()}`,
+                    name: '',
+                    color: nextColor(accts.map((a) => a.color)),
+                    order: accts.length,
+                    created: now,
+                    updated: now,
+                  }));
+                }
+              }}
+              onChange={(row) => {
+                const now = Date.now();
+                if (managing === 'categories') {
+                  const c = phase.store.categories.find((x) => x.id === row.id);
+                  if (c === undefined) return;
+                  commit(phase, putCategory(phase.store, touch({
+                    ...c, name: row.name, color: row.color, budget: row.budget ?? 0,
+                  }, now)));
+                } else {
+                  const a = phase.store.accounts.find((x) => x.id === row.id);
+                  if (a === undefined) return;
+                  commit(phase, putAccount(phase.store, touch({
+                    ...a, name: row.name, color: row.color,
+                  }, now)));
+                }
+              }}
+              onDelete={(row) => {
+                const now = Date.now();
+                if (managing === 'categories') {
+                  const c = phase.store.categories.find((x) => x.id === row.id);
+                  if (c === undefined) return;
+                  commit(phase, putCategory(phase.store, tombstone(c, now)));
+                } else {
+                  // The LAST account cannot go: every transaction has to live
+                  // somewhere, and removing the only home would strand them.
+                  if (live(phase.store.accounts).length <= 1) return;
+                  const a = phase.store.accounts.find((x) => x.id === row.id);
+                  if (a === undefined) return;
+                  commit(phase, putAccount(phase.store, tombstone(a, now)));
+                }
+              }}
+            />
             <Devices
               visible={showDevices}
               peers={peers}
