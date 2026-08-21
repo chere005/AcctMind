@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
-  REORDER_GAP, newId, reorder, respace, sortTxns, total, txnText, validateDraft,
+  REORDER_GAP, filterByName, newId, reorder, respace, sortTxns, total, txnText,
+  validateDraft,
 } from '../src/index';
 
 /** The form always knows its account, so the test fixture supplies one too. */
@@ -309,5 +310,39 @@ describe('sorting and hand ordering', () => {
       const gaps = spaced.map((r) => r.order);
       expect(gaps[0]! - gaps[1]!).toBe(REORDER_GAP);
     });
+  });
+});
+
+describe('filtering a picker', () => {
+  const rows = [
+    { name: 'Food & groceries' }, { name: 'Rent' }, { name: 'Transport' }, { name: '' },
+  ];
+
+  it('matches a substring, not just a prefix', () => {
+    // The whole point: nobody types the beginning of "Food & groceries".
+    expect(filterByName(rows, 'groc').map((r) => r.name)).toEqual(['Food & groceries']);
+  });
+
+  it('ignores case in both directions', () => {
+    expect(filterByName(rows, 'RENT').map((r) => r.name)).toEqual(['Rent']);
+    expect(filterByName([{ name: 'RENT' }], 'rent')).toHaveLength(1);
+  });
+
+  it('ignores surrounding space, which a paste brings with it', () => {
+    expect(filterByName(rows, '  rent  ').map((r) => r.name)).toEqual(['Rent']);
+  });
+
+  it('an empty query is everything, not nothing', () => {
+    expect(filterByName(rows, '')).toHaveLength(rows.length);
+    expect(filterByName(rows, '   ')).toHaveLength(rows.length);
+  });
+
+  it('matches nothing when nothing matches', () => {
+    expect(filterByName(rows, 'zzzz')).toEqual([]);
+  });
+
+  it('never matches an unnamed row on a real query', () => {
+    // A category made and not yet named must not appear under every search.
+    expect(filterByName(rows, 'a').some((r) => r.name === '')).toBe(false);
   });
 });

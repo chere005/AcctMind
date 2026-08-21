@@ -315,3 +315,21 @@ export function respace(shown: readonly Txn[], now: number): Txn[] {
   const n = shown.length;
   return shown.map((t, i) => touch({ ...t, order: (n - i) * REORDER_GAP }, now));
 }
+
+/**
+ * The categories matching what someone has typed into the picker.
+ *
+ * A SUBSTRING match, case-insensitive, because people remember "groceries"
+ * out of "Food & groceries" — a prefix match would hide the thing they are
+ * looking for and look broken. An empty query is everything, not nothing.
+ *
+ * In core rather than in the picker because it is a rule stated in a
+ * sentence, and it was in the component first: the screen was the only place
+ * that knew it, so the only way to test it was to drive a dropdown, and the
+ * only place it could be wrong was somewhere no unit test could see.
+ */
+export function filterByName<R extends { name: string }>(rows: readonly R[], query: string): R[] {
+  const q = query.trim().toLowerCase();
+  if (q === '') return [...rows];
+  return rows.filter((r) => r.name.toLowerCase().includes(q));
+}

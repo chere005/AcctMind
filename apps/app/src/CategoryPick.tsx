@@ -10,16 +10,9 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Category } from '@acctmind/core';
+import { filterByName, type Category } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SPACE, T, TAP } from './theme';
-
-/** The rule, kept out of the component so it can be read at a glance. */
-export function filterCategories(cats: readonly Category[], query: string): Category[] {
-  const q = query.trim().toLowerCase();
-  if (q === '') return [...cats];
-  return cats.filter((c) => c.name.toLowerCase().includes(q));
-}
 
 export function CategoryPick({ categories, value, onPick }: {
   categories: readonly Category[];
@@ -30,7 +23,7 @@ export function CategoryPick({ categories, value, onPick }: {
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
   const chosen = categories.find((c) => c.id === value) ?? null;
-  const shown = filterCategories(categories, query);
+  const shown = filterByName(categories, query);
 
   return (
     <>

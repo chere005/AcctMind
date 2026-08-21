@@ -73,6 +73,17 @@ Two copies with a test between them.
 
 ## What is NOT covered, and is the next thing to fix
 
+- **The category dropdown, driven end to end.** The RULE is core's
+  `filterByName` — substring, case-insensitive, trimmed, empty-is-everything,
+  six unit tests, no browser needed. What is NOT proven is that the picker
+  narrows on screen as someone types. Two attempts at it failed for reasons
+  in the test rather than the app (a race reading a new record's id back out
+  of async storage, then an option count that came back 1 of 3), and the
+  right answer is a seam that lets the list be driven without inventing
+  records through the UI first. Left undone and written down rather than
+  left passing-by-deletion.
+
+
 A whole tier of screen went in without tests. Twelve controls are asserted by
 nothing: the **Manage** screen (adding, renaming, recolouring, deleting, and
 the rule that the last account cannot go), the **category filter**, the

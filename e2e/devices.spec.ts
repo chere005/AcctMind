@@ -38,3 +38,11 @@ test('the ledger still works without any of it', async ({ page }) => {
   await addTransaction(page, { name: 'Rent', amount: '-1450.' });
   await expect(page.getByTestId('total')).toHaveText('-$1,450.00');
 });
+
+test('the pairing code can be copied, not just retyped', async ({ page }) => {
+  // Twenty-five characters is a lot to retype. The button is Apple-only like
+  // the rest of pairing, so on the web there is nothing to press — and that
+  // absence is the assertion.
+  await fresh(page);
+  await expect(page.getByTestId('devices-copy-code')).toBeHidden();
+});
