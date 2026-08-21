@@ -1,0 +1,175 @@
+{
+  "_": "Sorting modes. `date` is newest first; `amount` compares the ABSOLUTE value, because a ledger's biggest lines are worth seeing first whichever way the money went — sorted signed, the largest expense sinks below every small credit. `custom` reads the order carried on the record and falls back to the date rule for anything never dragged, which is what makes an untouched list identical in all three modes. Rows are [id, date, created, amount, order].",
+  "cases": [
+    {
+      "name": "date: newest first",
+      "mode": "date",
+      "in": [
+        [
+          "a",
+          "2026-08-18",
+          100,
+          -100,
+          0
+        ],
+        [
+          "b",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ],
+        [
+          "c",
+          "2026-08-19",
+          100,
+          -100,
+          0
+        ]
+      ],
+      "out": [
+        "b",
+        "c",
+        "a"
+      ]
+    },
+    {
+      "name": "amount: biggest absolute value first, whichever direction",
+      "mode": "amount",
+      "in": [
+        [
+          "small",
+          "2026-08-20",
+          100,
+          100,
+          0
+        ],
+        [
+          "bigOut",
+          "2026-08-20",
+          100,
+          -50000,
+          0
+        ],
+        [
+          "mid",
+          "2026-08-20",
+          100,
+          900,
+          0
+        ]
+      ],
+      "out": [
+        "bigOut",
+        "mid",
+        "small"
+      ]
+    },
+    {
+      "_": "The failure this rule prevents: signed, bigOut would be LAST, under every small credit.",
+      "name": "amount: a large expense outranks a small credit",
+      "mode": "amount",
+      "in": [
+        [
+          "credit",
+          "2026-08-20",
+          100,
+          5,
+          0
+        ],
+        [
+          "expense",
+          "2026-08-20",
+          100,
+          -99999,
+          0
+        ]
+      ],
+      "out": [
+        "expense",
+        "credit"
+      ]
+    },
+    {
+      "name": "custom: identical to date until something is dragged",
+      "mode": "custom",
+      "in": [
+        [
+          "a",
+          "2026-08-18",
+          100,
+          -100,
+          0
+        ],
+        [
+          "b",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ]
+      ],
+      "out": [
+        "b",
+        "a"
+      ]
+    },
+    {
+      "name": "custom: a hand order wins over the date",
+      "mode": "custom",
+      "in": [
+        [
+          "new",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ],
+        [
+          "old",
+          "2026-08-18",
+          100,
+          -100,
+          1024
+        ]
+      ],
+      "out": [
+        "old",
+        "new"
+      ]
+    },
+    {
+      "_": "Identical in every sortable field but the id. Without a total order two devices holding one list can disagree about it, and it reshuffles between renders.",
+      "name": "every mode is total, broken by id",
+      "mode": "amount",
+      "in": [
+        [
+          "b",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ],
+        [
+          "a",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ],
+        [
+          "c",
+          "2026-08-20",
+          100,
+          -100,
+          0
+        ]
+      ],
+      "out": [
+        "a",
+        "b",
+        "c"
+      ]
+    }
+  ]
+}

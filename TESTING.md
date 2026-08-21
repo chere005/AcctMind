@@ -71,28 +71,23 @@ of the target (never a retyped copy — that tests the typist), compiles it,
 feeds it what `watchFeed()` really produces, and compares the drawn strings.
 Two copies with a test between them.
 
-## What is NOT covered, and is the next thing to fix
+## Rules that were in a screen, and are not any more
 
-- **The category dropdown, driven end to end.** The RULE is core's
-  `filterByName` — substring, case-insensitive, trimmed, empty-is-everything,
-  six unit tests, no browser needed. What is NOT proven is that the picker
-  narrows on screen as someone types. Two attempts at it failed for reasons
-  in the test rather than the app (a race reading a new record's id back out
-  of async storage, then an option count that came back 1 of 3), and the
-  right answer is a seam that lets the list be driven without inventing
-  records through the UI first. Left undone and written down rather than
-  left passing-by-deletion.
+Three times now a rule sat in a component, and each time the symptom was the
+same: the only way to test it was to drive a browser, and the browser could
+not do it.
 
+- **The category filter** — substring, case-insensitive, trimmed,
+  empty-is-everything. Now `filterByName`, six cases, no browser.
+- **The swipe** — when a drag is claimed and when letting go deletes. Now
+  `claimsSwipe` and `swipeDeletes`. React-native-web's pan responder does not
+  engage under Playwright's mouse, so a 220-pixel drag deleted nothing and
+  two gesture tests passed because NOTHING HAPPENED. They were deleted rather
+  than kept green.
+- **Sorting** — three modes, now `spec/sortmodes.json` and replayed.
 
-A whole tier of screen went in without tests. Twelve controls are asserted by
-nothing: the **Manage** screen (adding, renaming, recolouring, deleting, and
-the rule that the last account cannot go), the **category filter**, the
-**collapse-all**, the **per-account +**, the **section picker** and its
-Manage row, the **Budget tab**, and **copy pairing code**.
-
-It is written down here rather than left to be discovered because this file
-is supposed to be the map, and a screen that is in neither list is one nobody
-is looking at.
+What is left for the gesture suite in each case is only that the screen CALLS
+the rule, which is what a gesture suite is actually for.
 
 ## What nobody is watching
 

@@ -231,3 +231,18 @@ test('an opened row can be closed without choosing anything', async ({ page }) =
   await dismiss(page);
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
 });
+
+/*
+ * The swipe is NOT driven from here.
+ *
+ * Three attempts were: react-native-web's pan responder does not engage under
+ * Playwright's mouse, so a 220-pixel drag deleted nothing — which meant the
+ * "a half-swipe does not delete" and "the swipe does not steal a long press"
+ * tests passed because NOTHING HAPPENED. A check that cannot fail looks
+ * exactly like one that passes, and two of those were about to be committed.
+ *
+ * Both thresholds and both decisions are rules stated in a sentence, so they
+ * are core's — `claimsSwipe` and `swipeDeletes`, with the six-pixel drift
+ * that shipped broken as a named case. They run everywhere and need no
+ * finger. What is left unproven here is only that the handler CALLS them.
+ */

@@ -333,3 +333,42 @@ export function filterByName<R extends { name: string }>(rows: readonly R[], que
   if (q === '') return [...rows];
   return rows.filter((r) => r.name.toLowerCase().includes(q));
 }
+
+/* ------------------------------------------------------------------ *
+ * The swipe
+ *
+ * Thresholds and the two decisions made from them, in core rather than in a
+ * gesture handler — they are rules stated in a sentence, and leaving them in
+ * the component meant the only way to test them was to drive a finger, which
+ * the browser harness cannot do. Three attempts at that produced tests that
+ * passed because NOTHING happened, which is the worst kind.
+ * ------------------------------------------------------------------ */
+
+/**
+ * How far a horizontal drag must go before the row is claimed as a swipe.
+ *
+ * Fourteen, not six. At six this stole the LONG PRESS on real hardware: a
+ * finger held still for 700ms drifts further than that, so the responder took
+ * the gesture and the press was cancelled — holding a row did nothing on a
+ * phone while every browser test passed, because a mouse does not drift.
+ */
+export const SWIPE_CLAIM_PX = 14;
+
+/** How far it must travel before letting go deletes. */
+export const SWIPE_DELETE_PX = 96;
+
+/**
+ * Should this movement be taken as a swipe rather than left alone?
+ *
+ * Left only, past the claim distance, and decisively more horizontal than
+ * vertical — a list that claims every touch cannot be scrolled, and one that
+ * claims a wobble cannot be held.
+ */
+export function claimsSwipe(dx: number, dy: number): boolean {
+  return dx < -SWIPE_CLAIM_PX && Math.abs(dx) > Math.abs(dy) * 2.5;
+}
+
+/** Does letting go here delete, or spring back? Short of the line is a no. */
+export function swipeDeletes(dx: number): boolean {
+  return dx < -SWIPE_DELETE_PX;
+}

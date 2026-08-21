@@ -13,7 +13,7 @@ import {
   formatDay, isDay, monthGrid, monthLabel, parseAmount, sortTxns, toggleAmountSign,
 } from '../src/index';
 import type { AmountMode } from '../src/index';
-import type { Txn } from '../src/index';
+import type { SortMode, Txn } from '../src/index';
 
 const spec = <T,>(name: string): T =>
   JSON.parse(readFileSync(new URL(`../../../spec/${name}.json`, import.meta.url), 'utf8')) as T;
@@ -166,6 +166,22 @@ describe('spec/sort.json', () => {
         account: 'a1', category: null, order: 0,
       }));
       expect(sortTxns(txns).map((t) => t.id)).toEqual(c.out);
+    });
+  }
+});
+
+describe('spec/sortmodes.json', () => {
+  const s = spec<{
+    cases: { name: string; mode: SortMode; in: [string, string, number, number, number][]; out: string[] }[];
+  }>('sortmodes');
+
+  for (const c of s.cases) {
+    it(`${c.mode}: ${c.name}`, () => {
+      const txns: Txn[] = c.in.map(([id, date, created, amount, order]) => ({
+        id, name: id, description: '', amount, date, account: 'a1', category: null,
+        order, created, updated: created,
+      }));
+      expect(sortTxns(txns, c.mode).map((t) => t.id)).toEqual(c.out);
     });
   }
 });

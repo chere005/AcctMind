@@ -2,8 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
-  REORDER_GAP, filterByName, newId, reorder, respace, sortTxns, total, txnText,
-  validateDraft,
+  REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_DELETE_PX, claimsSwipe, filterByName, newId,
+  reorder, respace, sortTxns, swipeDeletes, total, txnText, validateDraft,
 } from '../src/index';
 
 /** The form always knows its account, so the test fixture supplies one too. */
@@ -344,5 +344,49 @@ describe('filtering a picker', () => {
   it('never matches an unnamed row on a real query', () => {
     // A category made and not yet named must not appear under every search.
     expect(filterByName(rows, 'a').some((r) => r.name === '')).toBe(false);
+  });
+});
+
+describe('the swipe, as rules rather than as a gesture', () => {
+  it('leaves a held finger alone', () => {
+    // THE BUG THAT SHIPPED. A finger held still for 700ms drifts several
+    // pixels; at a six-pixel threshold the swipe claimed the gesture and
+    // cancelled every long press, so holding a row did nothing on a phone.
+    for (const drift of [1, 3, 6, 8, 10, 13]) {
+      expect(claimsSwipe(-drift, 1), `${drift}px of drift`).toBe(false);
+      expect(claimsSwipe(-drift, -2), `${drift}px of drift`).toBe(false);
+    }
+  });
+
+  it('claims a real swipe', () => {
+    expect(claimsSwipe(-40, 2)).toBe(true);
+    expect(claimsSwipe(-15, 0)).toBe(true);
+  });
+
+  it('never claims a rightward drag', () => {
+    expect(claimsSwipe(40, 0)).toBe(false);
+    expect(claimsSwipe(200, 1)).toBe(false);
+  });
+
+  it('leaves a SCROLL alone, however far it goes', () => {
+    // Mostly vertical: the list has to stay scrollable.
+    expect(claimsSwipe(-30, 90)).toBe(false);
+    expect(claimsSwipe(-200, 400)).toBe(false);
+  });
+
+  it('deletes only past the line, and a half-swipe is a decision not to', () => {
+    expect(swipeDeletes(-200)).toBe(true);
+    expect(swipeDeletes(-97)).toBe(true);
+    expect(swipeDeletes(-96)).toBe(false);
+    expect(swipeDeletes(-40)).toBe(false);
+    expect(swipeDeletes(0)).toBe(false);
+    // And a rightward drag never deletes, whatever its size.
+    expect(swipeDeletes(500)).toBe(false);
+  });
+
+  it('cannot be claimed and yet too short to matter', () => {
+    // The claim distance must sit below the delete distance, or a swipe would
+    // engage and then be incapable of ever completing.
+    expect(SWIPE_CLAIM_PX).toBeLessThan(SWIPE_DELETE_PX);
   });
 });

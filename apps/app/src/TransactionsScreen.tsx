@@ -5,7 +5,7 @@
 import { useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  formatAmount, formatDay, sortTxns, total,
+  claimsSwipe, formatAmount, formatDay, sortTxns, swipeDeletes, total,
   type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -224,9 +224,6 @@ export function TransactionsScreen({
   );
 }
 
-/** How far a row must travel before letting go deletes it. */
-const SWIPE_DELETE = 96;
-
 function Row({ txn, open, onOpen, onClose, onAction, onDrag }: {
   txn: Txn;
   open: boolean;
@@ -246,20 +243,11 @@ function Row({ txn, open, onOpen, onClose, onAction, onDrag }: {
    */
   const pan = useRef(
     PanResponder.create({
-      /*
-       * Deliberately hard to trigger by accident.
-       *
-       * At six pixels this stole the LONG PRESS on real hardware: a finger
-       * held still for 700ms drifts further than that, the responder claimed
-       * the gesture, and the press was cancelled — so holding a row did
-       * nothing on a phone while passing every browser test, because a mouse
-       * does not drift. Fourteen pixels and a decisively horizontal ratio
-       * leaves the hold alone.
-       */
-      onMoveShouldSetPanResponder: (_e, g) => g.dx < -14 && Math.abs(g.dx) > Math.abs(g.dy) * 2.5,
+      // Both thresholds and both decisions are core's — see claimsSwipe.
+      onMoveShouldSetPanResponder: (_e, g) => claimsSwipe(g.dx, g.dy),
       onPanResponderMove: (_e, g) => { if (g.dx < 0) dx.setValue(g.dx); },
       onPanResponderRelease: (_e, g) => {
-        if (g.dx < -SWIPE_DELETE) {
+        if (swipeDeletes(g.dx)) {
           // Off the edge first, so the row is gone before the list reflows —
           // otherwise it snaps back for a frame on its way out.
           Animated.timing(dx, { toValue: -600, duration: 140, useNativeDriver: false })
