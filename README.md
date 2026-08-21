@@ -192,10 +192,16 @@ where anything is written. Every guard is re-proven on each run of
 
 `TESTING.md` is what the tests are worth. `AGENTS.md` is how to work in here.
 
-## Licence
+## License
 
-BSD 3-Clause — see `LICENSE`. The same licence seancheren-site uses, so the
-repositories agree rather than each having their own answer.
+BSD 3-Clause — see [LICENSE](LICENSE). Do what you like with it: use it,
+change it, fold it into something else, commercially or not, no permission
+needed and no warranty given. The two things the licence does ask are that
+the copyright notice travels with the source, and that you don't use Sean's
+name to endorse whatever you build from it.
+
+The same licence CalMind and seancheren-site use, so the repositories agree
+rather than each having their own answer.
 
 The dependency tree is MIT/ISC/Apache/BSD throughout, with no copyleft that
 would conflict with the App Store's terms. `node-forge` reports
