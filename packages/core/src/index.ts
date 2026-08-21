@@ -11,6 +11,7 @@
 export * from './types';
 export * from './palette';
 export * from './money';
+export * from './budget';
 export * from './day';
 export * from './txn';
 export * from './store';

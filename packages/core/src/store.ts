@@ -12,7 +12,7 @@
 
 import {
   DEFAULT_ACCOUNT_NAME, STORE_VERSION,
-  type Account, type Category, type Record_, type Store, type Txn,
+  type Account, type Category, type Line, type Record_, type Store, type Txn,
 } from './types';
 import { isDay } from './day';
 import { PALETTE } from './palette';
@@ -23,10 +23,10 @@ export type LoadResult =
   | { ok: false; error: string };
 
 /** Versions this build can READ. It writes STORE_VERSION and nothing else. */
-export const READABLE_VERSIONS = [1, 2, STORE_VERSION] as const;
+export const READABLE_VERSIONS = [1, 2, 3, STORE_VERSION] as const;
 
 export function emptyStore(): Store {
-  return { v: STORE_VERSION, txns: [], accounts: [], categories: [] };
+  return { v: STORE_VERSION, txns: [], accounts: [], categories: [], lines: [] };
 }
 
 /** Serialize for the device. Compact — nothing reads this by eye but us. */
@@ -67,7 +67,7 @@ export function parseStore(raw: string | null | undefined): LoadResult {
   // store is a real ledger on a real device and refusing it would strand it,
   // while a v3 store is one this build cannot understand, and the only thing
   // worse than not showing it is overwriting it with a downgrade.
-  if (!READABLE_VERSIONS.includes(version as 1 | typeof STORE_VERSION)) {
+  if (!READABLE_VERSIONS.includes(version as 1 | 2 | 3 | typeof STORE_VERSION)) {
     return { ok: false, error: `the saved data is version ${String(version)}, and this app reads ${READABLE_VERSIONS.join(' and ')}` };
   }
   const migrated = version !== STORE_VERSION;
@@ -96,6 +96,7 @@ export function parseStore(raw: string | null | undefined): LoadResult {
 
   const accounts = readAll(obj['accounts'], normalizeAccount);
   const categories = readAll(obj['categories'], normalizeCategory);
+  const lines = readAll(obj['lines'], normalizeLine);
   const txns = readAll(obj['txns'], normalizeTxn);
 
   /*
@@ -116,12 +117,88 @@ export function parseStore(raw: string | null | undefined): LoadResult {
     for (const t of homeless) t.account = fallback.id;
   }
 
+  /*
+   * v4: the money moved off the category and onto a line underneath it.
+   *
+   * Only for a store that predates lines — decided by the VERSION on the
+   * file, never by `lines.length`. A v4 store with categories and no lines is
+   * a perfectly ordinary empty budget, and inventing lines for it on every
+   * load would resurrect a line the moment someone deleted their last one.
+   */
+  if (typeof version === 'number' && version < 4) {
+    lines.push(...migrateLines(obj['categories'], categories, txns));
+  }
+
   // A category that has gone is forgotten rather than fabricated: unlike an
   // account, "no category" is a state the model already has.
   const cats = new Set(categories.map((c) => c.id));
-  for (const t of txns) if (t.category !== null && !cats.has(t.category)) t.category = null;
+  for (const l of lines) if (!cats.has(l.category)) l.deleted = true;
+  // The same for a transaction pointing at a line that is not there. `null`
+  // is a state the model already has, so there is nothing to fabricate.
+  const knownLines = new Set(lines.map((l) => l.id));
+  for (const t of txns) if (t.category !== null && !knownLines.has(t.category)) t.category = null;
 
-  return { ok: true, store: { v: STORE_VERSION, txns, accounts, categories }, dropped, migrated };
+  return {
+    ok: true,
+    store: { v: STORE_VERSION, txns, accounts, categories, lines },
+    dropped,
+    migrated,
+  };
+}
+
+/**
+ * Give every pre-v4 category one line, and re-file its transactions onto it.
+ *
+ * THE ID IS DERIVED FROM THE CATEGORY'S, and that is the whole of the design.
+ * A random id here would mean a phone and a Mac upgrading the same ledger
+ * independently — which is exactly what happens when both are opened after an
+ * update — produce two different lines holding the same money, and the next
+ * merge shows every budget twice with no way to tell which is which. v3's
+ * `adoptAccount` learned this; deriving is the same answer.
+ *
+ * The budget is read from the RAW row rather than the normalized category,
+ * because `normalizeCategory` deliberately stopped carrying it — this is the
+ * one place that still needs the old value, and it is needed exactly once.
+ */
+function migrateLines(rawCategories: unknown, categories: Category[], txns: Txn[]): Line[] {
+  const legacy = new Map<string, number>();
+  if (Array.isArray(rawCategories)) {
+    for (const row of rawCategories) {
+      if (typeof row !== 'object' || row === null) continue;
+      const r = row as Record<string, unknown>;
+      const id = r['id'];
+      const budget = r['budget'];
+      if (typeof id === 'string' && typeof budget === 'number' && Number.isSafeInteger(budget)) {
+        legacy.set(id, budget);
+      }
+    }
+  }
+
+  const made: Line[] = [];
+  for (const c of categories) {
+    const line: Line = {
+      id: lineIdFor(c.id),
+      name: c.name,
+      category: c.id,
+      budget: legacy.get(c.id) ?? 0,
+      order: 0,
+      created: c.created,
+      // The category's own clock, not `now`: the line IS the category's money,
+      // moved. Stamping it with the upgrade time would make whichever device
+      // was opened second win a merge it has no new information for.
+      updated: c.updated,
+      ...(c.deleted === true ? { deleted: true as const } : {}),
+    };
+    made.push(line);
+    // Everything filed under the category is now filed under its line.
+    for (const t of txns) if (t.category === c.id) t.category = line.id;
+  }
+  return made;
+}
+
+/** The line id a migrated category gets. Derived, never generated. */
+export function lineIdFor(categoryId: string): string {
+  return `line-${categoryId}`;
 }
 
 /**
@@ -192,9 +269,11 @@ export function normalizeCategory(row: unknown): Category | null {
   if (base === null) return null;
   const name = r['name'];
   if (typeof name !== 'string') return null;
+  // A pre-v4 category carries `budget`. It is still VALIDATED here — a float
+  // is a file written by something that did not follow the rule, not a
+  // rounding question — but it is not kept: the money lives on the lines now,
+  // and `migrateLines` is what moves it there.
   const budget = r['budget'];
-  // Same rule as an amount: a float here is a file written by something that
-  // did not follow the rule, not a rounding question.
   if (budget !== undefined && (typeof budget !== 'number' || !Number.isSafeInteger(budget))) {
     return null;
   }
@@ -203,6 +282,31 @@ export function normalizeCategory(row: unknown): Category | null {
     ...base,
     name,
     color: normalizeColor(r['color']),
+    order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
+  };
+}
+
+/** Coerce one unknown row into a budget line, or reject it. */
+export function normalizeLine(row: unknown): Line | null {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+  const r = row as Record<string, unknown>;
+  const base = normalizeRecord(r);
+  if (base === null) return null;
+  const name = r['name'];
+  if (typeof name !== 'string') return null;
+  const category = r['category'];
+  // A line with no category has nowhere to be drawn. Unlike a transaction's
+  // category — where null is a real state — this one is structural.
+  if (typeof category !== 'string' || category === '') return null;
+  const budget = r['budget'];
+  if (budget !== undefined && (typeof budget !== 'number' || !Number.isSafeInteger(budget))) {
+    return null;
+  }
+  const order = r['order'];
+  return {
+    ...base,
+    name,
+    category,
     budget: budget ?? 0,
     order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
   };
@@ -320,6 +424,14 @@ export function putAccount(store: Store, account: Account): Store {
     accounts: has
       ? store.accounts.map((a) => (a.id === account.id ? account : a))
       : [...store.accounts, account],
+  };
+}
+
+export function putLine(store: Store, line: Line): Store {
+  const has = store.lines.some((l) => l.id === line.id);
+  return {
+    ...store,
+    lines: has ? store.lines.map((l) => (l.id === line.id ? line : l)) : [...store.lines, line],
   };
 }
 

@@ -33,7 +33,7 @@ const ACCT = {
   id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0,
 };
 const store = (rows: Row[]): Store =>
-  ({ v: STORE_VERSION, txns: rows.map(txn), accounts: [ACCT], categories: [] });
+  ({ v: STORE_VERSION, txns: rows.map(txn), accounts: [ACCT], categories: [], lines: [] });
 
 /** id -> name, or DEAD for a tombstone. */
 const shape = (s: Store): Record<string, string> =>
@@ -120,18 +120,19 @@ describe('prune', () => {
   const dead = tombstone(txn(['x', 100, 'live', 'gone']), 1_000_000);
 
   it('keeps a fresh tombstone, because the delete still has to travel', () => {
-    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [] };
+    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [], lines: [] };
     expect(prune(s, 1_000_000 + 1000).txns).toHaveLength(1);
   });
 
   it('drops one older than the ttl', () => {
-    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [] };
+    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [], lines: [] };
     expect(prune(s, 1_000_000 + 91 * 24 * 3600 * 1000).txns).toHaveLength(0);
   });
 
   it('never drops a live record, however old', () => {
     const s: Store = {
-      v: STORE_VERSION, txns: [txn(['x', 1, 'live', 'ancient'])], accounts: [], categories: [],
+      v: STORE_VERSION, txns: [txn(['x', 1, 'live', 'ancient'])],
+      accounts: [], categories: [], lines: [],
     };
     expect(prune(s, Date.now()).txns).toHaveLength(1);
   });

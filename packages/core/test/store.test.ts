@@ -235,3 +235,117 @@ describe('every transaction ends up with an account that exists', () => {
     if (r.ok) expect(r.store.txns[0]?.category).toBeNull();
   });
 });
+
+describe('v4 — the money moves off the category and onto a line', () => {
+  /** A v3 store: one category holding a budget, one transaction filed to it. */
+  const v3 = (budget = 12000) => JSON.stringify({
+    v: 3,
+    txns: [{
+      id: 'x', name: 'Apples', description: '', amount: -8437,
+      date: '2026-08-20', account: 'a1', category: 'c1', order: 0,
+      created: 1000, updated: 1000,
+    }],
+    accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }],
+    categories: [{ id: 'c1', name: 'Groceries', color: '#4c8bf0', budget, order: 0, created: 5, updated: 7 }],
+  });
+
+  it('gives the category one line carrying its old name and its old money', () => {
+    const r = parseStore(v3());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.migrated).toBe(true);
+    expect(r.store.lines).toHaveLength(1);
+    const line = r.store.lines[0];
+    expect(line?.name).toBe('Groceries');
+    expect(line?.category).toBe('c1');
+    expect(line?.budget).toBe(12000);
+    // The category is a heading now and carries no money at all.
+    expect((r.store.categories[0] as unknown as Record<string, unknown>)['budget']).toBeUndefined();
+  });
+
+  it('and re-files the category’s transactions onto that line', () => {
+    const r = parseStore(v3());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // The transaction pointed at the CATEGORY and now points at the LINE.
+    // Left alone it would point at a category id that nothing files under,
+    // and `Groceries` would show a budget with no spending against it.
+    expect(r.store.txns[0]?.category).toBe(r.store.lines[0]?.id);
+    expect(r.store.txns[0]?.category).not.toBe('c1');
+  });
+
+  it('and TWO devices upgrading the same ledger arrive at the same line', () => {
+    // The reason the id is derived rather than generated, and the same lesson
+    // v3's account learned. Two random ids here would merge into two lines
+    // holding the same money, and every budget in the file would read double
+    // with no way to tell which half is real.
+    const phone = parseStore(v3());
+    const mac = parseStore(v3());
+    expect(phone.ok && mac.ok).toBe(true);
+    if (!phone.ok || !mac.ok) return;
+    expect(phone.store.lines[0]?.id).toBe(mac.store.lines[0]?.id);
+    expect(phone.store.txns[0]?.category).toBe(mac.store.txns[0]?.category);
+  });
+
+  it('carries the category’s clock, so neither device wins on the upgrade alone', () => {
+    // Stamped with `now` instead, whichever device was opened SECOND would
+    // outrank the other on a merge it has no new information for.
+    const r = parseStore(v3());
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.store.lines[0]?.updated).toBe(7);
+    expect(r.store.lines[0]?.created).toBe(5);
+  });
+
+  it('does NOT invent lines for a v4 store that simply has none', () => {
+    // The version decides, never `lines.length`. Deciding by the count would
+    // resurrect a line the instant someone deleted their last one.
+    const v4 = JSON.stringify({
+      v: 4,
+      txns: [],
+      accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }],
+      categories: [{ id: 'c1', name: 'Groceries', color: '#4c8bf0', order: 0, created: 5, updated: 7 }],
+      lines: [],
+    });
+    const r = parseStore(v4);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.migrated).toBe(false);
+    expect(r.store.lines).toEqual([]);
+  });
+
+  it('buries a line whose category has gone', () => {
+    // Tombstoned rather than dropped: a delete that vanishes is handed back
+    // by the next merge, which is the rule every other record here follows.
+    const orphan = JSON.stringify({
+      v: 4,
+      txns: [],
+      accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }],
+      categories: [],
+      lines: [{ id: 'l1', name: 'Produce', category: 'gone', budget: 500, order: 0, created: 1, updated: 1 }],
+    });
+    const r = parseStore(orphan);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.store.lines[0]?.deleted).toBe(true);
+  });
+
+  it('forgets a transaction pointing at a line that is not there', () => {
+    const dangling = JSON.stringify({
+      v: 4,
+      txns: [{
+        id: 'x', name: 'Apples', description: '', amount: -8437,
+        date: '2026-08-20', account: 'a1', category: 'nope', order: 0,
+        created: 1000, updated: 1000,
+      }],
+      accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }],
+      categories: [],
+      lines: [],
+    });
+    const r = parseStore(dangling);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Forgotten, not fabricated — "no line" is a state the model already has.
+    expect(r.store.txns[0]?.category).toBeNull();
+  });
+});

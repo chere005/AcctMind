@@ -11,7 +11,8 @@ import { addTransaction, fresh, stored } from './helpers';
 
 type Stored = {
   accounts: { id: string; name: string; color: string; deleted?: true }[];
-  categories: { id: string; name: string; budget: number; deleted?: true }[];
+  categories: { id: string; name: string; deleted?: true }[];
+  lines: { id: string; name: string; category: string; budget: number; deleted?: true }[];
   txns: { name: string; category: string | null }[];
 };
 
@@ -115,10 +116,12 @@ test('renaming an account renames it everywhere at once', async ({ page }) => {
   await expect(page.getByTestId(`account-head-${id}`)).toContainText('Current');
 });
 
-test('the + beside a category opens the form already filed under it', async ({ page }) => {
-  // Sean, 2026-08-21: "An add button by the category name is fine." The point
-  // of it is the preset — pressing + beside Groceries has already answered
-  // "which category", and a form that asks again is asking twice.
+test('the + beside a category adds a LINE, not a transaction', async ({ page }) => {
+  // It used to open the add-transaction form with the category preset. Sean,
+  // 2026-08-21: "the + in the budget section shouldn't add a transaction, it
+  // adds a section to a category for budgeting a particular amount." So the
+  // behaviour deliberately changed, and this test changed with it rather than
+  // being deleted — what it guards is still the + doing the right thing.
   await page.goto('./');
   await expect(page.getByTestId('budget-title')).toBeVisible();
 
@@ -131,29 +134,26 @@ test('the + beside a category opens the form already filed under it', async ({ p
   await page.getByTestId('manage-done').click();
 
   await page.getByTestId(`category-add-${cat?.id}`).click();
-  await expect(page.getByTestId('save-button')).toBeVisible();
-  // Filled in, not blank: this is the whole feature.
-  await expect(page.getByTestId('category-value')).toHaveText('Groceries');
-
-  /*
-   * CLICK, then fill. Under the mobile project a `fill` on this modal's input
-   * silently does nothing when the form was opened from Budget: the value
-   * comes straight back empty, React having re-rendered the controlled input
-   * from a state that never changed, and the only symptom is Save doing
-   * nothing while the form reports "Name is required". Focusing the field
-   * first is what makes the change event land. Chromium does not need it,
-   * which is exactly why it is written down here.
-   */
-  await page.getByTestId('name-input').click();
-  await page.getByTestId('name-input').fill('Apples');
-  await page.getByTestId('amount-input').click();
-  await page.getByTestId('amount-input').fill('-1250');
-  await page.getByTestId('save-button').click();
+  // The LINE editor, not the transaction form.
+  await expect(page.getByTestId('line-save')).toBeVisible();
   await expect(page.getByTestId('save-button')).toBeHidden();
 
-  // And it lands ON the record, so it is what Budget totals and what syncs.
+  await page.getByTestId('line-name').click();
+  await page.getByTestId('line-name').fill('Produce');
+  await page.getByTestId('line-budget').click();
+  await page.getByTestId('line-budget').fill('120');
+  await page.getByTestId('line-save').click();
+  await expect(page.getByTestId('line-save')).toBeHidden();
+
   const after = await stored(page) as Stored;
-  expect(after.txns.find((t) => t.name === 'Apples')?.category).toBe(cat?.id);
+  const line = after.lines.filter((l) => l.deleted !== true)[0];
+  expect(line?.name).toBe('Produce');
+  // Filed under the category whose + was pressed — the only thing that press
+  // knows, and the only thing it must not get wrong.
+  expect(line?.category).toBe(cat?.id);
+  expect(line?.budget).toBe(12000);
+  // And no transaction was made.
+  expect(after.txns).toHaveLength(0);
 });
 
 test("an account's colour is chosen from the tray and rides on the record", async ({ page }) => {

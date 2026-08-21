@@ -1,29 +1,39 @@
 /**
- * Which category a transaction belongs to — a dropdown you can type into.
+ * Which budget LINE a transaction belongs to — a dropdown you can type into.
  *
- * The filter is the point. A ledger grows categories faster than anything
- * else in it, and a list of forty is a list nobody scrolls; typing three
- * letters is how a person picks the one they already have in mind. Matching
- * is case-insensitive and on a SUBSTRING, not a prefix, because people
- * remember "groceries" out of "Food & groceries".
+ * It picked a category until v4, when the money moved down a level: a
+ * category is a heading now and a line is what actually holds a budget, so a
+ * line is what a transaction has to be filed against. The rows are grouped
+ * under their category, because two lines called `Coffee` in different
+ * categories are a real thing to have and a list that showed both without
+ * saying which is which would be unusable.
+ *
+ * The filter is the point. A ledger grows lines faster than anything else in
+ * it, and a list of forty is a list nobody scrolls; typing three letters is
+ * how a person picks the one they already have in mind. Matching is
+ * case-insensitive and on a SUBSTRING, not a prefix, because people remember
+ * "groceries" out of "Food & groceries".
  */
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { filterByName, type Category } from '@acctmind/core';
+import { filterByName, type Category, type Line } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SPACE, T, TAP } from './theme';
 
-export function CategoryPick({ categories, value, onPick }: {
+export function CategoryPick({ categories, lines, value, onPick }: {
   categories: readonly Category[];
+  lines: readonly Line[];
   value: string | null;
   onPick: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
-  const chosen = categories.find((c) => c.id === value) ?? null;
-  const shown = filterByName(categories, query);
+  const chosen = lines.find((l) => l.id === value) ?? null;
+  const shown = filterByName(lines, query);
+  const colorOf = (l: Line) => categories.find((c) => c.id === l.category)?.color ?? T.faint;
+  const groupOf = (l: Line) => categories.find((c) => c.id === l.category)?.name ?? '';
 
   return (
     <>
@@ -34,7 +44,7 @@ export function CategoryPick({ categories, value, onPick }: {
         accessibilityLabel={chosen === null ? 'No category' : chosen.name}
         testID="category-button"
       >
-        {chosen !== null && <Dot colors={[chosen.color]} size={12} />}
+        {chosen !== null && <Dot colors={[colorOf(chosen)]} size={12} />}
         <Text style={[styles.value, chosen === null && styles.none]} testID="category-value">
           {chosen?.name ?? 'None'}
         </Text>
@@ -66,15 +76,19 @@ export function CategoryPick({ categories, value, onPick }: {
                 >
                   <Text style={[styles.rowText, styles.none]}>None</Text>
                 </Pressable>
-                {shown.map((c) => (
+                {shown.map((l) => (
                   <Pressable
-                    key={c.id}
-                    onPress={() => { onPick(c.id); setOpen(false); }}
+                    key={l.id}
+                    onPress={() => { onPick(l.id); setOpen(false); }}
                     style={styles.row}
-                    testID={`category-opt-${c.id}`}
+                    testID={`category-opt-${l.id}`}
                   >
-                    <Dot colors={[c.color]} size={12} />
-                    <Text style={styles.rowText} numberOfLines={1}>{c.name}</Text>
+                    <Dot colors={[colorOf(l)]} size={12} />
+                    <Text style={styles.rowText} numberOfLines={1}>{l.name}</Text>
+                    {/* Which category it sits in. Two lines can share a name
+                        across categories, and without this the list offers
+                        the same word twice with no way to choose. */}
+                    <Text style={styles.rowGroup} numberOfLines={1}>{groupOf(l)}</Text>
                   </Pressable>
                 ))}
                 {shown.length === 0 && (
@@ -105,6 +119,7 @@ const styles = StyleSheet.create({
   value: { color: T.text, fontSize: 17, flex: 1 },
   none: { color: T.dim },
   chev: { color: T.dim, fontSize: 13 },
+  rowGroup: { color: T.gold, fontSize: 13, flexShrink: 0 },
   backdrop: { flex: 1, backgroundColor: '#00000088' },
   menu: {
     marginHorizontal: SPACE.lg, maxHeight: 380, borderRadius: 14,

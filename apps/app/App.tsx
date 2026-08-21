@@ -24,9 +24,9 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn,
-  newId, nextColor, putAccount, putCategory, reorder, tombstone, touch, txnText,
+  newId, nextColor, putAccount, putCategory, putLine, reorder, tombstone, touch, txnText,
   updateTxn,
-  type Draft, type Store, type Txn,
+  type Category, type Draft, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
 import * as peer from './src/peer';
@@ -35,12 +35,19 @@ import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
 import { BudgetScreen } from './src/BudgetScreen';
+import { LineEditor } from './src/LineEditor';
 import { Manage } from './src/Manage';
 import { Tabs, type Tab } from './src/Tabs';
 import { TransactionsScreen, type RowAction } from './src/TransactionsScreen';
 import { load, save } from './src/persist';
 import { DEFAULTS, loadPrefs, savePrefs, type Prefs } from './src/prefs';
 import { SPACE, T, TAP } from './src/theme';
+
+/** What the line editor's bar says: the category the line lives in. */
+function categoryName(categories: readonly Category[], id: string | undefined): string {
+  if (id === undefined) return 'Line';
+  return categories.find((c) => c.id === id)?.name || 'Line';
+}
 
 type Phase =
   | { k: 'loading' }
@@ -72,6 +79,16 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('budget');
   /** Which manager is open, if either. */
   const [managing, setManaging] = useState<'accounts' | 'categories' | null>(null);
+  /**
+   * The budget line being added or edited, if any.
+   *
+   * One piece of state for both, because they are the same form: `line: null`
+   * is the add, and the category is carried either way because a line cannot
+   * exist outside one.
+   */
+  const [lineEdit, setLineEdit] = useState<
+    { category: string; line: Line | null; spent: number } | null
+  >(null);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
   /** The ledger outgrew iCloud's megabyte. Also shown, for the same reason. */
@@ -337,18 +354,14 @@ export default function App() {
               <BudgetScreen
                 txns={live(phase.store.txns)}
                 categories={live(phase.store.categories)}
+                lines={live(phase.store.lines)}
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
-                onAdd={(category) => {
-                  if (phase.k !== 'ready') return;
-                  setEditing(null);
-                  // Every transaction needs an account; a category does not
-                  // name one, so it lands in the first and can be moved.
-                  setAddingTo(live(phase.store.accounts)[0]?.id ?? '');
-                  setAddingIn(category);
-                  setAdding(true);
-                }}
+                /* The + adds a LINE, not a transaction — Sean, 2026-08-21. */
+                onAddLine={(category) => setLineEdit({ category, line: null, spent: 0 })}
+                onEditLine={({ line, spent }) =>
+                  setLineEdit({ category: line.category, line, spent })}
               />
             )}
 
@@ -388,7 +401,7 @@ export default function App() {
               label={managing === 'categories' ? 'Categories' : 'Accounts'}
               rows={managing === 'categories'
                 ? live(phase.store.categories).map((c) => ({
-                    id: c.id, name: c.name, color: c.color, budget: c.budget,
+                    id: c.id, name: c.name, color: c.color,
                   }))
                 : live(phase.store.accounts).map((a) => ({
                     id: a.id, name: a.name, color: a.color,
@@ -404,7 +417,6 @@ export default function App() {
                     // Cycle the palette rather than always opening blue, so a
                     // list of new ones is telling apart at a glance.
                     color: nextColor(cats.map((c) => c.color)),
-                    budget: 0,
                     order: cats.length,
                     created: now,
                     updated: now,
@@ -427,7 +439,7 @@ export default function App() {
                   const c = phase.store.categories.find((x) => x.id === row.id);
                   if (c === undefined) return;
                   commit(phase, putCategory(phase.store, touch({
-                    ...c, name: row.name, color: row.color, budget: row.budget ?? 0,
+                    ...c, name: row.name, color: row.color,
                   }, now)));
                 } else {
                   const a = phase.store.accounts.find((x) => x.id === row.id);
@@ -451,6 +463,39 @@ export default function App() {
                   if (a === undefined) return;
                   commit(phase, putAccount(phase.store, tombstone(a, now)));
                 }
+              }}
+            />
+            <LineEditor
+              visible={lineEdit !== null}
+              title={
+                categoryName(phase.k === 'ready' ? phase.store.categories : [], lineEdit?.category)
+              }
+              name={lineEdit?.line?.name ?? ''}
+              budget={lineEdit?.line?.budget ?? 0}
+              spent={lineEdit?.spent ?? 0}
+              onCancel={() => setLineEdit(null)}
+              onSave={({ name, budget }) => {
+                if (phase.k !== 'ready' || lineEdit === null) return;
+                const now = Date.now();
+                const existing = lineEdit.line;
+                commit(phase, putLine(phase.store, existing === null
+                  ? {
+                      id: `line-${newId()}`,
+                      name,
+                      category: lineEdit.category,
+                      budget,
+                      order: live(phase.store.lines)
+                        .filter((l) => l.category === lineEdit.category).length,
+                      created: now,
+                      updated: now,
+                    }
+                  : touch({ ...existing, name, budget }, now)));
+                setLineEdit(null);
+              }}
+              onDelete={lineEdit?.line === null || lineEdit === null ? undefined : () => {
+                if (phase.k !== 'ready' || lineEdit.line === null) return;
+                commit(phase, putLine(phase.store, tombstone(lineEdit.line, Date.now())));
+                setLineEdit(null);
               }}
             />
             {/* LAST in the tree, so it is last on the screen. Restyling it
@@ -485,6 +530,7 @@ export default function App() {
               account={addingTo}
               category={addingIn}
               categories={live(phase.store.categories)}
+              lines={live(phase.store.lines)}
               onSave={onSave}
               onCancel={() => { setAdding(false); setEditing(null); }}
             />

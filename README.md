@@ -32,18 +32,36 @@ The hand order rides on the record, so the Mac agrees with the phone; the
 other two are device preferences. An untouched list looks identical in all
 three.
 
-**Hold a row** for edit, duplicate, copy and delete, or **swipe left** to
-delete. The actions overlay the row rather than pushing it, so nothing moves
-under a thumb that is already aiming.
+**Hold a row** for edit, duplicate, copy and delete — four small circles that
+overlay the right of the row. **Swipe left** to park a delete button; one more
+tap on it deletes. Neither moves the row, so nothing shifts under a thumb that
+is already aiming. In **Custom** order a grip appears on the left and rows are
+dragged by it; its space is reserved in every order, so switching sort never
+slides a name sideways.
 
-**Budget** is the same shape for **categories**: a name, a colour, money
-assigned, and what has actually gone through it. Accounts and categories are
-made in one **Manage** screen, reached from the last row of either picker —
-and nowhere else, so there is one place that knows what a new one starts as.
+**Budget** is two levels. A **category** is a heading with a name and a colour
+and no money of its own; the **+** beside it adds a **line**, and a line is
+what holds a budget and what a transaction is filed against. Each line shows
+three numbers:
 
-The add form takes a **Name**, a **Category** (a dropdown that filters as you
-type), an **Amount**, and a **Description**. The date is a small calendar
-beside the name, starting on today.
+| | |
+|---|---|
+| **Budgeted** | set aside. The only one of the three that is stored. |
+| **Spent** | the sum of the line's transactions. Read-only — a budget screen that let you type over the money that actually moved would be a budget screen that lies. |
+| **Available** | budgeted **plus** spent. Money out is negative, so it is a sum. |
+
+Edit **either** budgeted or available and the other follows, because they are
+two views of one stored number. Tapping either offers **=**, **+** and **−**:
+`=` replaces, `+` and `−` change what is there by what you type, from the
+value as it stood when you chose the operator.
+
+Categories and accounts are made in one **Manage** screen, reached from the
+last row of either picker — and nowhere else, so there is one place that knows
+what a new one starts as.
+
+The add form takes a **Name**, a **Category** (a dropdown of lines, grouped by
+category, that filters as you type), an **Amount**, and a **Description**. The
+date is a small calendar beside the name, starting on today.
 
 **Amounts fill from the cents.** `450` is $4.50 and `1234` is $12.34, the way
 a card terminal works, because nearly every amount in a ledger has cents in

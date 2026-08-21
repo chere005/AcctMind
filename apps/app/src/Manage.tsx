@@ -11,7 +11,7 @@ import {
   Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { PALETTE, amountInput, formatAmount, parseAmount } from '@acctmind/core';
+import { PALETTE } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SPACE, T, TAP } from './theme';
 
@@ -20,7 +20,6 @@ export type ManageRow = {
   name: string;
   color: string;
   /** Categories carry assigned money; accounts do not. */
-  budget?: number | undefined;
 };
 
 export function Manage({ visible, label, rows, onClose, onAdd, onChange, onDelete }: {
@@ -74,7 +73,6 @@ function Item({ row, onChange, onDelete }: {
   onDelete: (row: ManageRow) => void;
 }) {
   const [swatch, setSwatch] = useState(false);
-  const money = row.budget !== undefined;
 
   return (
     <View style={styles.item} testID={`manage-row-${row.id}`}>
@@ -118,26 +116,6 @@ function Item({ row, onChange, onDelete }: {
         </View>
       )}
 
-      {money && (
-        <View style={styles.budgetRow}>
-          <Text style={styles.budgetLabel}>Assigned</Text>
-          <TextInput
-            defaultValue={row.budget === 0 ? '' : amountInput(row.budget ?? 0)}
-            onChangeText={(text) => {
-              // The full parser, not the entry rules: this is a considered
-              // number typed once, not a running total tapped in at a till.
-              const cents = parseAmount(text);
-              if (cents !== null) onChange({ ...row, budget: cents });
-              if (text.trim() === '') onChange({ ...row, budget: 0 });
-            }}
-            style={styles.budget}
-            placeholder={formatAmount(0)}
-            placeholderTextColor={T.faint}
-            inputMode="text"
-            testID={`manage-budget-${row.id}`}
-          />
-        </View>
-      )}
     </View>
   );
 }

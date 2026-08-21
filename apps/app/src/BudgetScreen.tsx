@@ -1,55 +1,63 @@
 /**
- * The Budget tab: categories, what each has assigned, and what has actually
- * gone through it.
+ * The Budget tab: categories, the lines inside them, and three numbers each.
  *
- * The same section shape as Transactions, deliberately — one picker, one
- * collapse, one set of colours — because they are two views of one ledger and
- * a person should not have to learn the screen twice.
+ * A category is a HEADING and budgets nothing of its own — Sean, 2026-08-21,
+ * and the + beside its name adds a line rather than a transaction. The money
+ * lives on the lines, and each one shows:
+ *
+ *   BUDGETED   set aside. The only stored number of the three.
+ *   SPENT      the sum of the transactions filed against the line.
+ *   AVAILABLE  budgeted plus spent — see core/budget.ts for why plus.
+ *
+ * The category's own row shows those three summed over its lines, so a
+ * folded category still answers the question the tab exists for.
  */
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  formatAmount, total, type Category, type Txn,
+  availableOf, formatAmount, total,
+  type Category, type Line, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { BarRow, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
-export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManage, onAdd }: {
+export type LinePick = { line: Line; spent: number };
+
+export function BudgetScreen({
+  txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine, onEditLine,
+}: {
   txns: readonly Txn[];
   categories: readonly Category[];
+  lines: readonly Line[];
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the category manager — the only place a category is made. */
   onManage: () => void;
-  /**
-   * Add a transaction already filed under this category.
-   *
-   * Sean, 2026-08-21: "An add button by the category name is fine." It is the
-   * same gesture Accounts has on the other tab, and it carries the one thing
-   * the press already knows — pressing + beside Groceries means Groceries.
-   */
-  onAdd: (category: string) => void;
+  /** The + beside a category: a new line inside it. */
+  onAddLine: (category: string) => void;
+  /** Tapping a line — its name or either number — opens it. */
+  onEditLine: (pick: LinePick) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
 
   const shown = view === null ? categories : categories.filter((c) => c.id === view);
-  const assigned = shown.reduce((n, c) => n + c.budget, 0);
-  // What has actually moved through each category. Spent is money OUT, so it
-  // is the negative half — a refund landing in a category should reduce what
-  // it has used, not add to it.
-  const spentIn = (id: string) => total(txns.filter((t) => t.category === id));
+  /** What has actually moved through a line. Negative for spending. */
+  const spentOn = (id: string) => total(txns.filter((t) => t.category === id));
+  const linesIn = (id: string) =>
+    lines.filter((l) => l.category === id).slice().sort((a, b) => a.order - b.order);
+
+  const assigned = shown.reduce(
+    (n, c) => n + linesIn(c.id).reduce((m, l) => m + l.budget, 0), 0,
+  );
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
 
   return (
     <View style={styles.fill}>
-      {/* The same bar as Transactions, because they are two views of one
-          ledger — see TopBar. Budget has no controls of its own yet; the
-          picker sits where the picker always sits. */}
       <TopBar
         title="Budget"
         titleTestID="budget-title"
@@ -69,10 +77,11 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
       />
 
       <BarRow>
-        <Text style={styles.total} testID="budget-assigned">{formatAmount(assigned)} assigned</Text>
+        <Text style={styles.total} testID="budget-assigned">
+          {formatAmount(assigned)} assigned
+        </Text>
       </BarRow>
 
-      {/* Scrolls only when there is something to scroll — see TransactionsScreen. */}
       <ScrollView contentContainerStyle={styles.list} scrollEnabled={shown.length > 0}>
         {shown.length === 0 && (
           <View style={styles.empty} testID="budget-empty">
@@ -83,7 +92,9 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
 
         {shown.map((c) => {
           const shut = collapsed.includes(c.id);
-          const rows = txns.filter((t) => t.category === c.id);
+          const rows = linesIn(c.id);
+          const budgeted = rows.reduce((n, l) => n + l.budget, 0);
+          const spent = rows.reduce((n, l) => n + spentOn(l.id), 0);
           return (
             <View key={c.id} testID="category-section" style={styles.section}>
               <View style={styles.head}>
@@ -97,15 +108,28 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
                   <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
                   <Dot colors={[c.color]} size={11} />
                   <Text style={styles.headName} numberOfLines={1}>{c.name}</Text>
-                  <Text style={styles.headSum}>
-                    {formatAmount(spentIn(c.id))} of {formatAmount(c.budget)}
-                  </Text>
+                  {/*
+                    ONE number on the heading, not three.
+                    
+                    It carried all three at first and the category's NAME was
+                    what gave: three 68-point columns plus the + leave about
+                    eighty points on a phone, so `Groceries` drew as `Groc…`.
+                    Available is the number a folded category has to answer —
+                    "is there any left" — and the other two are one tap away.
+                  */}
+                  <Money
+                    style={styles.headNum}
+                    cents={availableOf(budgeted, spent)}
+                    testID={`category-available-${c.id}`}
+                    tone
+                  />
                 </Pressable>
+                {/* Adds a LINE, not a transaction. */}
                 <Pressable
-                  onPress={() => onAdd(c.id)}
+                  onPress={() => onAddLine(c.id)}
                   style={styles.headAdd}
                   accessibilityRole="button"
-                  accessibilityLabel={`Add to ${c.name}`}
+                  accessibilityLabel={`Add a line to ${c.name}`}
                   testID={`category-add-${c.id}`}
                 >
                   <Text style={styles.headAddText}>+</Text>
@@ -114,15 +138,44 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
 
               {!shut && rows.length === 0 && (
                 <Text style={styles.sectionEmpty} testID="category-empty">
-                  Nothing filed here yet
+                  Nothing budgeted here yet — tap + to add a line
                 </Text>
               )}
-              {!shut && rows.map((t) => (
-                <View key={t.id} style={styles.row} testID="budget-row">
-                  <Text style={styles.rowName} numberOfLines={1}>{t.name}</Text>
-                  <Text style={styles.rowAmount}>{formatAmount(t.amount)}</Text>
+
+              {!shut && rows.length > 0 && (
+                <View style={styles.colHead}>
+                  <Text style={[styles.colLabel, styles.colName]} />
+                  <Text style={styles.colLabel}>Budgeted</Text>
+                  <Text style={styles.colLabel}>Spent</Text>
+                  <Text style={styles.colLabel}>Available</Text>
                 </View>
-              ))}
+              )}
+
+              {!shut && rows.map((l) => {
+                const spentHere = spentOn(l.id);
+                return (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => onEditLine({ line: l, spent: spentHere })}
+                    style={styles.row}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${l.name}, ${formatAmount(l.budget)} budgeted`}
+                    testID={`line-row-${l.id}`}
+                  >
+                    <Text style={[styles.rowName, styles.colName]} numberOfLines={1}>
+                      {l.name === '' ? 'Untitled' : l.name}
+                    </Text>
+                    <Money style={styles.rowNum} cents={l.budget} testID={`line-budgeted-${l.id}`} />
+                    <Money style={styles.rowNum} cents={spentHere} testID={`line-spent-${l.id}`} />
+                    <Money
+                      style={styles.rowNum}
+                      cents={availableOf(l.budget, spentHere)}
+                      testID={`line-available-${l.id}`}
+                      tone
+                    />
+                  </Pressable>
+                );
+              })}
             </View>
           );
         })}
@@ -131,13 +184,31 @@ export function BudgetScreen({ txns, categories, collapsed, onCollapsed, onManag
   );
 }
 
+/**
+ * A money column.
+ *
+ * `tone` colours it: an overspent line is the one thing on this screen that
+ * has to be seen without reading, and it is the only place red is used here.
+ */
+function Money({ cents, style, testID, tone = false }: {
+  cents: number; style: object; testID: string; tone?: boolean;
+}) {
+  return (
+    <Text
+      style={[style, tone && cents < 0 && styles.over, tone && cents > 0 && styles.under]}
+      numberOfLines={1}
+      testID={testID}
+    >
+      {formatAmount(cents)}
+    </Text>
+  );
+}
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
-  // The same list as Transactions, to the point — one ledger, two views of
-  // it, and a person should not have to learn the screen twice.
   list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
-  section: { gap: SPACE.sm },
+  section: { gap: SPACE.xs },
   head: {
     flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
@@ -146,19 +217,33 @@ const styles = StyleSheet.create({
   chev: { color: T.dim, fontSize: 15, width: 20, height: 20, lineHeight: 20, textAlign: 'center' },
   chevShut: { transform: [{ rotate: '-90deg' }] },
   // Gold, like every section name in the app — see theme.ts.
-  headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flex: 1 },
-  headSum: { color: T.dim, fontSize: 13, fontVariant: ['tabular-nums'] },
+  headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flex: 1, minWidth: 0 },
+  headNum: {
+    color: T.dim, fontSize: 13, lineHeight: 18, flexShrink: 0,
+    textAlign: 'right', fontVariant: ['tabular-nums'],
+  },
   headAdd: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
   headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
+  colHead: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingTop: SPACE.xs },
+  colLabel: {
+    color: T.faint, fontSize: 10, width: 68, textAlign: 'right',
+    textTransform: 'uppercase', letterSpacing: 0.4,
+  },
+  colName: { flex: 1, minWidth: 0, textAlign: 'left' },
   row: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: 10, paddingVertical: SPACE.sm, minHeight: 36,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
+    paddingVertical: SPACE.sm, minHeight: 36,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
-  rowName: { color: T.text, fontSize: 16, lineHeight: 20, flex: 1 },
-  rowAmount: { color: T.dim, fontSize: 16, lineHeight: 20, fontVariant: ['tabular-nums'] },
-  // An open section with nothing in it says so. Left blank it reads as a
-  // section that failed to load rather than one nothing has been filed under.
+  rowName: { color: T.text, fontSize: 15, lineHeight: 20 },
+  rowNum: {
+    color: T.text, fontSize: 13, lineHeight: 18, width: 68,
+    textAlign: 'right', fontVariant: ['tabular-nums'],
+  },
+  // Overspent. The only red on this screen, because it is the only thing here
+  // that has to be seen without being read.
+  over: { color: T.danger },
+  under: { color: T.positive },
   sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm },
   empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },

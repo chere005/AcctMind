@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   amountInput, amountIsNegative, cleanAmountText, draftOf, emptyDraft, entryCents,
   formatAmount, formatDay, isValid, toggleAmountSign, today, validateDraft,
-  type AmountMode, type Category, type Draft, type DraftErrors, type Txn,
+  type AmountMode, type Category, type Draft, type DraftErrors, type Line, type Txn,
 } from '@acctmind/core';
 import { CategoryPick } from './CategoryPick';
 import { DayPicker } from './DayPicker';
@@ -38,8 +38,10 @@ type Props = {
   account: string;
   /** The category it starts filed under, when the + that opened this knew one. */
   category?: string | null | undefined;
-  /** Everything a transaction can be filed under. */
+  /** The categories, for the picker's grouping and colours. */
   categories: readonly Category[];
+  /** Everything a transaction can be filed under — the LINES, since v4. */
+  lines: readonly Line[];
   /**
    * How bare digits are read. Owned by the screen behind this one, because it
    * is a setting that outlives any one entry — see TransactionsScreen.
@@ -48,7 +50,7 @@ type Props = {
 };
 
 export function AddTransaction({
-  visible, onSave, onCancel, editing, mode, account, category = null, categories,
+  visible, onSave, onCancel, editing, mode, account, category = null, categories, lines,
 }: Props) {
   const [draft, setDraft] = useState<Draft>(() => emptyDraft(today(), account, category));
   const [errors, setErrors] = useState<DraftErrors>({});
@@ -191,6 +193,7 @@ export function AddTransaction({
             <Field label="Category">
               <CategoryPick
                 categories={categories}
+                lines={lines}
                 value={draft.category}
                 onPick={(id) => setDraft((d) => ({ ...d, category: id }))}
               />

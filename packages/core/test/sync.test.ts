@@ -17,7 +17,7 @@ const ACCT = {
   id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0,
 };
 const store = (txns: Txn[]): Store =>
-  ({ v: STORE_VERSION, txns, accounts: [ACCT], categories: [] });
+  ({ v: STORE_VERSION, txns, accounts: [ACCT], categories: [], lines: [] });
 const NOW = 2_000_000_000_000;
 
 describe('rule 1 — an absent remote is not an empty ledger', () => {

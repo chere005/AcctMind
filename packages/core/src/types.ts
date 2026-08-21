@@ -45,16 +45,37 @@ export type Account = Record_ & {
 };
 
 /**
- * A budget line: a name, a colour, and money assigned to it.
+ * A heading on the Budget tab: a name, a colour, and the lines under it.
  *
- * Sections on the Budget tab, and what a transaction can be filed under. A
- * transaction may have NO category — money moves before anyone decides what
- * it was — so the link is nullable in one direction only.
+ * A category BUDGETS NOTHING of its own. It used to carry the money, and the
+ * money moved down to `Line` in v4 — a category's budgeted amount is the sum
+ * of its lines, which is a thing to compute and never a thing to store. Two
+ * numbers that must agree are two numbers that eventually will not.
  */
 export type Category = Record_ & {
   name: string;
   color: string;
-  /** Assigned money, in integer MINOR UNITS. Never a float, like every amount. */
+  order: number;
+};
+
+/**
+ * A budget line: money set aside inside a category.
+ *
+ * The leaf, and what a transaction is actually filed under. Three numbers are
+ * shown against one of these and only ONE of them lives here:
+ *
+ *   · `budget` — set aside. Stored, because it is a decision someone made.
+ *   · spent — the sum of this line's transactions. Derived from the ledger.
+ *   · available — `budget + spent`. Derived. See budget.ts.
+ *
+ * A transaction may have NO line — money moves before anyone decides what it
+ * was — so the link is nullable in one direction only.
+ */
+export type Line = Record_ & {
+  name: string;
+  /** The category this sits under. Always a real category id. */
+  category: string;
+  /** Money set aside, in integer MINOR UNITS. Never a float, like every amount. */
   budget: number;
   order: number;
 };
@@ -121,10 +142,11 @@ export type DraftErrors = Partial<Record<keyof Draft, string>>;
  * able to reach them all at once.
  */
 export type Store = {
-  v: 3;
+  v: 4;
   txns: Txn[];
   accounts: Account[];
   categories: Category[];
+  lines: Line[];
 };
 
 /** What the one account a migrated store gets is called. */
@@ -142,5 +164,13 @@ export const DEFAULT_ACCOUNT_NAME = 'Account';
  *        record with a real id from the moment it is created, because the
  *        alternative — a magic 'default' string — is a thing two devices can
  *        both invent separately and then never reconcile.
+ *   v4 — budget LINES. A category stopped holding money and became a heading;
+ *        the money, and the transactions, moved to a line underneath it. The
+ *        migration gives every existing category one line carrying its old
+ *        name and its old budget, and re-points that category's transactions
+ *        at it. The line's id is DERIVED from the category's, for the same
+ *        reason v3's account is a real record: two devices upgrading the same
+ *        ledger independently have to land on the same ids, or the next merge
+ *        shows every budget twice.
  */
-export const STORE_VERSION = 3 as const;
+export const STORE_VERSION = 4 as const;

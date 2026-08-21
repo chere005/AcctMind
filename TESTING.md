@@ -104,6 +104,20 @@ written and checked there will fail on mobile for a reason that has nothing to
 do with the code under test. `sections.spec.ts` carries the note at the one
 place it bit.
 
+## The v4 migration, and why it is unit-tested rather than spec'd
+
+Store v4 moved the money off the category and onto a line underneath it, and
+re-filed every transaction from the category to that line. Seven cases in
+`store.test.ts` cover it, including the two that matter most: the line's id is
+DERIVED from the category's, so a phone and a Mac upgrading the same ledger
+independently land on the same record instead of two lines holding the same
+money; and the line keeps the category's merge clock, so neither device wins a
+merge it has no new information for. All five plausible ways to get it wrong
+were tried and all five went red.
+
+There is still no `spec/` vector for any migration — that remains the gap it
+was, and it matters more now that there are two of them.
+
 ## What the harness cannot drive at all
 
 React-native-web's `PanResponder` does not engage under Playwright's synthetic
@@ -117,6 +131,19 @@ honest response is to move the DECISION into core and check the wiring by eye:
   What the suite still checks is whether the handle is OFFERED, per sort mode,
   and that hiding it does not move the row's contents. The drag itself was
   checked on a simulator, by hand.
+
+## Two tests that flake under full parallel load
+
+Both read GEOMETRY or COMPUTED STYLE right after an interaction, and both have
+failed once each in a full parallel run and passed on every rerun and in
+isolation: `rowactions.spec.ts` "the action cluster … leaves the name alone"
+and `persist.spec.ts` "a store written by an older run loads". The reading
+appears to race a layout pass when four workers are contending.
+
+They are recorded rather than quietly rerun until green. If either starts
+failing more than occasionally, the fix is to wait on the thing being measured
+rather than to raise a timeout — a geometry assertion that needs a sleep is an
+assertion about the wrong moment.
 
 ## A check that was watched failing at nothing
 

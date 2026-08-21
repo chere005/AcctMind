@@ -64,11 +64,12 @@ export function mergeStores(mine: Store, theirs: Store): Store {
   return {
     v: STORE_VERSION,
     txns: mergeRecords(mine.txns, theirs.txns),
-    // Accounts and categories merge too, and must: a transaction points at an
-    // account by id, so an account that reached only one device would leave
-    // its rows with nowhere to be drawn on the other.
+    // Accounts, categories and lines merge too, and must: a transaction points
+    // at an account and a line by id, so a record that reached only one device
+    // would leave its rows with nowhere to be drawn on the other.
     accounts: mergeRecords(mine.accounts, theirs.accounts),
     categories: mergeRecords(mine.categories, theirs.categories),
+    lines: mergeRecords(mine.lines, theirs.lines),
   };
 }
 
@@ -126,6 +127,7 @@ export function prune(store: Store, now: number, ttl: number = TOMBSTONE_TTL_MS)
     txns: fresh(store.txns),
     accounts: fresh(store.accounts),
     categories: fresh(store.categories),
+    lines: fresh(store.lines),
   };
 }
 
@@ -147,6 +149,7 @@ export function canonical(store: Store): Store {
     txns: byId(store.txns),
     accounts: byId(store.accounts),
     categories: byId(store.categories),
+    lines: byId(store.lines),
   };
 }
 

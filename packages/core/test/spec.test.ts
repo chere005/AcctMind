@@ -9,9 +9,11 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, addMonths, cleanAmountText, dayOf, dayToDate, entryCents, formatAmount,
-  formatDay, isDay, monthGrid, monthLabel, parseAmount, sortTxns, toggleAmountSign,
+  addDays, addMonths, applyOp, availableOf, budgetFor, cleanAmountText, dayOf,
+  dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
+  parseAmount, sortTxns, toggleAmountSign,
 } from '../src/index';
+import type { AmountOp } from '../src/index';
 import type { AmountMode } from '../src/index';
 import type { SortMode, Txn } from '../src/index';
 
@@ -184,4 +186,34 @@ describe('spec/sortmodes.json', () => {
       expect(sortTxns(txns, c.mode).map((t) => t.id)).toEqual(c.out);
     });
   }
+});
+
+describe('spec/budget.json', () => {
+  const b = spec<{
+    available: [number, number, number][];
+    roundTrip: [number, number][];
+    ops: [number, AmountOp, number, number | null][];
+  }>('budget');
+
+  it('available is budgeted PLUS spent — money out is negative', () => {
+    for (const [budget, spent, want] of b.available) {
+      expect(availableOf(budget, spent), `${budget} / ${spent}`).toBe(want);
+    }
+  });
+
+  it('budgetFor is the exact inverse, both ways round', () => {
+    for (const [available, spent] of b.roundTrip) {
+      const budget = budgetFor(available, spent);
+      // The identity the two-way edit rests on: type into either field and
+      // the other one follows, with nothing lost on the way back.
+      expect(availableOf(budget, spent), `${available} / ${spent}`).toBe(available);
+      expect(budgetFor(availableOf(budget, spent), spent)).toBe(budget);
+    }
+  });
+
+  it('the operator picker', () => {
+    for (const [current, op, typed, want] of b.ops) {
+      expect(applyOp(current, op, typed), `${current} ${op} ${typed}`).toBe(want);
+    }
+  });
 });
