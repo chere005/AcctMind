@@ -26,5 +26,5 @@
     "@playwright/test": "^1.62.1",
     "typescript": "~6.0.3"
   },
-  "license": "MIT"
+  "license": "BSD-3-Clause"
 }

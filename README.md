@@ -194,7 +194,8 @@ where anything is written. Every guard is re-proven on each run of
 
 ## Licence
 
-MIT — see `LICENSE`. Do what you like with it; keep the copyright line.
+BSD 3-Clause — see `LICENSE`. The same licence seancheren-site uses, so the
+repositories agree rather than each having their own answer.
 
 The dependency tree is MIT/ISC/Apache/BSD throughout, with no copyleft that
 would conflict with the App Store's terms. `node-forge` reports
