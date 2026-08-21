@@ -1,5 +1,9 @@
 # AcctMind
 
+Feel free to deploy this on your own website, build and deploy the iOS version, etc.
+
+**This is a personal project to have some fun with claude code, which generated essentially all of the code, and the rest of this readme:**
+
 A ledger. One list of transactions, on every screen Sean owns.
 
 Six surfaces — web, iOS, Android, watch, macOS, Windows — from two builds and
