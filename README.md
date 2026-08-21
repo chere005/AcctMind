@@ -191,3 +191,12 @@ where anything is written. Every guard is re-proven on each run of
 `npm run test:deploy` by breaking a copy of the script and watching it stop.
 
 `TESTING.md` is what the tests are worth. `AGENTS.md` is how to work in here.
+
+## Licence
+
+MIT — see `LICENSE`. Do what you like with it; keep the copyright line.
+
+The dependency tree is MIT/ISC/Apache/BSD throughout, with no copyleft that
+would conflict with the App Store's terms. `node-forge` reports
+`BSD-3-Clause OR GPL-2.0`; it is dual-licensed, the BSD side applies, and it
+is build tooling that never reaches the binary.
