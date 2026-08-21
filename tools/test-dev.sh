@@ -22,6 +22,9 @@ npm run -s test:core -- --reporter=dot
 echo "==> server"
 npm run -s test:server
 
+echo "==> version"
+npm run -s test:version | tail -1
+
 echo "==> peer service"
 npm run -s test:peer | tail -1
 

@@ -60,7 +60,11 @@ module.exports = {
   expo: {
     name: 'AcctMind',
     slug: 'acctmind',
-    version: '0.1.0',
+    // Kept in step with the root package.json — and with the git tag — by
+    // tools/check-version.mjs. It said 0.1.0 through three tagged releases,
+    // so the build on a phone claimed to be a version from days earlier and
+    // nothing anywhere disagreed.
+    version: '0.4.0',
     orientation: 'portrait',
     // Both generated from assets/logo-square.svg by tools/make-icons.sh.
     // Never edit a PNG here by hand — re-run the script, so one change to

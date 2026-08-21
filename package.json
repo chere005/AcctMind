@@ -7,7 +7,7 @@
     "desktop"
   ],
   "scripts": {
-    "test": "npm run typecheck && npm run test:core && npm run test:peer && npm run test:server && npm run test:deploy && npm run test:e2e",
+    "test": "npm run typecheck && npm run test:core && npm run test:peer && npm run test:version && npm run test:server && npm run test:deploy && npm run test:e2e",
     "test:dev": "sh tools/test-dev.sh",
     "test:core": "npm -w @acctmind/core run test -- --run",
     "test:server": "php server/tools/test.php",
@@ -20,11 +20,13 @@
     "web": "npm -w app run web",
     "export:web": "npm -w app exec expo export -- -p web && node tools/patch-web-html.mjs",
     "deploy": "sh deploy.sh",
-    "deploy:quick": "sh deploy.sh --quick"
+    "deploy:quick": "sh deploy.sh --quick",
+    "test:version": "node tools/check-version.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "typescript": "~6.0.3"
   },
-  "license": "BSD-3-Clause"
+  "license": "BSD-3-Clause",
+  "version": "0.4.0"
 }
