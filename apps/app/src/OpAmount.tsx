@@ -103,7 +103,7 @@ export function OpAmount({
         testID={testID}
       />
       {/* UNDERNEATH the field — Sean's placement. */}
-      <View style={styles.ops}>
+      <View style={[styles.ops, compact && styles.opsCompact]}>
         {AMOUNT_OPS.map((o) => (
           <Pressable
             key={o}
@@ -152,10 +152,21 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
   ops: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
-  inputCompact: { fontSize: 17, minHeight: 38, paddingHorizontal: SPACE.sm },
-  opCompact: { width: 36, height: 36, borderRadius: 18 },
-  opTextCompact: { fontSize: 16 },
-  resultCompact: { fontSize: 13 },
+  opsCompact: { gap: SPACE.xs },
+  /*
+   * The compact size, asked for three times and shrunk each time. The buttons
+   * are 30 in a 30 box, well under this app's usual 44.
+   *
+   * That is a deliberate exception and the only one of its kind here: the box
+   * is meant to be a little thing under one number, three of these plus the
+   * running total have to fit inside 168 points, and a 44 would make the box
+   * wider than the column it hangs from. Noted once rather than argued each
+   * time it comes up.
+   */
+  inputCompact: { fontSize: 15, minHeight: 30, paddingHorizontal: SPACE.sm },
+  opCompact: { width: 30, height: 30, borderRadius: 15 },
+  opTextCompact: { fontSize: 14 },
+  resultCompact: { fontSize: 11 },
   // Drawn at TAP, like every control in this app — hitSlop is a no-op on web.
   op: {
     width: TAP, height: TAP, borderRadius: TAP / 2,

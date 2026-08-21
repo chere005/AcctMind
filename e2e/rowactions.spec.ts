@@ -515,3 +515,40 @@ test('in edit mode a tap picks the row instead of editing a field', async ({ pag
   await expect(page.getByTestId('txn-name-input')).toHaveCount(0);
   await expect(page.getByTestId('picked-total')).toContainText('1 selected');
 });
+
+test('the inline amount has a − beside it, and pressing it does not commit', async ({ page }) => {
+  // Sean, 2026-08-21. The sign is the thing most often wrong about an amount
+  // — a payment typed as income is wrong by twice its own size — and reaching
+  // for the keyboard's minus to fix it is a worse gesture than a button that
+  // is already there.
+  //
+  // The trap it hides: pressing the button BLURS the field, and blur is what
+  // commits. Without a guard the editor closed and wrote the old value before
+  // the flip applied, so the button appeared to do nothing at all.
+  await fresh(page);
+  await addTransaction(page, { name: 'Refund', amount: '-450' });
+
+  await page.getByTestId('txn-amount-tap').click();
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('-4.50');
+
+  await page.getByTestId('txn-amount-sign').click();
+  // Still open — the press must not have committed — and the sign has flipped.
+  await expect(page.getByTestId('txn-amount-input')).toBeVisible();
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('4.50');
+
+  await page.getByTestId('txn-amount-input').press('Enter');
+  await expect(page.getByTestId('txn-amount')).toHaveText('$4.50');
+  await expect(page.getByTestId('total')).toHaveText('$4.50');
+});
+
+test('and flipping it back leaves the row where it started', async ({ page }) => {
+  // Two presses is a no-op, which is only true if the button reads the TEXT
+  // rather than keeping a sign of its own.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await page.getByTestId('txn-amount-tap').click();
+  await page.getByTestId('txn-amount-sign').click();
+  await page.getByTestId('txn-amount-sign').click();
+  await page.getByTestId('txn-amount-input').press('Enter');
+  await expect(page.getByTestId('txn-amount')).toHaveText('-$4.50');
+});

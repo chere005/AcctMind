@@ -8,8 +8,8 @@ import {
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  amountInput, claimsSwipe, cleanAmountText, entryCents, formatAmount, formatDay,
-  selectedTotal, sortTxns, swipeArms, toggleSelected, total,
+  amountInput, amountIsNegative, claimsSwipe, cleanAmountText, entryCents, formatAmount,
+  formatDay, selectedTotal, sortTxns, swipeArms, toggleAmountSign, toggleSelected, total,
   type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -704,34 +704,112 @@ function InlineText({ value, style, onDone, testID }: {
 }
 
 /**
- * The same, for an amount.
+ * The same, for an amount, with a − beside it.
  *
- * Seeded with the CANONICAL string rather than the raw digits, and read back
- * through the entry rules — the same pair the add form uses, so a number
- * typed here and a number typed there mean the same thing. An unparseable
- * value commits nothing rather than writing a zero.
+ * Sean, 2026-08-21: a smaller field and a − button to its left. The sign is
+ * the thing most often wrong about an amount in a ledger — a payment typed as
+ * income is wrong by twice its own size — and reaching for a keyboard's minus
+ * to fix it is a worse gesture than a button that is already there.
+ *
+ * The sign lives in the TEXT, as a leading '-', exactly as it does on the add
+ * form. One source of truth means the button and the keyboard cannot
+ * disagree, which they would the moment the sign became a second piece of
+ * state.
+ *
+ * Seeded with the CANONICAL string and read back through the entry rules —
+ * the same pair the add form uses, so a number typed here and one typed there
+ * mean the same thing. An unparseable value commits nothing rather than
+ * writing a zero.
  */
+/**
+ * Stop a press from moving focus off whatever has it. WEB ONLY.
+ *
+ * `preventDefault` on mousedown is what keeps a text field focused when a
+ * button beside it is pressed. Without it the field blurs, and blur is what
+ * commits — so the − flipped the sign and closed the editor in the same
+ * gesture, which looked like the button doing nothing. A guard flag did not
+ * save it either: whether `onPressIn` lands before the blur is not something
+ * to bet on across two platforms.
+ *
+ * Typed loosely because it is a DOM prop react-native-web passes through and
+ * the React Native types do not describe. Inert on a device, where a touch
+ * does not move focus this way.
+ */
+const KEEP_FOCUS = {
+  onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
+} as unknown as Record<string, unknown>;
+
 function InlineAmount({ value, onDone, testID }: {
   value: number;
   onDone: (next: number | null) => void;
   testID: string;
 }) {
   const [text, setText] = useState(() => amountInput(value));
+  const field = useRef<TextInput>(null);
+  /*
+   * Pressing the − BLURS the field, and blur is what commits.
+   *
+   * Without this the sign button closed the editor and wrote the value before
+   * the flip was applied — the button appeared to do nothing at all. The flag
+   * is set on pressIN, which lands before the blur, so the blur handler knows
+   * to sit this one out and hand focus back. CalMind's edit cluster carries
+   * the same machinery for the same reason.
+   */
+  const flipping = useRef(false);
   const done = () => onDone(entryCents(cleanAmountText(text), 'cents'));
+
   return (
-    <TextInput
-      value={text}
-      onChangeText={(raw) => setText(cleanAmountText(raw))}
-      onBlur={done}
-      onSubmitEditing={done}
-      style={[styles.amount, styles.inlineField, styles.inlineAmount]}
-      autoFocus
-      selectTextOnFocus
-      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-      inputMode="text"
-      returnKeyType="done"
-      testID={testID}
-    />
+    <View style={styles.inlineAmountRow}>
+      <Pressable
+        /*
+         * The flip happens on pressIN, not on press, and that ordering is the
+         * whole fix.
+         *
+         * Pressing the button blurs the field, and blur is what commits. With
+         * the flip on `onPress` — after the blur — the editor closed and wrote
+         * the OLD value, so the button appeared to do nothing at all. A guard
+         * flag alone did not save it either: whether pressIn beats blur is not
+         * something to bet on across web and native.
+         *
+         * Doing the flip first makes the outcome right under BOTH orderings.
+         * If the guard holds, the field stays open showing the new sign; if
+         * the blur wins anyway, what it commits is the flipped value. The
+         * refocus below is the nicety, not the correctness.
+         */
+        onPressIn={() => {
+          flipping.current = true;
+          setText((t) => toggleAmountSign(t));
+        }}
+        onPress={() => { field.current?.focus(); }}
+        {...KEEP_FOCUS}
+        style={[styles.inlineSign, amountIsNegative(text) && styles.inlineSignOn]}
+        accessibilityRole="button"
+        accessibilityLabel="Negative"
+        accessibilityState={{ selected: amountIsNegative(text) }}
+        testID="txn-amount-sign"
+      >
+        <Text style={[styles.inlineSignText, amountIsNegative(text) && styles.inlineSignTextOn]}>
+          −
+        </Text>
+      </Pressable>
+      <TextInput
+        ref={field}
+        value={text}
+        onChangeText={(raw) => setText(cleanAmountText(raw))}
+        onBlur={() => {
+          if (flipping.current) { flipping.current = false; return; }
+          done();
+        }}
+        onSubmitEditing={done}
+        style={[styles.amount, styles.inlineField, styles.inlineAmount]}
+        autoFocus
+        selectTextOnFocus
+        keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+        inputMode="text"
+        returnKeyType="done"
+        testID={testID}
+      />
+    </View>
   );
 }
 
@@ -915,7 +993,21 @@ const styles = StyleSheet.create({
   // No padding and no border of its own: a field that swaps in for text has
   // to occupy exactly what the text did, or the row moves as it is touched.
   inlineField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
-  inlineAmount: { minWidth: 90 },
+  // Smaller — Sean, 2026-08-21. It was 90 wide at the row's own 16pt, which
+  // is more room than any amount in the list needs and pushed the date off
+  // the edge on a narrow phone.
+  inlineAmount: { minWidth: 64, fontSize: 14 },
+  inlineAmountRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
+  // 24, not 44: it lives inside a 36-point row beside a field, and a control
+  // taller than its row is the bug the action cluster already had.
+  inlineSign: {
+    width: 24, height: 24, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: T.card, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
+  inlineSignOn: { backgroundColor: T.accent, borderColor: T.accent },
+  inlineSignText: { color: T.dim, fontSize: 14, fontWeight: '700' },
+  inlineSignTextOn: { color: '#ffffff' },
   // The target: as tall as the row and no taller — see Action.
   actionHit: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   action: {

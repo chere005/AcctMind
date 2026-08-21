@@ -200,17 +200,36 @@ test('tapping away COMMITS — it is the other way out, not a cancel', async ({ 
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$300.00');
 });
 
-test('the box is small, and sits under the column it belongs to', async ({ page }) => {
-  // "very small, like a little box directly underneath" — a claim about
-  // geometry, so it is measured. It used to span the page.
+test('the box is small, centred under what was tapped, and never off-screen', async ({ page }) => {
+  // "very small, like a little box directly underneath... close to centered
+  // but obviously adjusting for the edges of the screen" — three claims about
+  // geometry, so all three are measured.
   const line = await seed(page);
-  const cell = await page.getByTestId(`line-budgeted-tap-${line}`).boundingBox();
-  await tapAmount(page, line, 'budgeted');
-  const box = await page.getByTestId('pad-amount').boundingBox();
-  const page_ = page.viewportSize();
+  const view = page.viewportSize()!;
 
-  // Narrow: nowhere near the full width.
-  expect(box!.width).toBeLessThan(page_!.width * 0.75);
-  // Below the cell it belongs to, not parked at the top of the screen.
-  expect(box!.y).toBeGreaterThan(cell!.y);
+  // BUDGETED sits in the middle of the row's numbers, so a centred box fits
+  // and no clamp applies: its centre should land on the cell's.
+  const mid = await page.getByTestId(`line-budgeted-tap-${line}`).boundingBox();
+  await tapAmount(page, line, 'budgeted');
+  const onMid = await page.getByTestId('pad-amount').boundingBox();
+
+  // Under half the screen. It has been asked to be smaller three times;
+  // the number here moves with it so the claim stays worth checking.
+  expect(onMid!.width).toBeLessThan(view.width * 0.5);
+  expect(onMid!.y).toBeGreaterThan(mid!.y);
+  expect(Math.abs((onMid!.x + onMid!.width / 2) - (mid!.x + mid!.width / 2))).toBeLessThan(12);
+
+  await commit(page);
+
+  // AVAILABLE is the last column, where centring would push the box off the
+  // right edge. It stops at the margin instead — which is the whole reason
+  // centring needs a clamp rather than just being a nicer default.
+  const end = await page.getByTestId(`line-available-tap-${line}`).boundingBox();
+  await tapAmount(page, line, 'available');
+  const onEnd = await page.getByTestId('pad-amount').boundingBox();
+
+  expect(onEnd!.x + onEnd!.width).toBeLessThanOrEqual(view.width);
+  expect(onEnd!.x).toBeGreaterThanOrEqual(0);
+  // Genuinely clamped: pushed left of where a centred box would have gone.
+  expect(onEnd!.x + onEnd!.width / 2).toBeLessThan(end!.x + end!.width / 2);
 });

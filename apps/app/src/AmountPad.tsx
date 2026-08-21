@@ -26,8 +26,14 @@ import { SPACE, T } from './theme';
 /** Where the tapped amount sits, in window coordinates. */
 export type Anchor = { x: number; y: number; w: number; h: number };
 
-/** Wide enough for three small buttons and the running total, and no wider. */
-const BOX = 214;
+/**
+ * Wide enough for three small buttons and the running total, and no wider.
+ *
+ * 168, down from 214 and then 200 — Sean asked for smaller three times, so
+ * this is the size he means rather than the size that felt safe. Everything
+ * in it shrank with it; see OpAmount's compact styles.
+ */
+const BOX = 168;
 
 export function AmountPad({ visible, value, anchor, onValue, onDone }: {
   visible: boolean;
@@ -53,14 +59,24 @@ export function AmountPad({ visible, value, anchor, onValue, onDone }: {
     : flip ? { bottom: screenH - anchor.y + 4 } : { top: below };
 
   /*
-   * Right edges aligned: the amounts are right-aligned in their column, so
-   * lining the box up with the tapped cell's right edge is what makes it read
-   * as belonging to that number. Clamped to stay on screen.
+   * CENTRED on the tapped cell, then clamped to the screen.
+   *
+   * It was aligned to the cell's right edge, on the reasoning that the
+   * amounts are right-aligned so their right edge is where the eye is. Sean,
+   * 2026-08-21: centred. Which is the better rule anyway — a box under the
+   * middle of what you touched reads as belonging to it from either side,
+   * where a right-aligned one leans away from a cell near the left of its
+   * column.
+   *
+   * The clamp is what makes centring safe rather than clever: the rightmost
+   * column would put a centred box off the edge of the screen, so it stops
+   * at the margin instead. Nothing is ever partly off-screen, and nothing
+   * needs a special case for the first or last column.
    */
-  const right = (anchor?.x ?? 0) + (anchor?.w ?? 0);
+  const middle = (anchor?.x ?? 0) + (anchor?.w ?? 0) / 2;
   const left = anchor === null
     ? (screenW - BOX) / 2
-    : Math.max(SPACE.sm, Math.min(screenW - BOX - SPACE.sm, right - BOX));
+    : Math.max(SPACE.sm, Math.min(screenW - BOX - SPACE.sm, middle - BOX / 2));
 
   return (
     <Modal transparent animationType="none" onRequestClose={onDone}>
@@ -80,7 +96,7 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1 },
   box: {
     position: 'absolute',
-    borderRadius: 12, padding: SPACE.sm, gap: SPACE.xs,
+    borderRadius: 10, padding: SPACE.xs + 2, gap: SPACE.xs,
     backgroundColor: T.bg,
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
     // It floats over the list rather than replacing it, so it needs to read

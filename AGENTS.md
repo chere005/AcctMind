@@ -101,14 +101,33 @@ version check reads the generated `Info.plist` for that reason.
   the add form stayed open. Updaters are pure. Compute from current state in
   the handler and call the effect there. Pinned by `e2e/add.spec.ts`.
 
-- **`npx expo run:ios` for a SIMULATOR never exits.** It builds, installs,
-  launches — and then stays attached streaming the app's own log. A script
-  that ends with `echo "STATUS=$?"` therefore never writes that line, and a
-  monitor waiting for it waits until it times out while the app has been
-  running happily for twenty minutes. The giveaway in the log is RUNTIME
-  chatter (`RCTScrollViewComponentView`, `SyncedDefaults`) where build output
-  should be. Either background it and watch for the launch, or build with
-  `xcodebuild` and install separately, as the device path already does.
+- **`npx expo run:ios` for a SIMULATOR never exits, and the processes it
+  leaves behind will eventually RACE each other.** It builds, installs,
+  launches — and then stays attached streaming the app's own log, so a script
+  ending in `echo "STATUS=$?"` never writes that line and a monitor waits out
+  its whole timeout while the app has been running for twenty minutes. The
+  giveaway in the log is RUNTIME chatter (`RCTScrollViewComponentView`,
+  `SyncedDefaults`) where build output should be.
+
+  The second half is worse. Every run leaves the process alive, and three of
+  them accumulated before two `xcodebuild`s collided:
+
+      unable to attach DB ... database is locked. Possibly there are two
+      concurrent builds running in the same filesystem location.
+
+  What that cost was not the failed build — it was half an hour spent
+  diagnosing a layout bug from a SCREENSHOT OF THE WRONG BINARY. With builds
+  racing, which app got installed is a coin toss, and the screen is then
+  evidence about code that is not the code in front of you. The placement
+  being debugged turned out to be correct; on-screen instrumentation printing
+  the measured numbers is what proved it.
+
+  **Do not use `expo run:ios` for the simulator.** `tools`' sim script does
+  what the device path does — `xcodebuild -destination "platform=iOS
+  Simulator,id=<udid>"`, then `simctl install`, then `simctl launch` — which
+  ends, reports a status per step, and kills leftovers before touching the
+  build database. And when a screenshot disagrees with the code, check that
+  the build actually installed before believing either.
 
 - **`npx expo run:ios --device` HANGS on a locked phone, after a successful
   build.** The build finishes, the install starts, and then it sits on
