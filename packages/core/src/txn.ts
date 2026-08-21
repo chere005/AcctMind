@@ -83,6 +83,34 @@ export function emptyDraft(day: string, account: string, category: string | null
   return { name: '', description: '', amount: '', date: day, account, category };
 }
 
+/* ------------------------------------------------------------------ *
+ * Choosing several rows at once.
+ *
+ * Sean, 2026-08-21: "in edit mode allow for selecting multiple
+ * transactions.. when multiple transactions are selected, show the sum of
+ * their amounts." Which is the whole point of it — "what did this weekend
+ * cost" is a question a ledger should answer by tapping four rows, not by
+ * adding them up by hand.
+ * ------------------------------------------------------------------ */
+
+/** Add an id to the selection, or take it out. */
+export function toggleSelected(ids: readonly string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
+}
+
+/**
+ * The sum of the selected rows, in cents.
+ *
+ * Ids that no longer name a transaction are SKIPPED rather than counted as
+ * zero or thrown over — a row can be deleted on another device while it sits
+ * selected here, and a selection that outlives its row must not make the
+ * total wrong or the screen crash. It just stops contributing.
+ */
+export function selectedTotal(txns: readonly Txn[], ids: readonly string[]): number {
+  const want = new Set(ids);
+  return txns.reduce((sum, t) => (want.has(t.id) ? sum + t.amount : sum), 0);
+}
+
 /** The sum, in cents. Integers throughout — see money.ts. */
 export function total(txns: readonly Txn[]): number {
   return txns.reduce((sum, t) => sum + t.amount, 0);

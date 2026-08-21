@@ -88,7 +88,7 @@ module.exports = {
        * of the eleven times I built that release is on the phone". They are
        * different questions and need different numbers.
        */
-      buildNumber: '1',
+      buildNumber: '5',
       infoPlist: {
         /*
          * Local-network sync, and the reason it needs no paid membership.

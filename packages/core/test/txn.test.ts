@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  reorder, respace, sortTxns, swipeArms, total, txnText, validateDraft,
+  reorder, respace, selectedTotal, sortTxns, swipeArms, toggleSelected, total,
+  txnText, validateDraft,
 } from '../src/index';
 
 /** The form always knows its account, so the test fixture supplies one too. */
@@ -388,5 +389,46 @@ describe('the swipe, as rules rather than as a gesture', () => {
     // The claim distance must sit below the delete distance, or a swipe would
     // engage and then be incapable of ever completing.
     expect(SWIPE_CLAIM_PX).toBeLessThan(SWIPE_ARM_PX);
+  });
+});
+
+describe('selecting several rows', () => {
+  const t = (id: string, amount: number): Txn => ({
+    id, name: id, description: '', amount, date: '2026-08-20',
+    account: 'a1', category: null, order: 0, created: 1, updated: 1,
+  });
+  const rows = [t('a', -450), t('b', 240000), t('c', -185050)];
+
+  it('toggles in and out', () => {
+    expect(toggleSelected([], 'a')).toEqual(['a']);
+    expect(toggleSelected(['a'], 'b')).toEqual(['a', 'b']);
+    expect(toggleSelected(['a', 'b'], 'a')).toEqual(['b']);
+    expect(toggleSelected(['a'], 'a')).toEqual([]);
+  });
+
+  it('does not add the same id twice', () => {
+    // A double tap that both selected would leave a row that takes two taps
+    // to clear and counts twice in the sum.
+    expect(toggleSelected(['a'], 'a')).toEqual([]);
+    expect(toggleSelected(toggleSelected([], 'a'), 'a')).toEqual([]);
+  });
+
+  it('sums what is selected, and nothing else', () => {
+    expect(selectedTotal(rows, [])).toBe(0);
+    expect(selectedTotal(rows, ['a'])).toBe(-450);
+    expect(selectedTotal(rows, ['a', 'c'])).toBe(-185500);
+    expect(selectedTotal(rows, ['a', 'b', 'c'])).toBe(54500);
+  });
+
+  it('skips an id whose row has gone', () => {
+    // A row can be deleted on ANOTHER DEVICE while it sits selected here. It
+    // must stop contributing rather than making the total wrong or throwing.
+    expect(selectedTotal(rows, ['a', 'vanished'])).toBe(-450);
+    expect(selectedTotal(rows, ['vanished'])).toBe(0);
+    expect(selectedTotal([], ['a'])).toBe(0);
+  });
+
+  it('counts a row once however many times its id appears', () => {
+    expect(selectedTotal(rows, ['a', 'a'])).toBe(-450);
   });
 });

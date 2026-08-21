@@ -1,5 +1,11 @@
 /**
- * Holding a row down: edit, duplicate, copy, delete.
+ * Edit mode: the pencil, then edit, duplicate, copy, delete on every row.
+ *
+ * It used to be a HOLD on one row. Sean, 2026-08-21: "put a pencil icon
+ * button at the top for edit mode... no more holding or double tapping for
+ * edit mode or having to exit edit mode in this app." A hold is a mode you
+ * can enter by accident, on a gesture with no affordance, and it was also the
+ * gesture the swipe kept stealing.
  *
  * Every assertion here checks the DEVICE as well as the screen where the
  * ledger changed. A row that vanishes from a list and survives in storage is
@@ -12,38 +18,21 @@ import { addTransaction, fresh, pickSort, reload, rows, stored } from './helpers
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
-/** Hold a row until its actions appear. */
-async function hold(page: Page, index = 0): Promise<void> {
-  const row = page.getByTestId('txn-row-body').nth(index);
-  const box = await row.boundingBox();
-  if (box === null) throw new Error('the row has no box to press');
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  // Longer than the platform's long-press threshold, and short enough that a
-  // failure reads as a failure rather than a hang.
-  await page.waitForTimeout(700);
-  await page.mouse.up();
-  await expect(page.getByTestId('row-actions')).toBeVisible();
-}
-
-
 /**
- * Close an open row.
+ * Turn edit mode on from the pencil in the top bar.
  *
- * Clicked to the LEFT on purpose: the buttons are right-aligned and on a
- * phone they reach most of the way across, so the middle of the row — where a
- * click lands by default — is a button. A person dismisses by tapping the
- * empty part, and so does this.
+ * Named `hold` no longer — there is no hold. Every row shows its controls at
+ * once, so the index a caller used to pass is gone with it.
  */
-async function dismiss(page: Page): Promise<void> {
-  await page.getByTestId('row-actions-dismiss').click({ position: { x: 6, y: 10 } });
-  await expect(page.getByTestId('row-actions')).toBeHidden();
+async function edit(page: Page): Promise<void> {
+  await page.getByTestId('edit-toggle').click();
+  await expect(page.getByTestId('row-actions').first()).toBeVisible();
 }
 
 test('a held row offers the four actions, delete furthest right', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
+  await edit(page);
 
   for (const id of ['row-edit', 'row-duplicate', 'row-copy', 'row-delete']) {
     await expect(page.getByTestId(id)).toBeVisible();
@@ -61,20 +50,11 @@ test('a held row offers the four actions, delete furthest right', async ({ page 
   expect(xs[2]).toBeLessThan(xs[3] ?? 0);
 });
 
-test('nothing offers actions until a row is actually held', async ({ page }) => {
-  await fresh(page);
-  await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await expect(page.getByTestId('row-actions')).toBeHidden();
-  // A plain tap is not a hold.
-  await page.getByTestId('txn-row-body').first().click();
-  await expect(page.getByTestId('row-actions')).toBeHidden();
-});
-
 test('delete leaves a tombstone, not an absence', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await page.getByTestId('row-delete').click();
+  await edit(page);
+  await page.getByTestId('row-delete').first().click();
 
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
   await expect(page.getByTestId('empty-state')).toBeVisible();
@@ -91,8 +71,8 @@ test('delete leaves a tombstone, not an absence', async ({ page }) => {
 test('a deleted row stays deleted across a reload', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await page.getByTestId('row-delete').click();
+  await edit(page);
+  await page.getByTestId('row-delete').first().click();
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
 
   await reload(page);
@@ -102,8 +82,8 @@ test('a deleted row stays deleted across a reload', async ({ page }) => {
 test('duplicate makes a second, separate transaction', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await page.getByTestId('row-duplicate').click();
+  await edit(page);
+  await page.getByTestId('row-duplicate').first().click();
 
   await expect(page.getByTestId('txn-row')).toHaveCount(2);
   await expect(page.getByTestId('total')).toHaveText('$9.00');
@@ -121,8 +101,8 @@ test('edit opens the row filled in, and replaces it rather than adding', async (
   await addTransaction(page, { name: 'Coffee', description: 'co-op', amount: '450' });
   const before = (await stored(page) as Stored).txns[0]?.id;
 
-  await hold(page);
-  await page.getByTestId('row-edit').click();
+  await edit(page);
+  await page.getByTestId('row-edit').first().click();
   await expect(page.getByTestId('save-button')).toBeVisible();
 
   // Filled in from the record, with the amount in canonical form so it reads
@@ -147,8 +127,8 @@ test('edit opens the row filled in, and replaces it rather than adding', async (
 test('an edit that changes the amount re-reads it under the entry rules', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await page.getByTestId('row-edit').click();
+  await edit(page);
+  await page.getByTestId('row-edit').first().click();
   await page.getByTestId('amount-input').fill('1275');
   await expect(page.getByTestId('amount-preview')).toHaveText('$12.75');
   await page.getByTestId('save-button').click();
@@ -161,8 +141,8 @@ test('cancelling an edit changes nothing', async ({ page }) => {
   await addTransaction(page, { name: 'Coffee', amount: '450' });
   const before = await stored(page);
 
-  await hold(page);
-  await page.getByTestId('row-edit').click();
+  await edit(page);
+  await page.getByTestId('row-edit').first().click();
   await page.getByTestId('name-input').fill('Tea');
   await page.getByTestId('cancel-button').click();
   await expect(page.getByTestId('cancel-button')).toBeHidden();
@@ -175,8 +155,8 @@ test('the add button still adds, after an edit', async ({ page }) => {
   // Left set, the next + would silently overwrite the row last edited.
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await page.getByTestId('row-edit').click();
+  await edit(page);
+  await page.getByTestId('row-edit').first().click();
   await page.getByTestId('cancel-button').click();
 
   await addTransaction(page, { name: 'Tea', amount: '300' });
@@ -204,31 +184,37 @@ test('the drag grip is offered in custom order, and only there', async ({ page }
   const gripOpacity = () => page.getByTestId('row-grip').first()
     .evaluate((el) => getComputedStyle(el).opacity);
 
-  // Date order: no hand order to keep, so no handle. A row moved here would
-  // be put back by the next render, which reads as the app ignoring you.
+  // Not in edit mode: no handle, whatever the sort. Dragging is an editing
+  // gesture and lives behind the pencil with the rest of them.
+  await pickSort(page, 'custom');
   expect(await gripOpacity()).toBe('0');
 
-  await pickSort(page, 'custom');
+  await edit(page);
   expect(await gripOpacity()).toBe('1');
 
+  // And still gated on the ORDER: a row moved by hand in date order would be
+  // put back by the next render, which reads as the app ignoring you.
+  await page.getByTestId('edit-toggle').click();
   await pickSort(page, 'amount');
+  await edit(page);
   expect(await gripOpacity()).toBe('0');
 });
 
-test('the grip keeps its space, so changing sort moves nothing else', async ({ page }) => {
+test('the grip keeps its space, so entering edit mode moves nothing', async ({ page }) => {
   // The reason the grip is hidden by opacity rather than by being absent.
   // Measured, because "it does not shift" is a claim about geometry and
   // nothing else in the suite would notice a four-pixel jump.
   await fresh(page);
   await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
   await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+  await pickSort(page, 'custom');
 
   const nameX = async () => {
     const box = await page.getByTestId('txn-name').first().boundingBox();
     return box?.x ?? -1;
   };
   const before = await nameX();
-  await pickSort(page, 'custom');
+  await edit(page);
   expect(await nameX()).toBe(before);
 });
 
@@ -279,8 +265,8 @@ test('opening a row moves nothing, and stays inside the row', async ({ page }) =
     els.map((el) => { const r = el.getBoundingClientRect(); return { y: r.y, h: r.height }; }));
 
   const before = await boxes();
-  await hold(page);
-  await expect(page.getByTestId('row-actions')).toBeVisible();
+  await edit(page);
+  await expect(page.getByTestId('row-actions').first()).toBeVisible();
 
   // Nothing reflowed…
   expect(await boxes()).toEqual(before);
@@ -289,7 +275,7 @@ test('opening a row moves nothing, and stays inside the row', async ({ page }) =
   // hanging over the row above or below.
   const row = await page.getByTestId('txn-row').first().boundingBox();
   for (const id of ['row-edit', 'row-duplicate', 'row-copy', 'row-delete']) {
-    const btn = await page.getByTestId(id).boundingBox();
+    const btn = await page.getByTestId(id).first().boundingBox();
     expect(btn, id).not.toBeNull();
     expect(btn!.y, `${id} top`).toBeGreaterThanOrEqual(row!.y - 0.5);
     expect(btn!.y + btn!.height, `${id} bottom`)
@@ -310,8 +296,8 @@ test('the action cluster hides what it covers, and leaves the name alone', async
   // the same shape of check the transparent-row bug needed.
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  const bg = await page.getByTestId('row-action-cluster')
+  await edit(page);
+  const bg = await page.getByTestId('row-action-cluster').first()
     .evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(bg).not.toBe('rgba(0, 0, 0, 0)');
   // No alpha channel: `rgba(…, 0.93)` would be the old translucent one back.
@@ -322,7 +308,7 @@ test('the action cluster hides what it covers, and leaves the name alone', async
   // box is the whole left side of the row however short the word in it is —
   // comparing against that box proves nothing about what is covered.
   const row = await page.getByTestId('txn-row').first().boundingBox();
-  const cluster = await page.getByTestId('row-action-cluster').boundingBox();
+  const cluster = await page.getByTestId('row-action-cluster').first().boundingBox();
   expect(cluster!.x).toBeGreaterThan(row!.x + row!.width * 0.3);
 });
 
@@ -344,15 +330,47 @@ test('a row paints its own background, so a lifted row is not see-through', asyn
   expect(bg).not.toBe('transparent');
 });
 
-test('an opened row can be closed without choosing anything', async ({ page }) => {
-  // The actions cover the row, so the way out has to be in the overlay. With
-  // no dismiss, opening a row by accident leaves four choices and one of them
-  // deletes.
+test('the pencil turns edit mode off again, and choosing an action does too', async ({ page }) => {
+  // "no more... having to exit edit mode": picking anything ends it, so
+  // nobody is left in a mode they have to notice and undo. The pencil is
+  // still a toggle for the case where you changed your mind.
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
-  await hold(page);
-  await dismiss(page);
+
+  await edit(page);
+  await page.getByTestId('edit-toggle').click();
+  await expect(page.getByTestId('row-actions').first()).toBeHidden();
+
+  await edit(page);
+  await page.getByTestId('row-copy').first().click();
+  // Copy changes nothing about the ledger, so what is being watched here is
+  // only that the mode ended.
+  await expect(page.getByTestId('row-actions').first()).toBeHidden();
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
+});
+
+test('every row shows its controls at once, not just the one you touched', async ({ page }) => {
+  // The substance of the change: it is a PAGE mode now, not a row that was
+  // held. With one row at a time, reordering or deleting three things meant
+  // three separate holds.
+  await fresh(page);
+  await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
+  await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+  await edit(page);
+  await expect(page.getByTestId('row-actions')).toHaveCount(2);
+});
+
+test('nothing offers actions until the pencil is pressed', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '450' });
+  await expect(page.getByTestId('row-actions')).toHaveCount(0);
+  // And a hold does nothing at all now — the gesture is gone.
+  const box = await page.getByTestId('txn-row-body').first().boundingBox();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(700);
+  await page.mouse.up();
+  await expect(page.getByTestId('row-actions')).toHaveCount(0);
 });
 
 /*
@@ -369,3 +387,131 @@ test('an opened row can be closed without choosing anything', async ({ page }) =
  * that shipped broken as a named case. They run everywhere and need no
  * finger. What is left unproven here is only that the handler CALLS them.
  */
+
+test('rows are picked out in edit mode, and the bar says what they come to', async ({ page }) => {
+  // Sean, 2026-08-21: "in edit mode allow for selecting multiple
+  // transactions.. when multiple transactions are selected, show the sum of
+  // their amounts." Which is the point of it — "what did this weekend cost"
+  // should be four taps, not four numbers added by hand.
+  await fresh(page);
+  await addTransaction(page, { name: 'a', amount: '-450', day: '2026-08-20' });
+  await addTransaction(page, { name: 'b', amount: '-1250', day: '2026-08-19' });
+  await addTransaction(page, { name: 'c', amount: '2400', day: '2026-08-18' });
+
+  // Nothing selected: the running total, as before.
+  // -4.50 + -12.50 + 24.00
+  await expect(page.getByTestId('total')).toHaveText('$7.00');
+  await edit(page);
+  await expect(page.getByTestId('picked-total')).toHaveCount(0);
+
+  await page.getByTestId('txn-row-body').nth(0).click();
+  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
+  await expect(page.getByTestId('picked-total')).toContainText('-$4.50');
+
+  await page.getByTestId('txn-row-body').nth(1).click();
+  await expect(page.getByTestId('picked-total')).toContainText('2 selected');
+  await expect(page.getByTestId('picked-total')).toContainText('-$17.00');
+
+  // Tapping again puts a row back, and the sum follows.
+  await page.getByTestId('txn-row-body').nth(0).click();
+  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
+  await expect(page.getByTestId('picked-total')).toContainText('-$12.50');
+});
+
+test('leaving edit mode clears the selection', async ({ page }) => {
+  // A selection you cannot see is one that will surprise you the next time
+  // the pencil is pressed.
+  await fresh(page);
+  await addTransaction(page, { name: 'a', amount: '-450' });
+  await edit(page);
+  await page.getByTestId('txn-row-body').first().click();
+  await expect(page.getByTestId('picked-total')).toBeVisible();
+
+  await page.getByTestId('edit-toggle').click();
+  await expect(page.getByTestId('total')).toBeVisible();
+  await edit(page);
+  await expect(page.getByTestId('picked-total')).toHaveCount(0);
+});
+
+test('a tap outside edit mode picks nothing', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'a', amount: '-450' });
+  await page.getByTestId('txn-row-body').first().click();
+  await expect(page.getByTestId('picked-total')).toHaveCount(0);
+  await expect(page.getByTestId('total')).toHaveText('-$4.50');
+});
+
+test('a tap on the name edits it in place, and the row does not move', async ({ page }) => {
+  // Sean, 2026-08-21: "a single tap on a transaction's name, amount, or date
+  // should start editing in place." The common change — a typo, a wrong
+  // figure — is one tap now, and the form is for when you want the whole
+  // record.
+  await fresh(page);
+  await addTransaction(page, { name: 'Cofee', amount: '-450' });
+
+  const rowBox = async () => page.getByTestId('txn-row').first().boundingBox();
+  const before = await rowBox();
+
+  await page.getByTestId('txn-name-tap').click();
+  await expect(page.getByTestId('txn-name-input')).toBeVisible();
+  // The field wears the text's own type and no padding, so swapping one for
+  // the other changes no measurement. An inline edit that nudges the row is
+  // worse than a screen: the thing you were aiming at moves as you touch it.
+  const during = await rowBox();
+  expect(during!.height).toBe(before!.height);
+
+  await page.getByTestId('txn-name-input').fill('Coffee');
+  await page.getByTestId('txn-name-input').press('Enter');
+  await expect(page.getByTestId('txn-name')).toHaveText('Coffee');
+
+  // On the RECORD, not just on screen.
+  const s = await stored(page) as Stored;
+  expect(s.txns.find((t) => t.deleted !== true)?.name).toBe('Coffee');
+});
+
+test('a tap on the amount edits it in place, under the same entry rules', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+
+  await page.getByTestId('txn-amount-tap').click();
+  await expect(page.getByTestId('txn-amount-input')).toBeVisible();
+  // Seeded with the canonical string, so it reads the same under either
+  // entry mode — the same pair the add form uses.
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('-4.50');
+
+  await page.getByTestId('txn-amount-input').fill('-1275');
+  await page.getByTestId('txn-amount-input').press('Enter');
+  await expect(page.getByTestId('txn-amount')).toHaveText('-$12.75');
+  await expect(page.getByTestId('total')).toHaveText('-$12.75');
+});
+
+test('an unreadable amount commits nothing rather than writing a zero', async ({ page }) => {
+  // The refusal money.ts exists for, one level up: 1.005 could be 100 cents
+  // or 101 and this app picks neither.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await page.getByTestId('txn-amount-tap').click();
+  await page.getByTestId('txn-amount-input').fill('1.005');
+  await page.getByTestId('txn-amount-input').press('Enter');
+  await expect(page.getByTestId('txn-amount')).toHaveText('-$4.50');
+});
+
+test('an emptied name commits nothing — a nameless row is not an edit', async ({ page }) => {
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await page.getByTestId('txn-name-tap').click();
+  await page.getByTestId('txn-name-input').fill('   ');
+  await page.getByTestId('txn-name-input').press('Enter');
+  await expect(page.getByTestId('txn-name')).toHaveText('Coffee');
+});
+
+test('in edit mode a tap picks the row instead of editing a field', async ({ page }) => {
+  // What a tap does depends on the mode and only on the mode. Both behaviours
+  // on one gesture would make every selection a coin toss.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await edit(page);
+  await page.getByTestId('txn-name-tap').click();
+  await expect(page.getByTestId('txn-name-input')).toHaveCount(0);
+  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
+});

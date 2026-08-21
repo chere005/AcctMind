@@ -44,21 +44,38 @@ async function seed(page: Page): Promise<string> {
   return liveLines(await stored(page) as Stored)[0]?.id ?? '';
 }
 
-/** Tap one of a line's editable numbers. Opens the pad. */
+/** Tap one of a line's editable numbers. Opens the box. */
 async function tapAmount(page: Page, id: string, field: 'budgeted' | 'available'): Promise<void> {
   await page.getByTestId(`line-${field}-tap-${id}`).click();
   await expect(page.getByTestId('pad-amount')).toBeVisible();
 }
 
-test('the pad opens over the list, not instead of it', async ({ page }) => {
-  // It was a full screen and that was the wrong weight: changing one number
-  // is a two-second thought, and a screen that hides the list you were
-  // reading to decide costs more than the edit does.
+/** Finish the edit with Return — one of the two ways out, and there is no Done. */
+async function commit(page: Page): Promise<void> {
+  await page.getByTestId('pad-amount').press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+}
+
+test('the pad opens over the list, and the page is still READABLE behind it', async ({ page }) => {
+  // Two goes at this. It was a full screen first — the wrong weight for a
+  // two-second thought. Then it was a small card behind a `#00000088`
+  // backdrop, which Sean rejected again: on a near-black app a 53%-black wash
+  // makes everything behind it invisible, so the list you were reading to
+  // decide the number was gone anyway.
+  //
+  // `toBeVisible()` could not tell those apart. Every row is still "visible"
+  // under a wash — it is in the tree, laid out, non-zero. What separates a
+  // readable page from a hidden one is whether the thing on top of it PAINTS,
+  // so that is what this reads. Same shape as the transparent-row check.
   const line = await seed(page);
   await tapAmount(page, line, 'budgeted');
-  // The row behind it is still there, and no full editor opened.
+
   await expect(page.getByTestId(`line-row-${line}`)).toBeVisible();
   await expect(page.getByTestId('line-save')).toBeHidden();
+
+  const wash = await page.getByTestId('pad-backdrop')
+    .evaluate((el) => getComputedStyle(el).backgroundColor);
+  expect(wash === 'rgba(0, 0, 0, 0)' || wash === 'transparent').toBe(true);
 });
 
 test('the pad defaults to +', async ({ page }) => {
@@ -76,8 +93,7 @@ test('= replaces the value', async ({ page }) => {
   await tapAmount(page, line, 'budgeted');
   await page.getByTestId('pad-amount-op-set').click();
   await page.getByTestId('pad-amount').fill('80');
-  await page.getByTestId('pad-done').click();
-  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  await commit(page);
   expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(8000);
 });
 
@@ -87,8 +103,7 @@ test('+ adds to what is already there', async ({ page }) => {
   await page.getByTestId('pad-amount-op-add').click();
   await page.getByTestId('pad-amount').fill('20');
   await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
-  await page.getByTestId('pad-done').click();
-  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  await commit(page);
   expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(27000);
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$270.00');
 });
@@ -101,8 +116,7 @@ test('− subtracts, and can take a line below zero', async ({ page }) => {
   await page.getByTestId('pad-amount-op-sub').click();
   await page.getByTestId('pad-amount').fill('300');
   await expect(page.getByTestId('pad-amount-result')).toHaveText('-$50.00');
-  await page.getByTestId('pad-done').click();
-  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  await commit(page);
   expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(-5000);
 });
 
@@ -125,8 +139,7 @@ test('editing AVAILABLE moves what is budgeted, and the two agree', async ({ pag
   await tapAmount(page, line, 'available');
   await page.getByTestId('pad-amount-op-set').click();
   await page.getByTestId('pad-amount').fill('300');
-  await page.getByTestId('pad-done').click();
-  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  await commit(page);
 
   expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(30000);
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$300.00');
@@ -151,8 +164,7 @@ test('and with money already spent, the two still agree', async ({ page }) => {
   await tapAmount(page, line, 'available');
   await page.getByTestId('pad-amount-op-set').click();
   await page.getByTestId('pad-amount').fill('300');
-  await page.getByTestId('pad-done').click();
-  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  await commit(page);
 
   expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(31250);
   await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$300.00');
@@ -169,14 +181,36 @@ test('spent is shown and cannot be typed over', async ({ page }) => {
   await expect(page.getByTestId(`line-spent-tap-${line}`)).toHaveCount(0);
 });
 
-test('the backdrop cancels — nothing typed is written', async ({ page }) => {
+test('tapping away COMMITS — it is the other way out, not a cancel', async ({ page }) => {
+  // Sean, 2026-08-21: "no need for done, the user can just hit return or tap
+  // away." Both finish the edit. This deliberately REVERSES the previous
+  // behaviour, where the backdrop cancelled and a test pinned that — so the
+  // test is rewritten rather than deleted, and says which way round it goes.
+  //
+  // There is no cancel at all now, and that is a real trade: the value is
+  // live, the row behind shows it land, and `−` puts back whatever `+` added.
   const line = await seed(page);
   await tapAmount(page, line, 'budgeted');
   await page.getByTestId('pad-amount-op-add').click();
-  await page.getByTestId('pad-amount').fill('999');
+  await page.getByTestId('pad-amount').fill('50');
   await page.getByTestId('pad-backdrop').click({ position: { x: 5, y: 5 } });
   await expect(page.getByTestId('pad-amount')).toBeHidden();
-  // Untouched: the pad holds what is being typed, and only Done writes it.
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(25000);
-  await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$250.00');
+
+  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(30000);
+  await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$300.00');
+});
+
+test('the box is small, and sits under the column it belongs to', async ({ page }) => {
+  // "very small, like a little box directly underneath" — a claim about
+  // geometry, so it is measured. It used to span the page.
+  const line = await seed(page);
+  const cell = await page.getByTestId(`line-budgeted-tap-${line}`).boundingBox();
+  await tapAmount(page, line, 'budgeted');
+  const box = await page.getByTestId('pad-amount').boundingBox();
+  const page_ = page.viewportSize();
+
+  // Narrow: nowhere near the full width.
+  expect(box!.width).toBeLessThan(page_!.width * 0.75);
+  // Below the cell it belongs to, not parked at the top of the screen.
+  expect(box!.y).toBeGreaterThan(cell!.y);
 });

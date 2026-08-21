@@ -12,7 +12,7 @@
  * The category's own row shows those three summed over its lines, so a
  * folded category still answers the question the tab exists for.
  */
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   availableOf, formatAmount, total,
@@ -26,6 +26,8 @@ import { SPACE, T, TAP } from './theme';
 export type LinePick = { line: Line; spent: number };
 /** Which of a line's two editable numbers was tapped. */
 export type LineField = 'budget' | 'available';
+/** Where a tapped amount sits, in window coordinates. */
+export type Anchor = { x: number; y: number; w: number; h: number };
 
 export function BudgetScreen({
   txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine, onEditLine,
@@ -42,8 +44,14 @@ export function BudgetScreen({
   onAddLine: (category: string) => void;
   /** Tapping a line's NAME opens the full editor — rename, delete. */
   onEditLine: (pick: LinePick) => void;
-  /** Tapping either AMOUNT opens the small pad over this page. */
-  onEditAmount: (pick: LinePick, field: LineField) => void;
+  /**
+   * Tapping either AMOUNT opens the small pad over this page.
+   *
+   * The cell's position on screen goes with it, so the pad can hang off the
+   * row it belongs to rather than being parked at the top away from the
+   * number it is changing.
+   */
+  onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -177,20 +185,18 @@ export function BudgetScreen({
                         screen: changing one number is a two-second thought,
                         and a full editor for it hides the list you were
                         reading to decide. */}
-                    <Pressable
-                      onPress={() => onEditAmount(pick, 'budget')}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Budgeted ${formatAmount(l.budget)}`}
+                    <AmountCell
+                      onPress={(at) => onEditAmount(pick, 'budget', at)}
+                      label={`Budgeted ${formatAmount(l.budget)}`}
                       testID={`line-budgeted-tap-${l.id}`}
                     >
                       <Money style={styles.rowNum} cents={l.budget} testID={`line-budgeted-${l.id}`} />
-                    </Pressable>
+                    </AmountCell>
                     {/* Spent is not tappable. It is what actually moved. */}
                     <Money style={styles.rowNum} cents={spentHere} testID={`line-spent-${l.id}`} />
-                    <Pressable
-                      onPress={() => onEditAmount(pick, 'available')}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Available ${formatAmount(availableOf(l.budget, spentHere))}`}
+                    <AmountCell
+                      onPress={(at) => onEditAmount(pick, 'available', at)}
+                      label={`Available ${formatAmount(availableOf(l.budget, spentHere))}`}
                       testID={`line-available-tap-${l.id}`}
                     >
                       <Money
@@ -199,7 +205,7 @@ export function BudgetScreen({
                         testID={`line-available-${l.id}`}
                         tone
                       />
-                    </Pressable>
+                    </AmountCell>
                   </View>
                 );
               })}
@@ -208,6 +214,40 @@ export function BudgetScreen({
         })}
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * An amount you can tap, which reports WHERE it is.
+ *
+ * `measureInWindow` rather than an onLayout offset: the row sits inside a
+ * ScrollView inside a couple of Views, so a layout position is relative to
+ * whichever parent asked, and the pad is placed against the window. Measuring
+ * at press time also means a scrolled list gives the right answer.
+ */
+function AmountCell({ onPress, label, testID, children }: {
+  onPress: (at: Anchor) => void;
+  label: string;
+  testID: string;
+  children: React.ReactNode;
+}) {
+  const box = useRef<View>(null);
+  return (
+    <Pressable
+      ref={box}
+      onPress={() => {
+        const node = box.current;
+        if (node === null) { onPress({ x: 0, y: 0, w: 0, h: 0 }); return; }
+        // No measurement available is not a failure: the box falls back to
+        // the top of the screen, centred, which is where it used to live.
+        node.measureInWindow((x, y, w, h) => onPress({ x, y, w, h }));
+      }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      testID={testID}
+    >
+      {children}
+    </Pressable>
   );
 }
 

@@ -79,11 +79,23 @@ export function AddTransaction({
       setDraft(start);
       setErrors({});
       setPicking(false);
-      // The amount field is seeded from the CANONICAL string, not the raw
-      // digits: '4.50' carries its own dot and so reads the same under either
-      // entry mode. Seeding '450' would reopen an edit at $4.50 having saved
-      // $450.00, or the reverse, depending on the toggle.
-      setAmountText(cleanAmountText(start.amount));
+      /*
+       * A NEW transaction starts negative — Sean, 2026-08-21.
+       *
+       * Almost everything in a ledger is money going out; income is a handful
+       * of rows a month. Starting positive means tapping − on nearly every
+       * entry, and the one that gets forgotten is a payment recorded as
+       * income, which is wrong by twice its own size.
+       *
+       * A lone '-' is not an amount, so the form still says "Amount is
+       * required" until something is typed — the sign is a default, not a
+       * value.
+       *
+       * An EDIT is seeded from the canonical string instead: '4.50' carries
+       * its own dot and so reads the same under either entry mode, where
+       * '450' would reopen at $4.50 having saved $450.00.
+       */
+      setAmountText(editing === undefined ? '-' : cleanAmountText(start.amount));
     }
   }
 

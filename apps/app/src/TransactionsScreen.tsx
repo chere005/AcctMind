@@ -4,11 +4,12 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import {
-  Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View,
-  type PanResponderInstance,
+  Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text,
+  TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  claimsSwipe, formatAmount, formatDay, sortTxns, swipeArms, total,
+  amountInput, claimsSwipe, cleanAmountText, entryCents, formatAmount, formatDay,
+  selectedTotal, sortTxns, swipeArms, toggleSelected, total,
   type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -29,6 +30,10 @@ type Props = {
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
   /** A row was dragged to a new place in its account. */
   onMove?: ((txn: Txn, shown: readonly Txn[], index: number) => void) | undefined;
+  /** One field of one row was edited in place. */
+  onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
+  /** The date on a row was tapped — the caller opens the day grid. */
+  onDate?: ((txn: Txn) => void) | undefined;
   /**
    * Open the pairing screen. Absent on the surfaces that cannot sync over a
    * local network — the web and Android — so the control is missing rather
@@ -61,7 +66,7 @@ type Props = {
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, onInline, onDate,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const sum = total(txns);
@@ -78,8 +83,42 @@ export function TransactionsScreen({
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
-  /** The row being held open, if any. One at a time, by construction. */
-  const [openId, setOpenId] = useState<string | null>(null);
+  /**
+   * Edit mode, for the whole page.
+   *
+   * Sean, 2026-08-21: "put a pencil icon button at the top for edit mode... no
+   * more holding or double tapping for edit mode or having to exit edit mode
+   * in this app." So the pencil is the only way in, EVERY row shows its
+   * controls at once, and choosing one of them turns edit mode back off —
+   * nobody has to remember they left it on.
+   *
+   * A page flag rather than a row id, and that is the substance of the change
+   * rather than a detail: holding a row meant the app had a mode you could
+   * enter by accident, on a gesture with no affordance, one row at a time.
+   */
+  const [edit, setEdit] = useState(false);
+  /**
+   * The rows picked out in edit mode.
+   *
+   * Cleared when edit mode ends, because a selection you cannot see is a
+   * selection that will surprise you the next time you open the pencil.
+   */
+  const [picked, setPicked] = useState<readonly string[]>([]);
+  /**
+   * The field being typed into in place, if any.
+   *
+   * Sean, 2026-08-21: "a single tap on a transaction's name, amount, or date
+   * should start editing in place (full edit screen can be entered by going
+   * into edit mode then pressing the edit button)." So the common change —
+   * a typo in a name, a wrong amount — costs one tap, and the form is for
+   * when you want the whole record.
+   *
+   * One at a time, held here rather than in the row, so opening a second
+   * closes the first. Two open inline fields is two half-finished edits and
+   * no way to tell which one Return will land on.
+   */
+  const [inline, setInline] = useState<{ id: string; field: 'name' | 'amount' } | null>(null);
+  const leaveEdit = () => { setEdit(false); setPicked([]); };
   /** The sort dropdown, open or not. Owned here so the bar row stays dumb. */
   const [sorting, setSorting] = useState(false);
   /** Is a row mid-drag anywhere? Only the ScrollView needs to know. */
@@ -94,8 +133,7 @@ export function TransactionsScreen({
   const [swipedId, setSwipedId] = useState<string | null>(null);
 
   // A row that stops existing — deleted here, or deleted on another device
-  // mid-gesture — must not leave its action bar behind attached to nothing.
-  if (openId !== null && !txns.some((t) => t.id === openId)) setOpenId(null);
+  // mid-gesture — must not leave a parked delete behind attached to nothing.
   if (swipedId !== null && !txns.some((t) => t.id === swipedId)) setSwipedId(null);
 
   return (
@@ -105,24 +143,18 @@ export function TransactionsScreen({
         titleTestID="title"
         controls={
           <>
-            <CircleBtn
-              glyph={allShut ? '⌄' : '⌃'}
-              on={allShut}
-              onPress={() => onCollapsed(allShut ? [] : shown.map((a) => a.id))}
-              label={allShut ? 'Expand all accounts' : 'Collapse all accounts'}
-              testID="collapse-all"
-            />
-            {/* `.00` reads bare digits as whole dollars. It belongs in the bar
-                rather than in the form: it is a setting that holds between
-                entries, and a switch that reset every time the form opened
-                would have to be found again for every transaction. */}
-            <CircleBtn
-              glyph=".00"
-              on={amountMode === 'whole'}
-              onPress={() => onAmountMode(amountMode === 'whole' ? 'cents' : 'whole')}
-              label="Enter whole dollars"
-              testID="whole-toggle"
-            />
+            {/* The pencil. First, because it is the control that changes what
+                every other row does. */}
+            {onAction !== undefined && (
+              <CircleBtn
+                on={edit}
+                onPress={() => (edit ? leaveEdit() : setEdit(true))}
+                label={edit ? 'Done editing' : 'Edit rows'}
+                testID="edit-toggle"
+              >
+                <PencilIcon color={edit ? '#ffffff' : T.text} />
+              </CircleBtn>
+            )}
             {onDevices !== undefined && (
               <CircleBtn onPress={onDevices} label={peers > 0 ? `Devices, ${peers} connected` : 'Devices'} testID="devices-button">
                 <>
@@ -153,20 +185,58 @@ export function TransactionsScreen({
           so the total moved down here rather than growing the bar into
           something that only nearly matches. */}
       <BarRow>
-        <Text
-          style={[styles.total, sum > 0 && styles.totalUp]}
-          testID="total"
-          accessibilityLabel={`Total ${formatAmount(sum)}`}
-        >
-          {formatAmount(sum)}
-        </Text>
-        <SortPick
-          mode={sort}
-          onPick={onSort}
-          visible={sorting}
-          onOpen={() => setSorting(true)}
-          onClose={() => setSorting(false)}
-        />
+        {/* The selection's sum REPLACES the running total while rows are
+            picked out — "what did this weekend cost" is the question being
+            asked, and two totals side by side is two numbers to tell apart
+            in a row that is already full. */}
+        {picked.length > 0 ? (
+          <Text style={styles.picked} testID="picked-total">
+            {picked.length} selected · {formatAmount(selectedTotal(txns, picked))}
+          </Text>
+        ) : (
+          <Text
+            style={[styles.total, sum > 0 && styles.totalUp]}
+            testID="total"
+            accessibilityLabel={`Total ${formatAmount(sum)}`}
+          >
+            {formatAmount(sum)}
+          </Text>
+        )}
+        {/*
+          The LIST's controls, beside the sort that was already here.
+
+          They were in the top bar, and with the pencil added that made five
+          circles across it: `Transactions` drew as `Transac…`, which is the
+          same overflow the category heading had. The split is not just to
+          make room — the bar is what the screen IS and this row is what the
+          list is doing, and collapse and `.00` were always the second thing.
+        */}
+        <View style={styles.barTools}>
+          <CircleBtn
+            glyph={allShut ? '⌄' : '⌃'}
+            on={allShut}
+            onPress={() => onCollapsed(allShut ? [] : shown.map((a) => a.id))}
+            label={allShut ? 'Expand all accounts' : 'Collapse all accounts'}
+            testID="collapse-all"
+          />
+          {/* `.00` reads bare digits as whole dollars. It is a setting that
+              holds between entries, which is why it is out here and not in
+              the form. */}
+          <CircleBtn
+            glyph=".00"
+            on={amountMode === 'whole'}
+            onPress={() => onAmountMode(amountMode === 'whole' ? 'cents' : 'whole')}
+            label="Enter whole dollars"
+            testID="whole-toggle"
+          />
+          <SortPick
+            mode={sort}
+            onPick={onSort}
+            visible={sorting}
+            onOpen={() => setSorting(true)}
+            onClose={() => setSorting(false)}
+          />
+        </View>
       </BarRow>
 
       {/*
@@ -197,8 +267,14 @@ export function TransactionsScreen({
             shut={collapsed.includes(account.id)}
             onToggle={() => toggle(account.id)}
             onAdd={() => onAdd(account.id)}
-            openId={openId}
-            setOpenId={setOpenId}
+            edit={edit}
+            onEdited={leaveEdit}
+            picked={picked}
+            onPick={(id) => setPicked((p) => toggleSelected(p, id))}
+            inline={inline}
+            setInline={setInline}
+            onInline={onInline}
+            onDate={onDate}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
             onAction={onAction}
@@ -224,16 +300,25 @@ export function TransactionsScreen({
  * number of hooks whenever an account appeared or was filtered away.
  */
 function Section({
-  account, rows, shut, onToggle, onAdd, openId, setOpenId, swipedId, setSwipedId,
-  onAction, onMove, onDragging,
+  account, rows, shut, onToggle, onAdd, edit, onEdited, picked, onPick,
+  inline, setInline, onInline, onDate, swipedId, setSwipedId, onAction, onMove, onDragging,
 }: {
   account: Account;
   rows: readonly Txn[];
   shut: boolean;
   onToggle: () => void;
   onAdd: () => void;
-  openId: string | null;
-  setOpenId: (id: string | null) => void;
+  /** Is the page in edit mode? Every row shows its controls when it is. */
+  edit: boolean;
+  /** An action was chosen — edit mode ends, so nobody has to turn it off. */
+  onEdited: () => void;
+  /** The ids picked out in edit mode. */
+  picked: readonly string[];
+  onPick: (id: string) => void;
+  inline: { id: string; field: 'name' | 'amount' } | null;
+  setInline: (next: { id: string; field: 'name' | 'amount' } | null) => void;
+  onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
+  onDate?: ((txn: Txn) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
@@ -251,7 +336,9 @@ function Section({
   // the render-phase update this repo has already been bitten by once.
   useEffect(() => { onDragging(drag.dragIdx !== null); }, [drag.dragIdx, onDragging]);
 
-  const canMove = onMove !== undefined && rows.length > 1;
+  // The grip is an edit-mode control like the rest. Sorting still gates it:
+  // a hand order the next render would undo is worse than none.
+  const canMove = edit && onMove !== undefined && rows.length > 1;
 
   return (
     <View testID="account-section" style={styles.section}>
@@ -289,15 +376,20 @@ function Section({
           {drag.slot === i && <View style={styles.dropLine} testID="drop-line" />}
           <Row
             txn={t}
-            open={openId === t.id}
-            onOpen={onAction === undefined ? undefined : () => { setSwipedId(null); setOpenId(t.id); }}
-            onClose={() => { setOpenId(null); setSwipedId(null); }}
-            onAction={(a) => { setOpenId(null); setSwipedId(null); onAction?.(a, t); }}
+            edit={edit && onAction !== undefined}
+            picked={picked.includes(t.id)}
+            onPick={() => onPick(t.id)}
+            inline={inline?.id === t.id ? inline.field : null}
+            onOpenInline={(field) => setInline({ id: t.id, field })}
+            onCloseInline={() => setInline(null)}
+            onInline={onInline === undefined ? undefined : (patch) => onInline(t, patch)}
+            onDate={onDate === undefined ? undefined : () => onDate(t)}
+            onAction={(a) => { setSwipedId(null); onEdited(); onAction?.(a, t); }}
             grip={canMove ? drag.gripFor(i) : undefined}
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
             swiped={swipedId === t.id}
-            showing={openId !== null || swipedId !== null}
+            onDismiss={() => setSwipedId(null)}
             onSwipe={() => setSwipedId(t.id)}
           />
         </View>
@@ -308,12 +400,24 @@ function Section({
 }
 
 function Row({
-  txn, open, onOpen, onClose, onAction, grip, lifted, dy, swiped, showing, onSwipe,
+  txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate,
+  onAction, grip, lifted, dy, swiped, onDismiss, onSwipe,
 }: {
   txn: Txn;
-  open: boolean;
-  onOpen?: (() => void) | undefined;
-  onClose: () => void;
+  /** Is the page in edit mode? Then this row shows its controls. */
+  edit: boolean;
+  /** Is this row picked out? */
+  picked: boolean;
+  /** A tap in edit mode picks it, or puts it back. */
+  onPick: () => void;
+  /** Which of this row's fields is being typed into, if any. */
+  inline: 'name' | 'amount' | null;
+  onOpenInline: (field: 'name' | 'amount') => void;
+  onCloseInline: () => void;
+  /** Commit an in-place edit. Absent where the ledger is read-only. */
+  onInline?: ((patch: { name?: string; amount?: number }) => void) | undefined;
+  /** The date was tapped. */
+  onDate?: (() => void) | undefined;
   onAction: (action: RowAction) => void;
   /**
    * Pan handlers for the grip, or nothing when this row cannot be moved.
@@ -329,14 +433,8 @@ function Row({
   dy: number;
   /** Is this row's delete parked at its right edge? */
   swiped: boolean;
-  /**
-   * Is anything showing anywhere — this row's controls or another row's?
-   *
-   * A tap on ANY row puts it away. Without this, an armed delete parked on one
-   * row survived a tap on a different row: a one-press delete left lying under
-   * a finger that has moved on, which is the state this app least wants.
-   */
-  showing: boolean;
+  /** Put away a parked delete — a tap on any row does it. */
+  onDismiss: () => void;
   /** A firm left swipe landed — park the delete. */
   onSwipe: () => void;
 }) {
@@ -373,14 +471,23 @@ function Row({
         {...pan.panHandlers}
       >
       <Pressable
-        onLongPress={onOpen}
-        // A tap puts away whatever is showing — the actions, or a parked
-        // delete. An armed delete that can only be dismissed by using it is
-        // a trap.
-        onPress={showing ? onClose : undefined}
-        // Long-press is invisible, so the row says what it offers.
-        accessibilityHint={onOpen === undefined ? undefined : 'Hold for actions'}
-        style={[styles.row, open && styles.rowOpen, lifted && styles.rowLifted]}
+        /*
+         * What a tap does depends on the mode, and only on the mode.
+         *
+         *  · a parked delete showing — put it away. An armed delete that can
+         *    only be dismissed by using it is a trap.
+         *  · edit mode — pick the row out, or put it back.
+         *  · otherwise — nothing. There is no hold gesture any more and no
+         *    mode to fall into by accident.
+         */
+        onPress={swiped ? onDismiss : edit ? onPick : undefined}
+        style={[
+          styles.row,
+          edit && !picked && styles.rowOpen,
+          picked && styles.rowPicked,
+          lifted && styles.rowLifted,
+        ]}
+        accessibilityState={edit ? { selected: picked } : undefined}
         testID="txn-row-body"
       >
       {/*
@@ -398,43 +505,88 @@ function Row({
       >
         <Text style={styles.gripText}>≡</Text>
       </View>
+      {/*
+        The tick, and its 18 points are reserved ALWAYS — not just in edit
+        mode, and that is the correction rather than the detail.
+        
+        Drawn only when picked, it moved every name in the ledger sideways the
+        moment the pencil was pressed, which is the exact shifting Sean asked
+        to be rid of. The grip already had this rule; the tick was written
+        without it and the geometry test caught it.
+      */}
+      <Text
+        style={[styles.tick, !(edit && picked) && styles.tickOff]}
+        testID="row-tick"
+      >
+        ✓
+      </Text>
       <View style={styles.rowMain}>
-        <Text style={styles.name} numberOfLines={1} testID="txn-name">{txn.name}</Text>
+        {inline === 'name' && onInline !== undefined ? (
+          <InlineText
+            value={txn.name}
+            style={styles.name}
+            onDone={(next) => { onCloseInline(); if (next !== txn.name) onInline({ name: next }); }}
+            testID="txn-name-input"
+          />
+        ) : (
+          <Pressable
+            /*
+             * In edit mode these wrappers must PICK, not do nothing.
+             *
+             * Left as `undefined` they still render a view that swallows the
+             * press, so a tap on the name — which is most of the row —
+             * selected nothing while a tap on the thin strip beside it did.
+             * A tap has one meaning per mode; the wrapper has to carry it too.
+             */
+            onPress={edit ? onPick : onInline === undefined ? undefined : () => onOpenInline('name')}
+            testID="txn-name-tap"
+          >
+            <Text style={styles.name} numberOfLines={1} testID="txn-name">{txn.name}</Text>
+          </Pressable>
+        )}
         {txn.description !== '' && (
           <Text style={styles.desc} numberOfLines={1} testID="txn-description">
             {txn.description}
           </Text>
         )}
       </View>
-      <View style={styles.rowSide}>
-        {/* Money in is the only row that gets a colour. Everything else is
-            an expense, and colouring those red would make the whole list
-            red — which is the same as colouring nothing. */}
-        <Text
-          style={[styles.amount, txn.amount > 0 && styles.amountUp]}
-          testID="txn-amount"
+      {/* Money in is the only row that gets a colour. Everything else is an
+          expense, and colouring those red would make the whole list red —
+          which is the same as colouring nothing. */}
+      {inline === 'amount' && onInline !== undefined ? (
+        <InlineAmount
+          value={txn.amount}
+          onDone={(next) => { onCloseInline(); if (next !== null && next !== txn.amount) onInline({ amount: next }); }}
+          testID="txn-amount-input"
+        />
+      ) : (
+        <Pressable
+          onPress={edit ? onPick : onInline === undefined ? undefined : () => onOpenInline('amount')}
+          testID="txn-amount-tap"
         >
-          {formatAmount(txn.amount)}
-        </Text>
+          <Text
+            style={[styles.amount, txn.amount > 0 && styles.amountUp]}
+            testID="txn-amount"
+          >
+            {formatAmount(txn.amount)}
+          </Text>
+        </Pressable>
+      )}
+      {/* To the RIGHT of the amount, on the same line — Sean, 2026-08-21. It
+          sat under it, which cost every row a second line for four
+          characters and left the amounts and the dates in one ragged
+          column. A tap opens the day grid: a date is picked, never typed. */}
+      <Pressable
+        onPress={edit ? onPick : onDate}
+        testID="txn-date-tap"
+      >
         <Text style={styles.date} testID="txn-date">{formatDay(txn.date)}</Text>
-        </View>
+      </Pressable>
       </Pressable>
       </Animated.View>
 
-      {open && (
+      {edit && (
         <View style={styles.rowActions} testID="row-actions" pointerEvents="box-none">
-          {/*
-            Tapping the row is how you close it — but the row is UNDER this
-            overlay now and cannot be reached, so the way out has to live in
-            here. Without it a person who opens a row by accident has no
-            choice but to pick one of four actions, one of which deletes.
-          */}
-          <Pressable
-            onPress={onClose}
-            style={StyleSheet.absoluteFill}
-            accessibilityLabel="Close actions"
-            testID="row-actions-dismiss"
-          />
           {/*
             Right to left: delete, copy, duplicate, edit. Delete is the one
             that cannot be undone, so it sits furthest from where a thumb
@@ -450,7 +602,14 @@ function Row({
             cluster covers what it must and no more; the name stays where it
             was, which is the point of not shifting anything.
           */}
-          <View style={styles.actionCluster} testID="row-action-cluster">
+          {/* The cluster paints its own opaque ground so the text under it
+              reads as elided. That ground has to follow the row's STATE as
+              well: left at T.bg, a picked row's tint stopped dead where the
+              buttons began and the row looked half-painted. */}
+          <View
+            style={[styles.actionCluster, picked && styles.actionClusterPicked]}
+            testID="row-action-cluster"
+          >
             <Action label="Edit" onPress={() => onAction('edit')} testID="row-edit">
               <PencilIcon />
             </Action>
@@ -481,7 +640,7 @@ function Row({
         It is armed: the swipe was the decision, this is the confirmation, and
         one tap deletes. Tapping the row instead puts it away.
       */}
-      {swiped && !open && (
+      {swiped && !edit && (
         <View style={styles.swipePark} testID="swipe-park">
           <Action label="Delete" onPress={() => onAction('delete')} testID="swipe-delete" danger>
             <XIcon />
@@ -506,6 +665,73 @@ function ShareIcon() {
       <Text style={styles.shareArrow}>↑</Text>
       <View style={styles.shareTray} />
     </View>
+  );
+}
+
+/**
+ * A row's text, swapped for a field in place.
+ *
+ * The field wears the SAME type and no padding of its own, so swapping one
+ * for the other changes no measurement — the row is 36 and stays 36. CalMind
+ * learned this the hard way on its inline editor and says so in its styles;
+ * an inline edit that nudges the row is worse than a screen, because the
+ * thing you were aiming at moves as you touch it.
+ *
+ * Blur commits, and so does Return. There is no cancel and no confirm: the
+ * change is one field, it is visible the moment it lands, and tapping it
+ * again is how it is undone.
+ */
+function InlineText({ value, style, onDone, testID }: {
+  value: string;
+  style: object;
+  onDone: (next: string) => void;
+  testID: string;
+}) {
+  const [text, setText] = useState(value);
+  return (
+    <TextInput
+      value={text}
+      onChangeText={setText}
+      onBlur={() => onDone(text.trim())}
+      onSubmitEditing={() => onDone(text.trim())}
+      style={[style, styles.inlineField]}
+      autoFocus
+      selectTextOnFocus
+      returnKeyType="done"
+      testID={testID}
+    />
+  );
+}
+
+/**
+ * The same, for an amount.
+ *
+ * Seeded with the CANONICAL string rather than the raw digits, and read back
+ * through the entry rules — the same pair the add form uses, so a number
+ * typed here and a number typed there mean the same thing. An unparseable
+ * value commits nothing rather than writing a zero.
+ */
+function InlineAmount({ value, onDone, testID }: {
+  value: number;
+  onDone: (next: number | null) => void;
+  testID: string;
+}) {
+  const [text, setText] = useState(() => amountInput(value));
+  const done = () => onDone(entryCents(cleanAmountText(text), 'cents'));
+  return (
+    <TextInput
+      value={text}
+      onChangeText={(raw) => setText(cleanAmountText(raw))}
+      onBlur={done}
+      onSubmitEditing={done}
+      style={[styles.amount, styles.inlineField, styles.inlineAmount]}
+      autoFocus
+      selectTextOnFocus
+      keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+      inputMode="text"
+      returnKeyType="done"
+      testID={testID}
+    />
   );
 }
 
@@ -550,6 +776,8 @@ const styles = StyleSheet.create({
   },
   title: { color: T.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.5 },
   total: { color: T.dim, fontSize: 15, marginTop: 2 },
+  picked: { color: T.accent, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  barTools: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
   totalUp: { color: T.positive },
   // Drawn at TAP, not padded up to it: hitSlop does nothing on the web.
   add: {
@@ -644,6 +872,12 @@ const styles = StyleSheet.create({
     backgroundColor: T.bg,
   },
   rowOpen: { opacity: 0.55 },
+  // A picked row comes back to full strength and gets a tinted ground: in
+  // edit mode everything is dimmed, so being NOT dimmed is what reads as
+  // chosen without adding another colour to the row.
+  rowPicked: { backgroundColor: T.card },
+  tick: { color: T.accent, fontSize: 15, fontWeight: '700', width: 18, textAlign: 'center' },
+  tickOff: { opacity: 0 },
   // The dragged row dims and rides the finger. It does not grow, tilt or cast
   // a shadow: the list is holding still around it, and the only question the
   // feedback has to answer is "which row am I holding".
@@ -672,11 +906,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
     paddingLeft: SPACE.md, backgroundColor: T.bg,
   },
+  actionClusterPicked: { backgroundColor: T.card },
   swipePark: {
     position: 'absolute', right: 0, top: 0, bottom: 0,
     flexDirection: 'row', alignItems: 'center',
     paddingLeft: SPACE.md, backgroundColor: T.bg,
   },
+  // No padding and no border of its own: a field that swaps in for text has
+  // to occupy exactly what the text did, or the row moves as it is touched.
+  inlineField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
+  inlineAmount: { minWidth: 90 },
   // The target: as tall as the row and no taller — see Action.
   actionHit: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   action: {
@@ -686,12 +925,16 @@ const styles = StyleSheet.create({
   },
   actionDanger: { backgroundColor: T.danger, borderColor: T.danger },
   rowMain: { flex: 1, gap: 1, minWidth: 0 },
-  rowSide: { alignItems: 'flex-end', gap: 1 },
   name: { color: T.text, fontSize: 16, lineHeight: 20 },
   desc: { color: T.dim, fontSize: 13, lineHeight: 16 },
-  amount: { color: T.text, fontSize: 16, lineHeight: 20, fontVariant: ['tabular-nums'] },
+  amount: {
+    color: T.text, fontSize: 16, lineHeight: 20,
+    fontVariant: ['tabular-nums'], textAlign: 'right',
+  },
   amountUp: { color: T.positive },
-  date: { color: T.dim, fontSize: 12, lineHeight: 16 },
+  // A fixed width so the dates line up in a column of their own rather than
+  // starting wherever the amount before them happened to end.
+  date: { color: T.dim, fontSize: 12, lineHeight: 16, width: 46, textAlign: 'right' },
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },

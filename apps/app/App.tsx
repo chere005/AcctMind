@@ -25,8 +25,8 @@ import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
   live, makeTxn,
-  newId, nextColor, putAccount, putCategory, putLine, reorder, tombstone, touch, txnText,
-  updateTxn,
+  newId, nextColor, putAccount, putCategory, putLine, reorder, today, tombstone, touch,
+  txnText, updateTxn,
   type Category, type Draft, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
@@ -35,8 +35,9 @@ import * as sync from './src/sync';
 import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
-import { BudgetScreen, type LineField } from './src/BudgetScreen';
+import { BudgetScreen, type Anchor, type LineField } from './src/BudgetScreen';
 import { AmountPad } from './src/AmountPad';
+import { DayPicker } from './src/DayPicker';
 import { LineEditor } from './src/LineEditor';
 import { Manage } from './src/Manage';
 import { Tabs, type Tab } from './src/Tabs';
@@ -99,8 +100,10 @@ export default function App() {
    * value as it is being typed, so the pad can show the result live and one
    * `Done` writes it.
    */
+  /** The row whose DATE is being picked, if any. A date is chosen, not typed. */
+  const [dating, setDating] = useState<Txn | null>(null);
   const [pad, setPad] = useState<
-    { line: Line; spent: number; field: LineField; budget: number } | null
+    { line: Line; spent: number; field: LineField; budget: number; at: Anchor } | null
   >(null);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -375,8 +378,8 @@ export default function App() {
                 onAddLine={(category) => setLineEdit({ category, line: null, spent: 0 })}
                 onEditLine={({ line, spent }) =>
                   setLineEdit({ category: line.category, line, spent })}
-                onEditAmount={({ line, spent }, field) =>
-                  setPad({ line, spent, field, budget: line.budget })}
+                onEditAmount={({ line, spent }, field, at) =>
+                  setPad({ line, spent, field, budget: line.budget, at })}
               />
             )}
 
@@ -399,6 +402,16 @@ export default function App() {
                 const moved = reorder(shown, txn.id, index, Date.now());
                 if (moved !== null) commit(phase, updateTxn(phase.store, moved));
               }}
+              /* One field, changed in place. `touch` so it travels; the rest
+                 of the record is untouched, which is what makes this cheap
+                 enough to do on a tap. */
+              onInline={(txn, patch) => {
+                if (phase.k !== 'ready') return;
+                const next = { ...txn, ...patch };
+                if (patch.name !== undefined && patch.name.trim() === '') return;
+                commit(phase, updateTxn(phase.store, touch(next, Date.now())));
+              }}
+              onDate={(txn) => setDating(txn)}
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
               amountMode={prefs.amountMode}
@@ -485,11 +498,21 @@ export default function App() {
               third number — they say what `budget` has to be, given what has
               moved. See core/budget.ts.
             */}
+            {/* The day grid, for a date tapped in the list. */}
+            <DayPicker
+              visible={dating !== null}
+              value={dating?.date ?? today()}
+              onPick={(day) => {
+                if (phase.k === 'ready' && dating !== null && day !== dating.date) {
+                  commit(phase, updateTxn(phase.store, touch({ ...dating, date: day }, Date.now())));
+                }
+                setDating(null);
+              }}
+              onCancel={() => setDating(null)}
+            />
             <AmountPad
               visible={pad !== null}
-              title={pad?.line.name === '' ? 'Untitled' : pad?.line.name ?? ''}
-              field={pad?.field === 'available' ? 'Available' : 'Budgeted'}
-              spent={pad?.spent ?? 0}
+              anchor={pad?.at ?? null}
               value={pad === null
                 ? 0
                 : pad.field === 'available' ? availableOf(pad.budget, pad.spent) : pad.budget}
@@ -497,7 +520,6 @@ export default function App() {
                 ...p,
                 budget: p.field === 'available' ? budgetFor(next, p.spent) : next,
               }))}
-              onCancel={() => setPad(null)}
               onDone={() => {
                 if (phase.k !== 'ready' || pad === null) return;
                 commit(phase, putLine(

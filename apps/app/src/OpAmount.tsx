@@ -21,7 +21,9 @@ import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-na
 import { AMOUNT_OPS, applyOp, cleanAmountText, formatAmount, parseAmount, type AmountOp } from '@acctmind/core';
 import { SPACE, T, TAP } from './theme';
 
-export function OpAmount({ label, value, onValue, testID, autoFocus = false, defaultOp = '+' }: {
+export function OpAmount({
+  label, value, onValue, testID, autoFocus = false, defaultOp = '+', onSubmit, compact = false,
+}: {
   /** What this amount is. Omit for the pad, where the card's title says it. */
   label?: string | undefined;
   value: number;
@@ -29,6 +31,18 @@ export function OpAmount({ label, value, onValue, testID, autoFocus = false, def
   testID: string;
   autoFocus?: boolean;
   defaultOp?: AmountOp;
+  /** Return on the keyboard. The pad commits; the editor has its own Save. */
+  onSubmit?: (() => void) | undefined;
+  /**
+   * The pad's size: small buttons, a smaller field, no label.
+   *
+   * The buttons are drawn at 32 in a 36 target rather than this app's usual
+   * 44. Sean asked for "3 small buttons" in a box that is deliberately tiny,
+   * and three 44s plus the running total do not fit a box narrow enough to
+   * sit under one column. It is the same exception the row action cluster
+   * takes, for the same reason: the container is smaller than the guideline.
+   */
+  compact?: boolean;
 }) {
   const [op, setOp] = useState<AmountOp>(defaultOp);
   const [text, setText] = useState('');
@@ -70,20 +84,22 @@ export function OpAmount({ label, value, onValue, testID, autoFocus = false, def
   };
 
   return (
-    <View style={styles.field}>
+    <View style={compact ? styles.fieldCompact : styles.field}>
       {label !== undefined && <Text style={styles.label}>{label}</Text>}
       <TextInput
         // Editing shows what is being TYPED; at rest it shows the value.
         value={editing ? text : formatAmount(value)}
         onChangeText={type}
         onFocus={() => { if (!editing) start(defaultOp); }}
-        style={styles.input}
+        style={[styles.input, compact && styles.inputCompact]}
         placeholder={formatAmount(value)}
         placeholderTextColor={T.faint}
         autoFocus={autoFocus}
         selectTextOnFocus
         keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
         inputMode="text"
+        returnKeyType={onSubmit === undefined ? 'default' : 'done'}
+        onSubmitEditing={onSubmit}
         testID={testID}
       />
       {/* UNDERNEATH the field — Sean's placement. */}
@@ -92,13 +108,16 @@ export function OpAmount({ label, value, onValue, testID, autoFocus = false, def
           <Pressable
             key={o}
             onPress={() => start(o)}
-            style={[styles.op, editing && op === o && styles.opOn]}
+            style={[styles.op, compact && styles.opCompact, editing && op === o && styles.opOn]}
             accessibilityRole="button"
             accessibilityLabel={o === '=' ? 'Set to' : o === '+' ? 'Add' : 'Subtract'}
             accessibilityState={{ selected: editing && op === o }}
             testID={`${testID}-op-${o === '=' ? 'set' : o === '+' ? 'add' : 'sub'}`}
           >
-            <Text style={[styles.opText, editing && op === o && styles.opTextOn]}>
+            <Text style={[
+              styles.opText, compact && styles.opTextCompact,
+              editing && op === o && styles.opTextOn,
+            ]}>
               {o === '-' ? '−' : o}
             </Text>
           </Pressable>
@@ -106,7 +125,11 @@ export function OpAmount({ label, value, onValue, testID, autoFocus = false, def
         {/* What it will BE. With `+` and `−` the field holds the change and
             not the answer, so without this you are doing the sum yourself —
             which is the thing the operator exists to avoid. */}
-        <Text style={styles.result} testID={`${testID}-result`}>
+        <Text
+          style={[styles.result, compact && styles.resultCompact]}
+          numberOfLines={1}
+          testID={`${testID}-result`}
+        >
           {editing ? formatAmount(value) : ''}
         </Text>
       </View>
@@ -116,14 +139,23 @@ export function OpAmount({ label, value, onValue, testID, autoFocus = false, def
 
 const styles = StyleSheet.create({
   field: { gap: SPACE.sm },
+  fieldCompact: { gap: SPACE.xs },
   label: { color: T.dim, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
-    backgroundColor: T.card, color: T.text, fontSize: 22, borderRadius: 10,
-    paddingHorizontal: SPACE.md, minHeight: TAP + 6,
+    // T.card on whatever holds it, never T.field. Pure black inside a grey
+    // card reads as a hole punched in it rather than as somewhere to type —
+    // the same mistake the add form's Category box had, made again here and
+    // caught on a simulator rather than by anything in the suite.
+    backgroundColor: T.card, color: T.text, fontSize: 20, borderRadius: 10,
+    paddingHorizontal: SPACE.md, minHeight: TAP,
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
     fontVariant: ['tabular-nums'],
   },
   ops: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  inputCompact: { fontSize: 17, minHeight: 38, paddingHorizontal: SPACE.sm },
+  opCompact: { width: 36, height: 36, borderRadius: 18 },
+  opTextCompact: { fontSize: 16 },
+  resultCompact: { fontSize: 13 },
   // Drawn at TAP, like every control in this app — hitSlop is a no-op on web.
   op: {
     width: TAP, height: TAP, borderRadius: TAP / 2,
@@ -134,7 +166,7 @@ const styles = StyleSheet.create({
   opText: { color: T.text, fontSize: 18, fontWeight: '700' },
   opTextOn: { color: '#ffffff' },
   result: {
-    color: T.dim, fontSize: 15, flex: 1, textAlign: 'right',
+    color: T.text, fontSize: 15, flex: 1, textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },
 });

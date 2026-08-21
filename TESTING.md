@@ -145,6 +145,26 @@ failing more than occasionally, the fix is to wait on the thing being measured
 rather than to raise a timeout — a geometry assertion that needs a sleep is an
 assertion about the wrong moment.
 
+## A check that was DELETED for the same reason
+
+"The screen name is not truncated by its own controls" was written after the
+top bar grew a fifth control and `Transactions` drew as `Transac…` on a
+simulator. Two versions of it went green and neither could fail:
+
+1. `scrollWidth > clientWidth` — react-native-web CLAMPS a single-line Text,
+   so the box never overflows and the two numbers stay equal whether or not an
+   ellipsis is drawn.
+2. Measuring the text unconstrained against the room the title has — correct
+   arithmetic, and it still passed with all five controls restored, because at
+   the mobile project's 393px the title needs 149.1 and is given exactly
+   149.1. It FITS on the web. It did not fit on the device.
+
+Measured rather than assumed, which is the only reason this is written down
+instead of being a green check somebody trusts. The web harness runs a phone
+VIEWPORT with a browser's font metrics, and this bug lives in the gap between
+those metrics and the device's. Nothing here can see it; a simulator can, in
+one second.
+
 ## A check that was watched failing at nothing
 
 Worth keeping as a worked example, because it looked like a good test.
