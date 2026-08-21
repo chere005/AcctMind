@@ -10,9 +10,14 @@ import type { Store, Txn } from '../src/index';
 
 const txn = (id: string, updated: number, name = id, dead = false): Txn => ({
   id, name, description: '', amount: 100, date: '2026-08-20', created: 1, updated,
+  account: 'a1', category: null, order: 0,
   ...(dead ? { deleted: true as const } : {}),
 });
-const store = (txns: Txn[]): Store => ({ v: STORE_VERSION, txns });
+const ACCT = {
+  id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0,
+};
+const store = (txns: Txn[]): Store =>
+  ({ v: STORE_VERSION, txns, accounts: [ACCT], categories: [] });
 const NOW = 2_000_000_000_000;
 
 describe('rule 1 — an absent remote is not an empty ledger', () => {

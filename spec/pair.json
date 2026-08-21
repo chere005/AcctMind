@@ -1,0 +1,34 @@
+{
+  "_": "The pairing code: 120 bits of platform randomness written so a person can retype it once. Twenty-four Crockford base32 characters and a Luhn mod 32 check, in groups of five. These vectors were produced by a SECOND implementation (a big integer sliced from the top, rather than core's bit accumulator) so that a bug in one would not be written down here as the answer.",
+
+  "codes": [
+    ["000000000000000000000000000000", "00000-00000-00000-00000-00000"],
+    ["ffffffffffffffffffffffffffffff", "ZZZZZ-ZZZZZ-ZZZZZ-ZZZZZ-ZZZZR"],
+    ["0123456789abcdef0123456789abcd", "04HMA-SW9NF-6YY09-38NKR-KAYDT"],
+    ["8f3a1c04d5e6970b2a48c1de3f5079", "HWX1R-16NWT-BGPAJ-8R7F3-YM3SB"],
+    ["00112233445566778899aabbccddee", "008J4-CT4AN-K7F24-SNAXW-SQFE3"]
+  ],
+
+  "_accepts": "A code is read off a screen and typed by hand, so the shape it arrives in is not the shape it was shown in. All of these are the same secret as codes[3].",
+  "accepts": [
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3SB", "the code as shown"],
+    ["hwx1r-16nwt-bgpaj-8r7f3-ym3sb", "typed in lower case"],
+    ["HWX1R16NWTBGPAJ8R7F3YM3SB", "no dashes"],
+    ["HWX1R 16NWT BGPAJ 8R7F3 YM3SB", "spaces instead of dashes"],
+    ["  HWX1R-16NWT-BGPAJ-8R7F3-YM3SB\n", "pasted with whitespace round it"],
+    ["HWXlR-l6NWT-BGPAJ-8R7F3-YM3SB", "l typed for 1, twice"],
+    ["HWXIR-I6NWT-BGPAJ-8R7F3-YM3SB", "I typed for 1, twice"]
+  ],
+
+  "_rejects": "What a person must be TOLD about rather than left to discover as a connection that never opens.",
+  "rejects": [
+    ["", "empty"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3S", "one character short"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3SBB", "one character long"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3SU", "U is not in the alphabet"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3S!", "punctuation"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3SC", "check character wrong by one"],
+    ["HXW1R-16NWT-BGPAJ-8R7F3-YM3SB", "first two characters transposed"],
+    ["HWX1R-16NWT-BGPAJ-8R7F3-YM3TB", "one data character mistyped"]
+  ]
+}

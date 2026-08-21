@@ -1,17 +1,18 @@
 /** The shapes every surface agrees on. Nothing here has behavior. */
 
-/** A transaction, as stored. */
-export type Txn = {
+/**
+ * What every synced record has in common.
+ *
+ * `id`, `created`, `updated` and `deleted` are the merge's entire vocabulary
+ * — it reads nothing else — so anything that must survive two devices meeting
+ * carries this shape. Accounts and categories are records for exactly that
+ * reason: an account that existed on the phone and not the Mac would make
+ * half a person's transactions homeless.
+ */
+export type Record_ = {
   /** Stable, generated once at creation. Never derived from the content. */
   id: string;
-  name: string;
-  /** Always a string; absent and empty are the same thing and normalize to ''. */
-  description: string;
-  /** Integer MINOR UNITS (cents). Negative is money out. Never a float. */
-  amount: number;
-  /** `YYYY-MM-DD`, on the local calendar. See day.ts for why not a timestamp. */
-  date: string;
-  /** Epoch milliseconds. Breaks ties between two transactions on one day. */
+  /** Epoch milliseconds. */
   created: number;
   /**
    * Epoch milliseconds of the last edit — the merge clock.
@@ -29,6 +30,72 @@ export type Txn = {
   deleted?: true;
 };
 
+/**
+ * A place transactions live: a current account, a card, cash in a drawer.
+ *
+ * Sections on the Transactions tab. Every transaction belongs to exactly one,
+ * which is why there is always at least one — see `DEFAULT_ACCOUNT_NAME`.
+ */
+export type Account = Record_ & {
+  name: string;
+  /** A hex colour from the palette. Drives the dot and the section header. */
+  color: string;
+  /** Where it sits in the list. Sparse and re-spaced rather than contiguous. */
+  order: number;
+};
+
+/**
+ * A budget line: a name, a colour, and money assigned to it.
+ *
+ * Sections on the Budget tab, and what a transaction can be filed under. A
+ * transaction may have NO category — money moves before anyone decides what
+ * it was — so the link is nullable in one direction only.
+ */
+export type Category = Record_ & {
+  name: string;
+  color: string;
+  /** Assigned money, in integer MINOR UNITS. Never a float, like every amount. */
+  budget: number;
+  order: number;
+};
+
+/** A transaction, as stored. */
+export type Txn = Record_ & {
+  name: string;
+  /** Always a string; absent and empty are the same thing and normalize to ''. */
+  description: string;
+  /** Integer MINOR UNITS (cents). Negative is money out. Never a float. */
+  amount: number;
+  /** `YYYY-MM-DD`, on the local calendar. See day.ts for why not a timestamp. */
+  date: string;
+  /**
+   * The account it belongs to. Always set — a transaction with no account
+   * would have nowhere to be drawn.
+   *
+   * Held as an ID rather than by embedding the account, so renaming one
+   * renames it everywhere at once and does not have to visit every row.
+   */
+  account: string;
+  /**
+   * Where this row sits when the list is ordered by hand.
+   *
+   * Carried on the record rather than in a device preference because a custom
+   * order is a decision about the ledger, not about a screen — drag a row on
+   * the phone and the Mac should agree. It is SPARSE (see `REORDER_GAP`) so a
+   * single move rewrites one row instead of all of them, which matters when
+   * every rewrite is a merge clock bump that has to travel.
+   */
+  order: number;
+  /**
+   * The budget category, or null for one nobody has filed yet.
+   *
+   * Nullable on purpose: money moves before anyone decides what it was, and a
+   * required category would mean inventing "Uncategorised" as a real record
+   * that then syncs, gets renamed, and can be deleted out from under its rows.
+   */
+  category: string | null;
+};
+
 /** What the add form holds while it is being typed — all strings, all raw. */
 export type Draft = {
   name: string;
@@ -36,6 +103,10 @@ export type Draft = {
   /** As typed: `12.50`, `$1,234`, `(5)`. Parsed by money.ts, never by a screen. */
   amount: string;
   date: string;
+  /** The account id. A form always has one — see `emptyDraft`. */
+  account: string;
+  /** The category id, or null for one nobody has filed yet. */
+  category: string | null;
 };
 
 /** Which fields a draft got wrong. An empty object means it is good. */
@@ -50,13 +121,26 @@ export type DraftErrors = Partial<Record<keyof Draft, string>>;
  * able to reach them all at once.
  */
 export type Store = {
-  v: 2;
+  v: 3;
   txns: Txn[];
+  accounts: Account[];
+  categories: Category[];
 };
 
+/** What the one account a migrated store gets is called. */
+export const DEFAULT_ACCOUNT_NAME = 'Account';
+
 /**
- * v1 had no `updated` and no tombstones — it could not merge. A v1 store is
- * READ and upgraded rather than refused: refusing it would strand the ledger
- * already sitting on a device. See `parseStore`.
+ * Older stores are READ and upgraded rather than refused: refusing one would
+ * strand the ledger already sitting on a device. See `parseStore`.
+ *
+ *   v1 — no `updated`, no tombstones. Could not merge at all.
+ *   v2 — merge clocks and tombstones.
+ *   v3 — accounts and categories, and every transaction filed under one
+ *        account. A v1 or v2 store has neither, so the migration invents a
+ *        single account and puts everything in it. That account is a real
+ *        record with a real id from the moment it is created, because the
+ *        alternative — a magic 'default' string — is a thing two devices can
+ *        both invent separately and then never reconcile.
  */
-export const STORE_VERSION = 2 as const;
+export const STORE_VERSION = 3 as const;

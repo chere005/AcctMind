@@ -1,6 +1,7 @@
 /** The one flow the app has: open the form, fill it, save it, see it. */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh, rows, stored } from './helpers';
+import { STORE_VERSION } from '@acctmind/core';
+import { addTransaction, fresh, rows, stored, storedTxns } from './helpers';
 
 test('a new device shows the empty state and no rows', async ({ page }) => {
   await fresh(page);
@@ -21,7 +22,9 @@ test('adding one puts it on screen and on the device', async ({ page }) => {
 
   // The screen agreeing is not the same as the device agreeing.
   const store = await stored(page) as { v: number; txns: { amount: number; name: string }[] };
-  expect(store.v).toBe(1);
+  // Read from core, not written down: this line said 1 for a while after
+  // the store went to v2, and the suite had not been re-run to notice.
+  expect(store.v).toBe(STORE_VERSION);
   expect(store.txns).toHaveLength(1);
   // Cents, as an integer. If this is ever 84.37 the whole money rule is gone.
   expect(store.txns[0]?.amount).toBe(-8437);
@@ -57,7 +60,7 @@ test('cancel adds nothing, and does not keep what was typed', async ({ page }) =
 
   await expect(page.getByTestId('save-button')).toBeHidden();
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
-  expect(await stored(page)).toBeNull();
+  expect(await storedTxns(page)).toEqual([]);
 
   // Reopening is a blank form, not the abandoned one.
   await page.getByTestId('add-button').click();
@@ -92,14 +95,15 @@ test('an unparseable amount is refused rather than rounded', async ({ page }) =>
 
   await expect(page.getByTestId('error-amount')).toHaveText('That is not an amount');
   await expect(page.getByTestId('save-button')).toBeVisible();
-  expect(await stored(page)).toBeNull();
+  expect(await storedTxns(page)).toEqual([]);
 });
 
 test('the list is newest first, whatever order they were entered', async ({ page }) => {
   await fresh(page);
-  await addTransaction(page, { name: 'middle', amount: '2', day: '2026-06-15' });
-  await addTransaction(page, { name: 'oldest', amount: '1', day: '2026-01-05' });
-  await addTransaction(page, { name: 'newest', amount: '3', day: '2026-08-01' });
+  // Trailing dots: bare digits now fill from the cents, so '2' would be 2c.
+  await addTransaction(page, { name: 'middle', amount: '2.', day: '2026-06-15' });
+  await addTransaction(page, { name: 'oldest', amount: '1.', day: '2026-01-05' });
+  await addTransaction(page, { name: 'newest', amount: '3.', day: '2026-08-01' });
 
   expect((await rows(page)).map((r) => r.name)).toEqual(['newest', 'middle', 'oldest']);
   await expect(page.getByTestId('total')).toHaveText('$6.00');

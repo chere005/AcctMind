@@ -23,7 +23,32 @@
 import ExpoModulesCore
 import WatchConnectivity
 
-public class WatchBridgeModule: Module, WCSessionDelegate {
+/**
+ The session's delegate, as its own object.
+
+ It cannot be the module. `WCSessionDelegate` inherits `NSObjectProtocol`,
+ Expo's `Module` is not an `NSObject`, and Swift will not let a non-NSObject
+ class claim that conformance — "should inherit 'NSObject' instead". Written
+ the other way this file did not compile AT ALL, which is worth knowing: the
+ phone half of the watch link had never been built until a later change to
+ another module happened to trigger a full iOS build.
+
+ The phone has nothing to receive — the link is one-way by design — so this
+ exists to satisfy the protocol and to re-activate after a watch swap.
+ */
+private final class WatchDelegate: NSObject, WCSessionDelegate {
+  func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
+  func sessionDidBecomeInactive(_ session: WCSession) {}
+  // The user paired a DIFFERENT watch. The session must be re-activated or
+  // every later push goes to a wrist that is no longer there.
+  func sessionDidDeactivate(_ session: WCSession) { WCSession.default.activate() }
+}
+
+public class WatchBridgeModule: Module {
+  /// Held for the session's lifetime: WCSession keeps its delegate weakly,
+  /// and a delegate that is deallocated takes the callbacks with it.
+  private let delegate = WatchDelegate()
+
   public func definition() -> ModuleDefinition {
     Name("WatchBridge")
 
@@ -33,7 +58,7 @@ public class WatchBridgeModule: Module, WCSessionDelegate {
       // is ready is a push that is silently dropped.
       if WCSession.isSupported() {
         let session = WCSession.default
-        session.delegate = self
+        session.delegate = self.delegate
         session.activate()
       }
     }
@@ -66,14 +91,4 @@ public class WatchBridgeModule: Module, WCSessionDelegate {
       }
     }
   }
-
-  // MARK: - WCSessionDelegate
-  //
-  // Required by the protocol; the phone side has nothing to receive, because
-  // the link is one-way by design.
-  public func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {}
-  public func sessionDidBecomeInactive(_ session: WCSession) {}
-  // The user paired a DIFFERENT watch. The session must be re-activated or
-  // every later push goes to a wrist that is no longer there.
-  public func sessionDidDeactivate(_ session: WCSession) { WCSession.default.activate() }
 }

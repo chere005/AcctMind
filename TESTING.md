@@ -15,6 +15,7 @@ and nobody is looking at it.
 | `npm run test:server` | the doorway over real HTTP, against the real suite auth lib | **yes** |
 | `npm run test:e2e` | the whole app, real mouse, on the EXPORTED bundle, desktop and phone viewports | **yes** (a spot subset on `--quick`) |
 | `npm run test:deploy` | every deploy guard, each proven by breaking a copy | **yes** |
+| `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | **yes** |
 | `npm run test:watch` | core's real feed through the watch's real Swift decoder and formatter | no — needs `swiftc` |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
 | `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits | no — compiles Rust |
@@ -54,6 +55,14 @@ worked — by removing the consent gate — went on to write production. The
 neutering is installed before the first copy is ever executed, and one of the
 checks is that no broken copy reached `ssh` at all.
 
+**`tools/check-peer-service.mjs`** — `NSBonjourServices` is an ALLOW-LIST, and
+that is the entire reason this check exists. A service type missing from it,
+or off by one character, does not error: the browser starts, finds nothing,
+ever, and there is no failure anywhere to read. This asserts the plist against
+core's `PEER_SERVICE`, that nothing stale is listed beside it, that the usage
+description exists (without it iOS terminates the app the moment it browses),
+and that no Swift file has grown its own copy of the string.
+
 **`tools/check-watch-feed.sh`** — the watch is a separate process in another
 language, so `formatAmount` exists twice: once in `packages/core/src/money.ts`
 and once in `apps/app/targets/watch/Feed.swift`. This lifts the real Swift out
@@ -62,6 +71,13 @@ feeds it what `watchFeed()` really produces, and compares the drawn strings.
 Two copies with a test between them.
 
 ## What nobody is watching
+
+- **The Mac app, at all.** It compiles for `platform=macOS,variant=Designed
+  for iPad` and has never been LAUNCHED — not once, by anyone. A shell cannot
+  do it (see README), so it takes Xcode and a person. Everything said about
+  phone-to-Mac sync is therefore reasoning, not observation: the two
+  simulators proved the transport, and the Mac has never been one of the two
+  ends.
 
 - **That the desktop window actually RENDERS.** A window showing an error page
   launches, survives eight seconds and quits exactly like a working one. The
@@ -82,15 +98,48 @@ Two copies with a test between them.
   app loaded CalMind's bundle and died on a native module it does not have.
   Release embeds the bundle, so there is nothing to get wrong. See
   `apps/app/AGENTS.md`.
-- **The watch's transport.** The feed shape is proven and the decoder is
-  proven. Nothing yet carries the feed from the phone to the wrist — see
-  `apps/app/targets/watch/AcctMindWatch.swift`.
+- **Two devices actually finding each other**, as an automated check. It was
+  done BY HAND on 2026-08-20, with two booted simulators, and it earned its
+  keep immediately: the browser was dropping every peer because
+  `includeTXTRecord` defaults to false. Nothing in the repo replays that.
+
+  The technique, since it is not obvious: boot a second simulator, `simctl
+  install` the same `.app` on both, pair them through the UI, and — this is
+  the part that found the bug — run `dns-sd -B _acctmind1._tcp` on the Mac.
+  The host sees what the simulators advertise, so a service that is visible
+  there and invisible to the other app localises the fault to the BROWSER
+  rather than the advertisement.
+
+- **The TLS-PSK handshake, as an automated check.** It was measured by hand
+  on 2026-08-20 with a standalone Swift probe (one listener, one client, same
+  secret, loopback, six option variants), and that probe found the app's TLS
+  options were unusable: pinning to TLS 1.3 fails with
+  `NO_SUPPORTED_VERSIONS_ENABLED`, because Apple's PSK support is TLS 1.2.
+  Nothing replays it.
+
+  What the link negotiates, measured: TLS 1.2, ciphersuite 0x00A8
+  (`TLS_PSK_WITH_AES_128_GCM_SHA256`). **No forward secrecy** — see the note
+  in `PeerLink.swift` for what that does and does not cost. Appending any
+  other ciphersuite, including the ECDHE-PSK and DHE-PSK ones, changes
+  nothing; that was measured too.
+
+  A handshake that fails at runtime is silent from inside the app: the
+  browser finds the service and the connection simply never reaches `.ready`.
+  `peers` on the Devices screen is the only tell in the UI; the device log
+  under `com.apple.network:boringssl` is the only real diagnosis.
+
+- **The watch's transport, on hardware.** The feed shape is proven and the
+  decoder is proven, and `WatchBridgeModule` now compiles — it did not for a
+  whole commit, because nothing had triggered a full iOS build since it was
+  added. Compiling is not delivering: nobody has watched a feed reach a real
+  wrist.
 - **iOS and Android builds, on a schedule.** `ios/` and `android/` are
   `expo prebuild` output and disposable; nothing rebuilds them automatically.
   Both have been built and run by hand (2026-08-20).
 
-- **The Windows bundle.** The workflow exists and has never run: it needs a
-  GitHub remote, and this repo has none yet.
+- **The Windows bundle.** The workflow exists and has never run. It needed a
+  GitHub remote, which no longer blocks it — `origin` is chere005/AcctHub as
+  of 2026-08-20 — so this is now just undone rather than impossible.
 
 ## Before you trust a new check
 
@@ -106,7 +155,19 @@ been watched failing on purpose:
   plus the two text rules (`--delete`, the `index.html` exclusion) removed
   from the real script;
 - the watch checker, against a Swift formatter with its digit grouping taken
-  out.
+  out;
+- the pairing tests, against five mutations of `peer.ts` — a plain sum for
+  Luhn, no checksum at all, the O/I/L folding removed, a 40-bit secret, and a
+  confusable character put back in the alphabet. The first of those is why
+  the transposition test now derives its own fixture: with a literal code it
+  stayed GREEN under an order-blind checksum, which is the exact shape of a
+  check that cannot fail;
+- `check-peer-service.mjs`, against a one-character drift in the plist, a
+  removed usage description, a stale extra service left in the list, and a
+  hardcoded service type in Swift;
+- the peer module's Swift, against a deliberate type error — to prove
+  `xcodebuild -scheme PeerSync` was compiling the file at all and not
+  reporting a cached success.
 
 A check nobody has seen fail is a check nobody should trust. Five green
 checks in CalMind turned out to be worthless in a single session.

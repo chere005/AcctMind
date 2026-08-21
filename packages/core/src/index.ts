@@ -9,10 +9,12 @@
  */
 
 export * from './types';
+export * from './palette';
 export * from './money';
 export * from './day';
 export * from './txn';
 export * from './store';
 export * from './merge';
 export * from './sync';
+export * from './peer';
 export * from './watch';

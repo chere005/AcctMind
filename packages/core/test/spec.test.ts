@@ -9,9 +9,10 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, addMonths, dayOf, dayToDate, formatAmount, formatDay, isDay, monthGrid,
-  monthLabel, parseAmount, sortTxns,
+  addDays, addMonths, cleanAmountText, dayOf, dayToDate, entryCents, formatAmount,
+  formatDay, isDay, monthGrid, monthLabel, parseAmount, sortTxns, toggleAmountSign,
 } from '../src/index';
+import type { AmountMode } from '../src/index';
 import type { Txn } from '../src/index';
 
 const spec = <T,>(name: string): T =>
@@ -46,6 +47,48 @@ describe('spec/money.json', () => {
   it('round-trips format -> parse', () => {
     for (const cents of m.roundTrip) {
       expect(parseAmount(formatAmount(cents)), String(cents)).toBe(cents);
+    }
+  });
+});
+
+describe('spec/money.json — typing an amount', () => {
+  const m = spec<{
+    entry: Record<AmountMode, [string, string, number | null][]>;
+    sign: [string, string][];
+  }>('money');
+
+  for (const mode of ['cents', 'whole'] as const) {
+    it(`keeps and reads what is typed, in ${mode} mode`, () => {
+      for (const [typed, kept, cents] of m.entry[mode]) {
+        const text = cleanAmountText(typed);
+        expect(text, `cleaning ${JSON.stringify(typed)}`).toBe(kept);
+        expect(entryCents(text, mode), `${JSON.stringify(typed)} in ${mode}`).toBe(cents);
+      }
+    });
+  }
+
+  it('the minus button and the minus key are the same action', () => {
+    for (const [before, after] of m.sign) {
+      expect(toggleAmountSign(before), before).toBe(after);
+    }
+  });
+
+  it('and pressing it twice is where you started', () => {
+    for (const [before] of m.sign) {
+      expect(toggleAmountSign(toggleAmountSign(before))).toBe(before);
+    }
+  });
+
+  it('what the field produces is always something parseAmount can read back', () => {
+    // The field writes a canonical string into the draft and core validates
+    // THAT. If these two ever disagree, a person types a valid amount and the
+    // form tells them it is not one.
+    for (const mode of ['cents', 'whole'] as const) {
+      for (const [typed] of m.entry[mode]) {
+        const cents = entryCents(cleanAmountText(typed), mode);
+        if (cents === null) continue;
+        expect(parseAmount(formatAmount(cents)), `${typed} in ${mode}`).toBe(cents);
+      }
     }
   });
 });
@@ -120,6 +163,7 @@ describe('spec/sort.json', () => {
     it(c.name, () => {
       const txns: Txn[] = c.in.map((r) => ({
         ...r, name: r.id, description: '', amount: 0, updated: r.created,
+        account: 'a1', category: null, order: 0,
       }));
       expect(sortTxns(txns).map((t) => t.id)).toEqual(c.out);
     });

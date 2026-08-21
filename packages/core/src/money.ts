@@ -105,3 +105,118 @@ function group(n: number): string {
   for (let i = s.length; i > 0; i -= 3) parts.unshift(s.slice(Math.max(0, i - 3), i));
   return parts.join(',');
 }
+
+/* ------------------------------------------------------------------ *
+ * Entering an amount
+ *
+ * `parseAmount` above reads a COMPLETE amount — a saved record, an import,
+ * a pasted string. What follows is for the field a person types into, which
+ * is a different problem: it has to make sense of a half-finished string on
+ * every keystroke, and it has to be predictable enough that nobody has to
+ * think about it while entering the third transaction in a row.
+ *
+ * The rule, and it is one rule with one exception:
+ *
+ *   **Digits fill up from the cents.** `5` is 5c, `50` is 50c, `1234` is
+ *   $12.34 — the way a card terminal works, and the reason is that the
+ *   overwhelming majority of amounts in a ledger have cents in them. Typing
+ *   `4`,`5`,`0` for $4.50 costs three keystrokes and no punctuation.
+ *
+ *   **A typed `.` overrides it.** The moment there is a dot, the string is
+ *   read the ordinary way: `12.34` is $12.34 and `50.` is $50.00. A trailing
+ *   dot is not an error — it is how someone says "that was the whole part,
+ *   I am done".
+ *
+ * `.00` mode flips the default for people entering round numbers all
+ * afternoon: `50` becomes $50.00. A typed dot still wins, so the two never
+ * contradict each other.
+ *
+ * The sign lives in the TEXT, as a leading `-`, and nowhere else. The − button
+ * adds or removes that character. One source of truth means typing the minus
+ * and tapping the button cannot disagree, which they would the moment the
+ * sign became a second piece of state.
+ * ------------------------------------------------------------------ */
+
+/** How bare digits are read when no `.` has been typed. */
+export type AmountMode = 'cents' | 'whole';
+
+/** The most decimal places an amount can have. */
+const FRAC_MAX = 2;
+
+/**
+ * Reduce a raw field value to what an amount may contain.
+ *
+ * Everything else is dropped rather than rejected — `$`, spaces and grouping
+ * commas are noise a person may paste in, and a field that refuses to accept
+ * a pasted `$1,234.56` is a field that argues with its user.
+ *
+ * A third decimal digit is KEPT, deliberately, even though no amount can have
+ * one. Silently dropping it would turn a pasted `1.005` into `1.00` — a value
+ * nobody typed — which is precisely the substitution `parseAmount` refuses to
+ * make. So it stays in the field, `entryCents` returns null, and the person
+ * is told. Refusing sends someone back to a field they can see; truncating
+ * sends them a balance they cannot explain.
+ */
+export function cleanAmountText(raw: string): string {
+  const negative = raw.trimStart().startsWith('-');
+  let digitsAndDot = '';
+  let seenDot = false;
+  for (const ch of raw) {
+    if (ch >= '0' && ch <= '9') {
+      digitsAndDot += ch;
+    } else if (ch === '.' && !seenDot) {
+      seenDot = true;
+      digitsAndDot += ch;
+    }
+  }
+  return (negative ? '-' : '') + digitsAndDot;
+}
+
+/** Is what has been typed a negative amount? Draws the − button's state. */
+export function amountIsNegative(text: string): boolean {
+  return text.startsWith('-');
+}
+
+/** What the − button does: add the leading `-`, or take it away. */
+export function toggleAmountSign(text: string): string {
+  return amountIsNegative(text) ? text.slice(1) : '-' + text;
+}
+
+/**
+ * Read cleaned field text as integer cents, or null when it is not yet an
+ * amount — empty, a lone `-`, a lone `.`.
+ *
+ * Null is not an error here. It is the ordinary state of a field someone has
+ * begun typing into, and the caller shows nothing rather than a complaint.
+ */
+export function entryCents(text: string, mode: AmountMode): number | null {
+  const negative = amountIsNegative(text);
+  const body = negative ? text.slice(1) : text;
+  if (body === '' || body === '.') return null;
+
+  let cents: number;
+  const dot = body.indexOf('.');
+  if (dot >= 0) {
+    // A dot was typed, so this is an ordinary amount and the mode does not
+    // apply. `50.` is $50.00: the empty fraction pads, exactly as `50.0`
+    // would.
+    const whole = body.slice(0, dot);
+    const frac = body.slice(dot + 1);
+    // The same refusal as parseAmount: 1.005 could be 100 or 101 cents and
+    // both are defensible, which is exactly why nothing here picks one.
+    if (frac.length > FRAC_MAX) return null;
+    cents = Number(whole === '' ? '0' : whole) * 100 + Number(frac.padEnd(FRAC_MAX, '0') || '0');
+  } else if (mode === 'whole') {
+    cents = Number(body) * 100;
+  } else {
+    // The default: the digits ARE the cents.
+    cents = Number(body);
+  }
+
+  // Same refusal as parseAmount, for the same reason: past this the value is
+  // not exactly representable, and an amount that quietly loses precision is
+  // the failure this module exists to prevent.
+  if (!Number.isSafeInteger(cents) || cents > MAX_CENTS) return null;
+  // And the same -0 guard — see parseAmount.
+  return negative && cents !== 0 ? -cents : cents;
+}

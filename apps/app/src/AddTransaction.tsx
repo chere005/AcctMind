@@ -13,22 +13,48 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  emptyDraft, formatDay, isValid, today, validateDraft,
-  type Draft, type DraftErrors,
+  amountInput, amountIsNegative, cleanAmountText, draftOf, emptyDraft, entryCents,
+  formatAmount, formatDay, isValid, toggleAmountSign, today, validateDraft,
+  type AmountMode, type Draft, type DraftErrors, type Txn,
 } from '@acctmind/core';
 import { DayPicker } from './DayPicker';
+import { Toggle } from './Toggle';
 import { SPACE, T, TAP } from './theme';
 
 type Props = {
   visible: boolean;
   onSave: (draft: Draft) => void;
   onCancel: () => void;
+  /**
+   * The transaction being edited, if this is an edit rather than an add.
+   *
+   * The form does not know what happens to what it returns — App decides
+   * whether the draft becomes a new record or replaces an existing one. All
+   * this changes here is what the fields start as and what the bar says.
+   */
+  editing?: Txn | undefined;
+  /** The account a new transaction goes into — the section whose + was pressed. */
+  account: string;
+  /**
+   * How bare digits are read. Owned by the screen behind this one, because it
+   * is a setting that outlives any one entry — see TransactionsScreen.
+   */
+  mode: AmountMode;
 };
 
-export function AddTransaction({ visible, onSave, onCancel }: Props) {
-  const [draft, setDraft] = useState<Draft>(() => emptyDraft(today()));
+export function AddTransaction({ visible, onSave, onCancel, editing, mode, account }: Props) {
+  const [draft, setDraft] = useState<Draft>(() => emptyDraft(today(), account));
   const [errors, setErrors] = useState<DraftErrors>({});
   const [picking, setPicking] = useState(false);
+  /**
+   * What has actually been typed, and how bare digits are read.
+   *
+   * Kept separately from `draft.amount`, which holds a CANONICAL string
+   * (`-4.50`) that `validateDraft` and `parseAmount` understand without
+   * knowing this screen exists. Two representations, one direction: typing
+   * updates both, and core never sees the half-finished one.
+   */
+  const [amountText, setAmountText] = useState('');
   const insets = useSafeAreaInsets();
 
   // Opening is a fresh form, dated today. Computed on the transition rather
@@ -38,9 +64,15 @@ export function AddTransaction({ visible, onSave, onCancel }: Props) {
   if (visible !== wasVisible) {
     setWasVisible(visible);
     if (visible) {
-      setDraft(emptyDraft(today()));
+      const start = editing === undefined ? emptyDraft(today(), account) : draftOf(editing);
+      setDraft(start);
       setErrors({});
       setPicking(false);
+      // The amount field is seeded from the CANONICAL string, not the raw
+      // digits: '4.50' carries its own dot and so reads the same under either
+      // entry mode. Seeding '450' would reopen an edit at $4.50 having saved
+      // $450.00, or the reverse, depending on the toggle.
+      setAmountText(cleanAmountText(start.amount));
     }
   }
 
@@ -50,6 +82,37 @@ export function AddTransaction({ visible, onSave, onCancel }: Props) {
     // while someone fixes it reads as the app not noticing.
     setErrors((e) => (e[field] === undefined ? e : { ...e, [field]: undefined }));
   };
+
+  /** Every route into the amount — the keys and the − button. */
+  const setAmount = (rawText: string) => {
+    const text = cleanAmountText(rawText);
+    setAmountText(text);
+    const cents = entryCents(text, mode);
+    /*
+     * There are two ways to have no amount, and they deserve different
+     * sentences.
+     *
+     *  · Nothing typed, or only a sign or a dot -> an EMPTY draft amount, so
+     *    core says "Amount is required". True of a field nobody has finished.
+     *  · Digits that do not make an amount — `1.005`, which this app refuses
+     *    to round — -> hand core the RAW text so `parseAmount` judges it and
+     *    says "That is not an amount". Reporting that one as "required" would
+     *    be telling someone who typed something that they typed nothing.
+     *
+     * When it IS an amount the draft gets the CANONICAL string, never the raw
+     * text: `1234` in cents mode is $12.34, and `parseAmount('1234')` is
+     * $1,234.00. Handing the raw text over would silently multiply by a
+     * hundred at the last step.
+     */
+    const digits = /[0-9]/.test(text);
+    setDraft((d) => ({
+      ...d,
+      amount: cents !== null ? amountInput(cents) : digits ? text : '',
+    }));
+    setErrors((e) => (e.amount === undefined ? e : { ...e, amount: undefined }));
+  };
+
+  const cents = entryCents(amountText, mode);
 
   const submit = () => {
     const found = validateDraft(draft);
@@ -71,7 +134,9 @@ export function AddTransaction({ visible, onSave, onCancel }: Props) {
             <Pressable onPress={onCancel} style={styles.barBtn} testID="cancel-button">
               <Text style={styles.barText}>Cancel</Text>
             </Pressable>
-            <Text style={styles.barTitle}>New Transaction</Text>
+            <Text style={styles.barTitle}>
+              {editing === undefined ? 'New Transaction' : 'Edit Transaction'}
+            </Text>
             <Pressable onPress={submit} style={styles.barBtn} testID="save-button">
               <Text style={[styles.barText, styles.barSave]}>Save</Text>
             </Pressable>
@@ -104,19 +169,39 @@ export function AddTransaction({ visible, onSave, onCancel }: Props) {
             </Field>
 
             <Field label="Amount" error={errors.amount}>
-              <TextInput
-                value={draft.amount}
-                onChangeText={set('amount')}
-                style={styles.input}
-                placeholder="0.00"
-                placeholderTextColor={T.faint}
-                // 'decimal-pad' has no minus sign. A ledger needs negatives,
-                // and core accepts '-5' and the accounting '(5)', so the
-                // keyboard must be able to type them.
-                keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                inputMode="text"
-                testID="amount-input"
-              />
+              <View style={styles.amountRow}>
+                {/* Left of the field: the sign is read before the number,
+                    so it is reached before the number too. */}
+                <Toggle
+                  label="−"
+                  on={amountIsNegative(amountText)}
+                  onPress={() => setAmount(toggleAmountSign(amountText))}
+                  accessibilityLabel="Negative"
+                  testID="sign-toggle"
+                />
+                <TextInput
+                  value={amountText}
+                  onChangeText={setAmount}
+                  style={[styles.input, styles.amountField]}
+                  placeholder={mode === 'whole' ? '0' : '0.00'}
+                  placeholderTextColor={T.faint}
+                  // 'decimal-pad' has no minus sign, and a leading '-' is
+                  // still a supported way to enter an expense even though the
+                  // − button exists. Both, not either.
+                  keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
+                  inputMode="text"
+                  testID="amount-input"
+                />
+              </View>
+              {/* The digits are not the amount, so the amount is shown. This
+                  is what makes the two modes safe to have at all: nobody has
+                  to remember which one is on. */}
+              <Text
+                style={[styles.preview, cents !== null && cents > 0 && styles.previewUp]}
+                testID="amount-preview"
+              >
+                {cents === null ? ' ' : formatAmount(cents)}
+              </Text>
             </Field>
 
             <Field label="Date" error={errors.date}>
@@ -173,6 +258,12 @@ const styles = StyleSheet.create({
   barTitle: { color: T.text, fontSize: 17, fontWeight: '600' },
   body: { padding: SPACE.lg, gap: SPACE.lg },
   field: { gap: SPACE.xs },
+  amountRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  amountField: { flex: 1 },
+  // A non-breaking space holds the line's height when there is nothing to
+  // show, so the form does not jump on the first keystroke.
+  preview: { color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'], minHeight: 20 },
+  previewUp: { color: T.positive },
   label: { color: T.dim, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
     backgroundColor: T.card, color: T.text, fontSize: 17, borderRadius: 10,

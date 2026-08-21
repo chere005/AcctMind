@@ -56,6 +56,18 @@ learned goes in the commit that learns it.
 - **`main` is the branch.** Stage explicit paths — never `git add -A`. Sean
   makes his own commits unless he says otherwise.
 
+## Shorthand
+
+- **`dtp` = deploy, tag, push.** In that order: `./deploy.sh` (which writes the
+  sandbox and then production), then a git tag, then `git push` with the tag.
+  Sean's shorthand, carried over from CalMind. It was not written down in
+  either repo, which cost two rounds of asking — hence this line.
+
+  The deploy runs the full gate, `npm test`, and that includes
+  `npm run test:server`. A `dtp` is therefore blocked whenever the server
+  suite is red, and it should stay blocked: the gate failing is the gate
+  working.
+
 ## Traps that have cost real time HERE
 
 - **A side effect inside a `setState` updater silently discards the other
@@ -110,6 +122,79 @@ learned goes in the commit that learns it.
   version of this note says the path is in the JS — true there, not yet true
   here. It becomes true the moment anyone writes an `import()`, and
   `index.html` differs regardless, so the per-instance export stays.
+
+- **Both of the bugs below were already solved correctly in CalMind, and
+  grepping it first would have cost two minutes.** The standing rule says
+  "CalMind is the reference — grep it before inventing an approach", and it
+  was not followed. `CalMind-local/app/modules/watch-bridge` already had the
+  delegate as its own `NSObject`, and `CalMind-local/packages/core/src/sync.ts`
+  already stamped every write — deletes included — through
+  `Math.max(now, prev.updated + 1)`. AcctMind shipped a watch bridge that
+  could not compile and a `tombstone` that could lose a delete on merge.
+  Reading first is cheaper than mutation-testing your way back to the same
+  answer.
+
+- **An Expo `Module` is not an `NSObject`, so it cannot be a delegate.**
+  `WatchBridgeModule: Module, WCSessionDelegate` looks obvious and does not
+  compile — `WCSessionDelegate` inherits `NSObjectProtocol` and Swift refuses
+  the conformance. What made it expensive is WHERE the error surfaced: the
+  watch bridge sat in the tree for a whole commit without ever being built,
+  because nothing had triggered a full iOS compile since it was added, and it
+  finally failed inside an unrelated feature's build. Give the delegate its
+  own `NSObject` subclass and hold it (WCSession keeps its delegate weakly).
+
+  **Swift that nothing has compiled is not written yet.** This file sat in
+  the tree for a whole commit looking finished. Compile a pod alone with
+  `xcodebuild -scheme <PodName>` — seconds against a full build's minutes.
+
+- **`NWBrowser` omits the TXT record unless you ask, and the default costs
+  you the whole feature.** The descriptor you want is
+  `.bonjourWithTXTRecord(type:domain:)`; with plain `.bonjour(type:domain:)`
+  `result.metadata` is never `.bonjour(...)`. The peer filter
+  read it to tell this device from another, found nothing, and skipped every
+  result with a `continue`. What that looks like: both devices advertise,
+  both browsers report `ready`, `dns-sd -B _acctmind1._tcp` on a Mac lists
+  both instances — and the two apps never see each other, with no error
+  anywhere in the log. Found only by browsing from the host and asking why
+  something visible from outside was invisible from inside.
+
+  The general shape, worth remembering beyond this API: **when a filter's
+  input is missing, `continue` is indistinguishable from "no match".** If a
+  guard skipping an item would mean the feature silently does nothing, it
+  needs to be loud.
+
+- **`-destination 'generic/platform=iOS Simulator'` builds the WATCH target
+  against the iOS SDK, and everything it then reports is a lie.** Reaching
+  for the generic destination to be thorough produced two convincing errors
+  in `targets/watch/`: `WatchSession` "does not conform to WCSessionDelegate"
+  (demanding `sessionDidBecomeInactive`/`sessionDidDeactivate`, which are the
+  PHONE's half and are not required on watchOS), and an `AppIcon` that "did
+  not have any applicable content" (the icon is a valid opaque 1024×1024
+  PNG). Both files were correct. Half an hour went into fixing code that had
+  nothing wrong with it, and a wrong explanation was nearly committed with
+  the fix.
+
+  Build the app the way Expo does — `-destination 'platform=iOS
+  Simulator,id=<udid>'`, a SPECIFIC device — and build the watch on its own
+  platform: `-scheme AcctMindWatch -destination 'platform=watchOS
+  Simulator,id=<udid>'`. If a target's errors look absurd, check which SDK it
+  is being compiled against before believing them.
+
+- **A test that mutates a hard-coded value tests nothing once the algorithm
+  changes.** `peer.test.ts` proved the pairing checksum caught every adjacent
+  transposition by mutating a literal code. Replace Luhn with a plain sum —
+  which genuinely does NOT catch transpositions — and the test stayed green,
+  because the literal no longer parsed under the new algorithm, so every
+  mutation of it was refused for the wrong reason. DERIVE the fixture from
+  the code under test, and assert the underived fixture is valid first. That
+  guard line is the whole difference between the two versions.
+
+- **A frame counter is not a rate limit.** The peer link first capped each
+  connection at eight frames, to stop a runaway exchange. Eight is also what
+  a person adding eight transactions sends, so the cap would have made sync
+  stop working and look exactly like sync being broken. What needs bounding
+  is arrival RATE, not lifetime count: a token bucket costs the same ten
+  lines and does not punish real use.
 
 - **Core's imports are extensionless, and two toolchains disagree about
   that.** Metro cannot resolve `./money.js` in TypeScript source; Node's ESM

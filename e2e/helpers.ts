@@ -74,6 +74,20 @@ function monthIsAfter(label: string, day: string): boolean {
   return shown > want;
 }
 
+/**
+ * The transactions the device actually has saved.
+ *
+ * Separate from `stored` because a fresh device is no longer empty: it writes
+ * one account before anything is drawn, so "nothing was added" is a claim
+ * about the TRANSACTIONS, not about the file.
+ */
+export async function storedTxns(page: Page): Promise<unknown[]> {
+  const raw = await page.evaluate((k) => window.localStorage.getItem(k), KEY);
+  if (raw === null) return [];
+  const parsed = JSON.parse(raw) as { txns?: unknown[] };
+  return parsed.txns ?? [];
+}
+
 /** What the device actually has saved. The screen is not the evidence. */
 export async function stored(page: Page): Promise<unknown> {
   const raw = await page.evaluate((k) => window.localStorage.getItem(k), KEY);

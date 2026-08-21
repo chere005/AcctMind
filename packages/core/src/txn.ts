@@ -2,7 +2,8 @@
 
 import type { Draft, DraftErrors, Txn } from './types';
 import { isDay } from './day';
-import { parseAmount } from './money';
+import { amountInput, formatAmount, parseAmount } from './money';
+import { touch } from './merge';
 
 export const NAME_MAX = 120;
 export const DESC_MAX = 2000;
@@ -30,6 +31,8 @@ export function validateDraft(draft: Draft): DraftErrors {
 
   if (!isDay(draft.date)) errors.date = 'Pick a date';
 
+  if (draft.account.trim() === '') errors.account = 'Pick an account';
+
   return errors;
 }
 
@@ -54,6 +57,11 @@ export function makeTxn(draft: Draft, id: string, created: number): Txn {
     description: draft.description.trim(),
     amount,
     date: draft.date,
+    account: draft.account,
+    category: draft.category,
+    // A new row has never been dragged. Zero means "use the date order",
+    // which is what makes an untouched list identical in every sort mode.
+    order: 0,
     created,
     // A new record has never been edited, so its merge clock starts where it
     // was born. Every later change goes through `touch`.
@@ -62,8 +70,11 @@ export function makeTxn(draft: Draft, id: string, created: number): Txn {
 }
 
 /** A blank draft, dated today. What the + button opens. */
-export function emptyDraft(day: string): Draft {
-  return { name: '', description: '', amount: '', date: day };
+export function emptyDraft(day: string, account: string): Draft {
+  // The account is required rather than defaulted. A form that invented one
+  // would put transactions somewhere nobody chose, and the screen always
+  // knows which section the + was pressed in.
+  return { name: '', description: '', amount: '', date: day, account, category: null };
 }
 
 /**
@@ -75,12 +86,7 @@ export function emptyDraft(day: string): Draft {
  * syncs, two devices holding identical data could disagree about the order.
  * A total order costs one comparison and removes both.
  */
-export function sortTxns(txns: readonly Txn[]): Txn[] {
-  return [...txns].sort((a, b) =>
-    b.date.localeCompare(a.date)
-    || b.created - a.created
-    || a.id.localeCompare(b.id));
-}
+
 
 /** The sum, in cents. Integers throughout — see money.ts. */
 export function total(txns: readonly Txn[]): number {
@@ -109,4 +115,203 @@ export function newId(now: number = Date.now(), rand: () => number = Math.random
   let tail = '';
   for (let i = 0; i < 8; i++) tail += Math.floor(rand() * 36).toString(36);
   return now.toString(36).padStart(TIME_WIDTH, '0') + '-' + tail;
+}
+
+/* ------------------------------------------------------------------ *
+ * The four things you can do to a transaction that already exists.
+ *
+ * A row is held down and offers, right to left: delete, copy, duplicate,
+ * edit. Delete is the destructive one and sits furthest from the thumb's
+ * resting place on the left, which is where `edit` — the one people reach
+ * for most — goes instead.
+ *
+ * Everything here is pure and takes its clock and its ids as arguments, for
+ * the same reason `makeTxn` does: a test can pin both and get the same object
+ * twice.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A transaction as an editable draft — the inverse of `makeTxn`.
+ *
+ * The amount goes back through `amountInput`, so what lands in the field is
+ * the canonical `-4.50` rather than the raw digits somebody once typed. A
+ * form seeded with `1234` would read as $12.34 under the entry rules and
+ * silently divide the amount by a hundred on the way in.
+ */
+export function draftOf(txn: Txn): Draft {
+  return {
+    name: txn.name,
+    description: txn.description,
+    amount: amountInput(txn.amount),
+    date: txn.date,
+    account: txn.account,
+    category: txn.category,
+  };
+}
+
+/**
+ * Apply an edited draft to an existing transaction.
+ *
+ * Keeps `id` and `created` — it is the same transaction, edited, not a new
+ * one — and moves the merge clock through `touch` so the edit outranks the
+ * copy on every other device. `created` staying put is what keeps the list
+ * order stable under an edit that does not change the date.
+ */
+export function applyDraft(txn: Txn, draft: Draft, now: number): Txn {
+  const amount = parseAmount(draft.amount);
+  if (amount === null) throw new Error('applyDraft: the draft has not been validated');
+  return touch({
+    ...txn,
+    name: draft.name.trim(),
+    description: draft.description.trim(),
+    amount,
+    date: draft.date,
+    account: draft.account,
+    category: draft.category,
+  }, now);
+}
+
+/**
+ * A second transaction with the same details.
+ *
+ * A NEW id and a new `created`, because it is a new transaction — the point
+ * of duplicating is a second coffee, not a second copy of the first one.
+ * Anything else would make the two indistinguishable to the merge, and a
+ * duplicate that shared an id would be silently swallowed by it.
+ *
+ * The DATE is carried over rather than reset to today. Someone duplicating a
+ * row is usually entering something that already happened alongside it; a
+ * date that quietly jumped would be a wrong number in the ledger, and it is
+ * one tap to change.
+ */
+export function duplicateTxn(txn: Txn, id: string, now: number): Txn {
+  return {
+    id,
+    name: txn.name,
+    description: txn.description,
+    amount: txn.amount,
+    date: txn.date,
+    account: txn.account,
+    category: txn.category,
+    // Not the original's place in a hand-made order: it is a new row, and
+    // inheriting the position would put two rows in one slot.
+    order: 0,
+    created: now,
+    updated: now,
+  };
+}
+
+/**
+ * A transaction as text, for the clipboard.
+ *
+ * Tab-separated so it lands in a spreadsheet as four cells, and readable as
+ * a line if it does not. The amount is `formatAmount`, the same string the
+ * row shows — what is copied is what was on screen.
+ */
+export function txnText(txn: Txn): string {
+  return [txn.date, txn.name, txn.description, formatAmount(txn.amount)].join('\t');
+}
+
+/* ------------------------------------------------------------------ *
+ * Ordering
+ * ------------------------------------------------------------------ */
+
+/** How the list is ordered. A view choice, so it lives in device prefs. */
+export type SortMode = 'custom' | 'date' | 'amount';
+
+/**
+ * The gap left between neighbours when order is assigned.
+ *
+ * Sparse on purpose. Dropping a row between two others takes the midpoint of
+ * their orders, so one row is rewritten rather than every row after it — and
+ * every rewrite is a merge-clock bump that has to cross a network. With a
+ * gap of 1024 a list can be rearranged about ten times in the same spot
+ * before the midpoints collide and `respace` is needed.
+ */
+export const REORDER_GAP = 1024;
+
+/**
+ * Order by date, newest first — the default, and the tiebreak for the others.
+ *
+ * The id key exists so the order is TOTAL: without it two rows entered in the
+ * same millisecond order themselves by input order, which reshuffles between
+ * renders and lets two devices disagree about a list they both hold.
+ */
+function byDate(a: Txn, b: Txn): number {
+  return b.date.localeCompare(a.date) || b.created - a.created || a.id.localeCompare(b.id);
+}
+
+/**
+ * The list, in the order asked for.
+ *
+ * `amount` compares ABSOLUTE values: a ledger's biggest lines are the ones
+ * worth seeing first whichever direction the money went, and sorting signed
+ * would bury the largest expense at the bottom under every small credit.
+ *
+ * `custom` falls back to the date order for any row that has never been
+ * dragged, which is what makes "custom remembers" true from the first launch:
+ * an untouched list in custom mode looks exactly like the date one.
+ */
+export function sortTxns(txns: readonly Txn[], mode: SortMode = 'date'): Txn[] {
+  const rows = [...txns];
+  if (mode === 'amount') {
+    return rows.sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount) || byDate(a, b));
+  }
+  if (mode === 'custom') {
+    // Rows never dragged carry order 0 and are separated by the date rule, so
+    // a fresh ledger in custom mode is the date ledger until something moves.
+    return rows.sort((a, b) => b.order - a.order || byDate(a, b));
+  }
+  return rows.sort(byDate);
+}
+
+/**
+ * The order value that puts a row between two neighbours.
+ *
+ * `null` for an end of the list. Returns the midpoint, or a clear step beyond
+ * the edge — never an average with a missing side, which is how a dragged row
+ * ends up at zero and jumps somewhere nobody asked for.
+ */
+export function orderBetween(above: Txn | null, below: Txn | null): number {
+  if (above === null && below === null) return 0;
+  if (above === null) return (below?.order ?? 0) + REORDER_GAP;
+  if (below === null) return above.order - REORDER_GAP;
+  return (above.order + below.order) / 2;
+}
+
+/**
+ * Move `id` to sit at `index` in the list as currently shown.
+ *
+ * Takes the VISIBLE list, because a drag is a statement about what is on
+ * screen: the person moved a row below the one they can see, not below
+ * whatever the raw array happens to hold next.
+ *
+ * Returns only the row that changed, or null when nothing needs to move —
+ * so a drag that ends where it started costs no merge clock and no sync.
+ */
+export function reorder(shown: readonly Txn[], id: string, index: number, now: number): Txn | null {
+  const from = shown.findIndex((t) => t.id === id);
+  if (from < 0) return null;
+  const to = Math.max(0, Math.min(shown.length - 1, index));
+  if (from === to) return null;
+  const without = shown.filter((t) => t.id !== id);
+  const above = without[to - 1] ?? null;
+  const below = without[to] ?? null;
+  const moved = shown[from];
+  if (moved === undefined) return null;
+  const order = orderBetween(above, below);
+  if (order === moved.order) return null;
+  return touch({ ...moved, order }, now);
+}
+
+/**
+ * Give every row a fresh, evenly spaced order in the order currently shown.
+ *
+ * Needed when repeated drags into one spot have halved the gap to nothing.
+ * Rewrites everything, so it is a last resort rather than a routine step —
+ * every row it touches is a row that has to travel.
+ */
+export function respace(shown: readonly Txn[], now: number): Txn[] {
+  const n = shown.length;
+  return shown.map((t, i) => touch({ ...t, order: (n - i) * REORDER_GAP }, now));
 }

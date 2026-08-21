@@ -20,18 +20,58 @@ under the title. A **+** opens a form: **Name** (required), **Description**,
 
 ## Where the data lives
 
-**On the device, and nowhere else.** There is no API, no database, and no
-sync. The web app keeps its ledger in the browser's own storage; the phone
-and the desktop shells keep theirs on the machine. Nothing about a
-transaction is ever sent anywhere.
+**On the device.** There is no API and no database. The web app keeps its
+ledger in the browser's own storage; the phone, the watch and the desktop
+shells keep theirs on the machine.
 
 That has one consequence worth stating plainly, because the code is shaped
 around it: **the device is the only copy**, so a store that will not parse is
 never treated as an empty one. `parseStore` returns an error rather than an
 empty ledger, and the app refuses to write until a person says to discard it.
 
-Sync later — if it comes — should not need Sean's server. The store is behind
-one small interface (`apps/app/src/persist.ts`) for that reason.
+## Sync, and what each transport actually does
+
+Three links, none of which needs Sean's server, all of which are optional —
+every surface is a working app with all three switched off. What merges is
+one function (`mergeStores`), proven commutative, associative and idempotent,
+so any of them can deliver in any order, twice, or years late.
+
+| Link | Between | Needs | State |
+| --- | --- | --- | --- |
+| Local network | iPhone ⇄ Mac ⇄ iPad | A free Apple team | **On** |
+| WatchConnectivity | iPhone → Watch | A free Apple team | On, one-way |
+| iCloud key-value | Any Apple devices | A **paid** membership | Written, off |
+
+**Local network** is Bonjour discovery and a TLS connection carrying whole
+ledgers, `apps/app/modules/peer-sync/`. Two devices pair once by typing a
+25-character code; that code is 120 bits from the system CSPRNG and becomes
+the pre-shared key, which is why it is long rather than six friendly
+characters — a short one could be ground out offline by anyone who recorded a
+handshake off the wifi.
+
+The link is TLS, authenticated by that code — measured as TLS 1.2 with
+`TLS_PSK_WITH_AES_128_GCM_SHA256`, which is what Apple's pre-shared-key
+support negotiates and cannot be talked out of. So nobody on the network can
+read the ledger or feed it invented rows. It has **no forward secrecy**,
+which is worth knowing precisely: someone who both records a session and
+later gets the pairing code could read what they recorded. The code never
+crosses the network and lives in the Keychain, so that means having the
+device. `PeerLink.swift` carries the full note.
+
+Its other limit is real and the app says so rather than showing a tick:
+**both devices have to be awake, on the same network, with AcctMind open.** iOS
+suspends a backgrounded app and a suspended app holds no listener. A
+transaction added on a phone in a café reaches the Mac the next time both are
+open together.
+
+**iCloud** removes that limit — a device that was switched off gets the write
+on its next launch — but the key-value entitlement needs a paid Apple
+Developer Program membership. The code is written and tested; it is gated
+behind `ACCTMIND_ICLOUD=1` and off by default, so a free team builds
+everything.
+
+**The watch** gets a feed, not the store: the twenty most recent rows and the
+total of *all* of them. It draws; it does not edit.
 
 ## The sign-in, and what it is for
 
@@ -60,6 +100,10 @@ spec/            The behavior contract as JSON vectors — the same file a
                  starts HERE, not in a screen.
 apps/app/        One Expo app -> iOS, Android and web. Screens, gestures and
                  styling only; every rule is imported from core.
+apps/app/modules/         Three small native modules, all Apple-only and all
+                 no-ops elsewhere: peer-sync (Bonjour + TLS), watch-bridge
+                 (WatchConnectivity), icloud-sync (key-value store). Each
+                 moves opaque strings; none of them merges anything.
 apps/app/targets/watch/   The SwiftUI watch app, generated into the Xcode
                  project by @bacons/apple-targets. Read-only. Its formatter
                  is a deliberate twin of core's, held to it by
@@ -84,9 +128,40 @@ npm run web                       # Expo web on :8081
 npm run export:web                # the dist every shell and the e2e suite run on
 npx playwright test --ui          # the gesture suite, watchable
 npm run test:watch                # core's real feed through the watch's real Swift
+npm run test:peer                 # the Bonjour service type, plist against core
 sh desktop/check-assets.sh        # the desktop's cheap checks
 ./desktop/smoke.sh                # macOS: build, carry THIS export, launch, quit
 cd apps/app && npx expo start     # then i / a for the iOS / Android simulator
+```
+
+The Mac app is the iOS binary run natively — no Catalyst, no second codebase,
+and the same bundle identifier as the phone, which is what would let the two
+share a pairing. It builds:
+
+```sh
+cd apps/app/ios && xcodebuild -workspace AcctMind.xcworkspace -scheme AcctMind -configuration Release -destination 'platform=macOS,variant=Designed for iPad' build
+```
+
+**But you cannot launch what that produces from a shell**, and that is worth
+knowing before planning around it. The product is a `platform 2` (iOS) Mach-O
+in `Release-iphoneos/`, which is correct for "Designed for iPad" — and macOS
+refuses it: `open` says "incorrect executable format", and registering it with
+`lsregister` changes nothing. Running one of these locally is an Xcode action:
+open `apps/app/ios/AcctMind.xcworkspace`, choose **My Mac (Designed for
+iPad)**, Run. There is no command-line equivalent.
+
+The alternative, if a double-clickable Mac app is ever wanted, is Mac
+Catalyst. Expo sets `SUPPORTS_MACCATALYST = NO` and turning it on is a real
+piece of work rather than a flag — it needs a config plugin (prebuild
+regenerates the project) and every Pod has to tolerate the Catalyst SDK. It
+has not been attempted.
+
+Android needs `ANDROID_HOME` in the environment — `expo run:android` sets it,
+a bare `./gradlew` does not, and the failure ("SDK location not found") reads
+like a broken project rather than a missing variable:
+
+```sh
+cd apps/app/android && ANDROID_HOME="$HOME/Library/Android/sdk" ./gradlew assembleRelease
 ```
 
 `export:web` is the export PLUS `tools/patch-web-html.mjs` — the head patch

@@ -1,12 +1,17 @@
 /** Drafts, validation, and the arithmetic on top of a list. */
 import { describe, expect, it } from 'vitest';
 import {
-  DESC_MAX, NAME_MAX, emptyDraft, isValid, makeTxn, newId, total, validateDraft,
+  DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
+  REORDER_GAP, newId, reorder, respace, sortTxns, total, txnText, validateDraft,
 } from '../src/index';
+
+/** The form always knows its account, so the test fixture supplies one too. */
+const emptyDraft2 = (day: string) => emptyDraft(day, 'a1');
 import type { Draft, Txn } from '../src/index';
 
 const draft = (over: Partial<Draft> = {}): Draft => ({
-  name: 'Coffee', description: 'flat white', amount: '4.50', date: '2026-08-20', ...over,
+  name: 'Coffee', description: 'flat white', amount: '4.50', date: '2026-08-20',
+  account: 'a1', category: null, ...over,
 });
 
 describe('validateDraft', () => {
@@ -52,7 +57,9 @@ describe('validateDraft', () => {
 
   // Every field at once, so the form can show every field at once.
   it('reports all the bad fields together', () => {
-    expect(validateDraft({ name: '', description: '', amount: 'x', date: '' }))
+    expect(validateDraft({
+      name: '', description: '', amount: 'x', date: '', account: 'a1', category: null,
+    }))
       .toEqual({
         name: 'Name is required',
         amount: 'That is not an amount',
@@ -66,7 +73,7 @@ describe('makeTxn', () => {
     const t = makeTxn(draft({ name: '  Coffee  ', description: '  hot  ', amount: ' $4.50 ' }), 'id1', 7);
     expect(t).toEqual({
       id: 'id1', name: 'Coffee', description: 'hot',
-      amount: 450, date: '2026-08-20', created: 7,
+      amount: 450, date: '2026-08-20', account: 'a1', category: null, order: 0, created: 7,
       // A new record has never been edited: its merge clock starts at birth.
       updated: 7,
     });
@@ -81,15 +88,21 @@ describe('makeTxn', () => {
 
 describe('emptyDraft', () => {
   it('is blank but dated', () => {
-    expect(emptyDraft('2026-08-20')).toEqual({
+    expect(emptyDraft2('2026-08-20')).toEqual({
       name: '', description: '', amount: '', date: '2026-08-20',
+      // The account is required rather than defaulted: the screen always
+      // knows which section the + was pressed in.
+      account: 'a1', category: null,
     });
   });
 });
 
 describe('total', () => {
   const t = (amount: number, id: string): Txn =>
-    ({ id, name: id, description: '', amount, date: '2026-08-20', created: 0, updated: 0 });
+    ({
+      id, name: id, description: '', amount, date: '2026-08-20',
+      account: 'a1', category: null, order: 0, created: 0, updated: 0,
+    });
 
   it('adds cents as integers', () => {
     expect(total([])).toBe(0);
@@ -120,5 +133,181 @@ describe('newId', () => {
   it('is deterministic when its sources are', () => {
     const rand = () => 0.5;
     expect(newId(1000, rand)).toBe(newId(1000, rand));
+  });
+});
+
+describe('the four things you can do to an existing transaction', () => {
+  const base: Txn = {
+    id: 'abc', name: 'Coffee', description: 'co-op', amount: -450,
+    date: '2026-08-20', account: 'a1', category: null, order: 0, created: 1000, updated: 1000,
+  };
+
+  describe('edit', () => {
+    it('round-trips through a draft without changing the amount', () => {
+      // The trap this pins: the entry rules read bare digits as CENTS, so a
+      // form seeded with '450' would come back as $4.50 having gone in as
+      // -$4.50. `draftOf` writes the canonical '-4.50' for that reason.
+      const back = applyDraft(base, draftOf(base), 2000);
+      expect(back.amount).toBe(base.amount);
+      expect(back.name).toBe(base.name);
+      expect(back.date).toBe(base.date);
+    });
+
+    it('is the same transaction, edited — not a new one', () => {
+      const edited = applyDraft(base, { ...draftOf(base), name: 'Tea' }, 2000);
+      expect(edited.id).toBe(base.id);
+      expect(edited.created).toBe(base.created);
+      expect(edited.name).toBe('Tea');
+    });
+
+    it('moves the merge clock, so the edit beats every other copy', () => {
+      expect(applyDraft(base, draftOf(base), 2000).updated).toBeGreaterThan(base.updated);
+    });
+
+    it('and still moves it when the clock has not', () => {
+      // Same guarantee `touch` gives: two edits in one millisecond must not
+      // tie, because a tie keeps the incumbent and drops the second.
+      const once = applyDraft(base, draftOf(base), 1000);
+      const twice = applyDraft(once, draftOf(once), 1000);
+      expect(twice.updated).toBeGreaterThan(once.updated);
+    });
+
+    it('trims, exactly as making a new one does', () => {
+      const e = applyDraft(base, { ...draftOf(base), name: '  Tea  ', description: '  x  ' }, 2000);
+      expect(e.name).toBe('Tea');
+      expect(e.description).toBe('x');
+    });
+
+    it('refuses a draft that has not been validated', () => {
+      expect(() => applyDraft(base, { ...draftOf(base), amount: 'nope' }, 2000)).toThrow();
+    });
+  });
+
+  describe('duplicate', () => {
+    it('is a NEW transaction with the same details', () => {
+      const copy = duplicateTxn(base, 'xyz', 5000);
+      expect(copy.id).not.toBe(base.id);
+      expect(copy.name).toBe(base.name);
+      expect(copy.amount).toBe(base.amount);
+      expect(copy.created).toBe(5000);
+    });
+
+    it('keeps the date rather than jumping to today', () => {
+      // A date that quietly moved would be a wrong number in a ledger.
+      expect(duplicateTxn(base, 'xyz', 5000).date).toBe(base.date);
+    });
+
+    it('carries no tombstone across', () => {
+      // Duplicating a deleted row must not produce a dead one.
+      const dead = { ...base, deleted: true as const };
+      expect(duplicateTxn(dead, 'xyz', 5000).deleted).toBeUndefined();
+    });
+  });
+
+  describe('copy', () => {
+    it('copies what the row showed, not the raw cents', () => {
+      expect(txnText(base)).toBe('2026-08-20\tCoffee\tco-op\t-$4.50');
+    });
+
+    it('is four fields whether or not there is a description', () => {
+      // Tab-separated so it lands in a spreadsheet as cells. A missing
+      // description must still leave its column, or the amount shifts left.
+      expect(txnText({ ...base, description: '' }).split('\t')).toHaveLength(4);
+    });
+  });
+});
+
+describe('sorting and hand ordering', () => {
+  const t = (id: string, over: Partial<Txn> = {}): Txn => ({
+    id, name: id, description: '', amount: -100, date: '2026-08-20',
+    account: 'a1', category: null, order: 0, created: 100, updated: 100, ...over,
+  });
+
+  it('defaults to date, newest first', () => {
+    const rows = [t('old', { date: '2026-08-18' }), t('new', { date: '2026-08-20' })];
+    expect(sortTxns(rows).map((r) => r.id)).toEqual(['new', 'old']);
+    expect(sortTxns(rows, 'date').map((r) => r.id)).toEqual(['new', 'old']);
+  });
+
+  it('orders by amount on the ABSOLUTE value', () => {
+    // A ledger's biggest lines are worth seeing first whichever way the money
+    // went. Sorted signed, the largest expense sinks below every small credit.
+    const rows = [t('small', { amount: 100 }), t('bigOut', { amount: -50_000 }), t('mid', { amount: 900 })];
+    expect(sortTxns(rows, 'amount').map((r) => r.id)).toEqual(['bigOut', 'mid', 'small']);
+  });
+
+  it('falls back to date when two amounts are equally large', () => {
+    const rows = [
+      t('a', { amount: -500, date: '2026-08-18' }),
+      t('b', { amount: 500, date: '2026-08-20' }),
+    ];
+    expect(sortTxns(rows, 'amount').map((r) => r.id)).toEqual(['b', 'a']);
+  });
+
+  it('custom looks exactly like date until something is dragged', () => {
+    // What makes "custom remembers, and defaults to date" true on a device
+    // that has never reordered anything.
+    const rows = [t('old', { date: '2026-08-18' }), t('new', { date: '2026-08-20' })];
+    expect(sortTxns(rows, 'custom').map((r) => r.id))
+      .toEqual(sortTxns(rows, 'date').map((r) => r.id));
+  });
+
+  it('and honours a hand order once there is one', () => {
+    const rows = [
+      t('new', { date: '2026-08-20', order: 0 }),
+      t('old', { date: '2026-08-18', order: REORDER_GAP }),
+    ];
+    expect(sortTxns(rows, 'custom').map((r) => r.id)).toEqual(['old', 'new']);
+    // The other modes are unaffected: the drag changed the custom order only.
+    expect(sortTxns(rows, 'date').map((r) => r.id)).toEqual(['new', 'old']);
+  });
+
+  it('every mode is a TOTAL order, so two devices cannot disagree', () => {
+    // Identical in every sortable field but the id.
+    const rows = [t('b'), t('a'), t('c')];
+    for (const mode of ['custom', 'date', 'amount'] as const) {
+      expect(sortTxns(rows, mode).map((r) => r.id)).toEqual(['a', 'b', 'c']);
+    }
+  });
+
+  describe('reorder', () => {
+    const shown = [t('x', { order: 300 }), t('y', { order: 200 }), t('z', { order: 100 })];
+
+    it('moves one row and rewrites only that row', () => {
+      const moved = reorder(shown, 'z', 0, 5000);
+      expect(moved?.id).toBe('z');
+      expect(moved?.order).toBeGreaterThan(300);
+      // Re-sorting with the change applied puts it where it was dropped.
+      const after = sortTxns(shown.map((r) => (r.id === 'z' ? moved! : r)), 'custom');
+      expect(after.map((r) => r.id)).toEqual(['z', 'x', 'y']);
+    });
+
+    it('drops a row between two neighbours', () => {
+      const moved = reorder(shown, 'x', 1, 5000);
+      const after = sortTxns(shown.map((r) => (r.id === 'x' ? moved! : r)), 'custom');
+      expect(after.map((r) => r.id)).toEqual(['y', 'x', 'z']);
+    });
+
+    it('costs nothing when the row lands where it started', () => {
+      // No record, no clock bump, nothing to sync.
+      expect(reorder(shown, 'x', 0, 5000)).toBeNull();
+    });
+
+    it('moves the merge clock, so the drag travels', () => {
+      expect(reorder(shown, 'z', 0, 5000)?.updated).toBeGreaterThan(100);
+    });
+
+    it('shrugs at a row that is not there', () => {
+      expect(reorder(shown, 'nope', 0, 5000)).toBeNull();
+    });
+
+    it('respace re-opens the gaps without changing the order', () => {
+      // Repeated drops into one spot halve the gap; this is the way out.
+      const tight = [t('a', { order: 2 }), t('b', { order: 1 }), t('c', { order: 0 })];
+      const spaced = respace(tight, 5000);
+      expect(sortTxns(spaced, 'custom').map((r) => r.id)).toEqual(['a', 'b', 'c']);
+      const gaps = spaced.map((r) => r.order);
+      expect(gaps[0]! - gaps[1]!).toBe(REORDER_GAP);
+    });
   });
 });

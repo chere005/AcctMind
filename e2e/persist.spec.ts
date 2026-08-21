@@ -7,6 +7,7 @@
  */
 import { expect, test } from '@playwright/test';
 import { addTransaction, fresh, rows, stored, withStore, KEY } from './helpers';
+import { STORE_VERSION } from '@acctmind/core';
 
 test('a transaction survives a reload', async ({ page }) => {
   await fresh(page);
@@ -53,15 +54,21 @@ test.describe('a damaged store', () => {
     expect(await page.evaluate((k) => window.localStorage.getItem(k), KEY)).toBe(DAMAGED);
 
     await page.getByTestId('start-fresh-confirm').click();
-    await expect.poll(async () => await stored(page)).toEqual({ v: 1, txns: [] });
+    // STORE_VERSION, not a literal: this said `v: 1` after the store went to
+    // v2 and nothing noticed, because the gesture suite had not been re-run.
+    await expect.poll(async () => (await stored(page) as { txns: unknown[] }).txns).toEqual([]);
   });
 
   test('a version this build cannot read is damage, not an upgrade', async ({ page }) => {
     // A file from a NEWER AcctMind. Rendering it would be wrong; overwriting
     // it with a downgrade would be worse.
-    await withStore(page, JSON.stringify({ v: 2, txns: [] }));
+    // One PAST whatever this build writes, so the case stays "from the
+    // future" as the store version moves. Written as a literal it stopped
+    // testing anything the day STORE_VERSION caught up with it.
+    const future = STORE_VERSION + 1;
+    await withStore(page, JSON.stringify({ v: future, txns: [] }));
     await expect(page.getByTestId('blocked')).toBeVisible();
-    await expect(page.getByTestId('blocked')).toContainText('version 2');
+    await expect(page.getByTestId('blocked')).toContainText(`version ${future}`);
   });
 });
 

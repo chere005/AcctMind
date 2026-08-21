@@ -7,13 +7,14 @@
     "desktop"
   ],
   "scripts": {
-    "test": "npm run typecheck && npm run test:core && npm run test:server && npm run test:deploy && npm run test:e2e",
+    "test": "npm run typecheck && npm run test:core && npm run test:peer && npm run test:server && npm run test:deploy && npm run test:e2e",
     "test:dev": "sh tools/test-dev.sh",
     "test:core": "npm -w @acctmind/core run test -- --run",
     "test:server": "php server/tools/test.php",
     "test:e2e": "npm run export:web && playwright test",
     "test:e2e:fast": "playwright test",
     "test:deploy": "sh tools/check-deploy-guards.sh",
+    "test:peer": "node --import ./tools/register-ts.mjs tools/check-peer-service.mjs",
     "test:watch": "sh tools/check-watch-feed.sh",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/core/tsconfig.test.json && tsc --noEmit -p apps/app",
     "web": "npm -w app run web",

@@ -8,7 +8,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  STORE_VERSION, canonical, live, mergeStores, parseStore, prune, sameStore, tombstone, touch,
+  STORE_VERSION, canonical, live, mergeStores, parseStore, pickTxn, prune, sameStore, tombstone,
+  touch,
 } from '../src/index';
 import type { Store, Txn } from '../src/index';
 
@@ -24,10 +25,15 @@ const spec = JSON.parse(
 
 const txn = ([id, updated, state, name]: Row): Txn => ({
   id, name, description: '', amount: 100, date: '2026-08-20', created: 1, updated,
+  account: 'a1', category: null, order: 0,
   ...(state === 'dead' ? { deleted: true as const } : {}),
 });
 
-const store = (rows: Row[]): Store => ({ v: STORE_VERSION, txns: rows.map(txn) });
+const ACCT = {
+  id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0,
+};
+const store = (rows: Row[]): Store =>
+  ({ v: STORE_VERSION, txns: rows.map(txn), accounts: [ACCT], categories: [] });
 
 /** id -> name, or DEAD for a tombstone. */
 const shape = (s: Store): Record<string, string> =>
@@ -84,6 +90,18 @@ describe('the helpers an edit goes through', () => {
     expect(touch(base, 50).updated).toBe(101);
   });
 
+  it('survives a delete made in the same millisecond as the last edit', () => {
+    // The hole this closes: with `updated: now`, the tombstone tied with the
+    // live copy, pickTxn kept the incumbent, and the row came back from the
+    // other device with nothing reporting a failure.
+    const edited = touch(base, 5_000);
+    const dead = tombstone(edited, 5_000);
+    expect(dead.updated).toBeGreaterThan(edited.updated);
+    // And the merge agrees, from both directions.
+    expect(pickTxn(edited, dead).deleted).toBe(true);
+    expect(pickTxn(dead, edited).deleted).toBe(true);
+  });
+
   it('tombstone marks dead and moves the clock', () => {
     const dead = tombstone(base, 500);
     expect(dead.deleted).toBe(true);
@@ -102,17 +120,19 @@ describe('prune', () => {
   const dead = tombstone(txn(['x', 100, 'live', 'gone']), 1_000_000);
 
   it('keeps a fresh tombstone, because the delete still has to travel', () => {
-    const s: Store = { v: STORE_VERSION, txns: [dead] };
+    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [] };
     expect(prune(s, 1_000_000 + 1000).txns).toHaveLength(1);
   });
 
   it('drops one older than the ttl', () => {
-    const s: Store = { v: STORE_VERSION, txns: [dead] };
+    const s: Store = { v: STORE_VERSION, txns: [dead], accounts: [], categories: [] };
     expect(prune(s, 1_000_000 + 91 * 24 * 3600 * 1000).txns).toHaveLength(0);
   });
 
   it('never drops a live record, however old', () => {
-    const s: Store = { v: STORE_VERSION, txns: [txn(['x', 1, 'live', 'ancient'])] };
+    const s: Store = {
+      v: STORE_VERSION, txns: [txn(['x', 1, 'live', 'ancient'])], accounts: [], categories: [],
+    };
     expect(prune(s, Date.now()).txns).toHaveLength(1);
   });
 });
@@ -128,7 +148,7 @@ describe('a v1 store', () => {
   });
 
   it('and a version newer than we read is still refused', () => {
-    expect(parseStore(JSON.stringify({ v: 3, txns: [] })).ok).toBe(false);
+    expect(parseStore(JSON.stringify({ v: STORE_VERSION + 1, txns: [] })).ok).toBe(false);
   });
 });
 

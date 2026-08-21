@@ -1,87 +1,529 @@
 {
   "_": "parseAmount: input -> integer cents, or null for 'not an amount'. This file is the contract; a behavior change starts by editing a case here and watching it go red. Groups are named so the failure message says which rule broke.",
-
   "parse": {
     "plain": [
-      ["0",        0],
-      ["12",       1200],
-      ["12.5",     1250],
-      ["12.50",    1250],
-      ["12.05",    1205],
-      [".5",       50],
-      ["0.01",     1],
-      [" 12.50 ",  1250],
-      ["12.",      1200]
+      [
+        "0",
+        0
+      ],
+      [
+        "12",
+        1200
+      ],
+      [
+        "12.5",
+        1250
+      ],
+      [
+        "12.50",
+        1250
+      ],
+      [
+        "12.05",
+        1205
+      ],
+      [
+        ".5",
+        50
+      ],
+      [
+        "0.01",
+        1
+      ],
+      [
+        " 12.50 ",
+        1250
+      ],
+      [
+        "12.",
+        1200
+      ]
     ],
-
     "decorated": [
-      ["$12.50",     1250],
-      ["$ 12.50",    1250],
-      ["1,234.56",   123456],
-      ["1,234,567",  123456700]
+      [
+        "$12.50",
+        1250
+      ],
+      [
+        "$ 12.50",
+        1250
+      ],
+      [
+        "1,234.56",
+        123456
+      ],
+      [
+        "1,234,567",
+        123456700
+      ]
     ],
-
     "signed": [
-      ["-5",        -500],
-      ["- 5",       -500],
-      ["+5",        500],
-      ["(12.34)",   -1234],
-      ["( 12.34 )", -1234],
-      ["-0",        0]
+      [
+        "-5",
+        -500
+      ],
+      [
+        "- 5",
+        -500
+      ],
+      [
+        "+5",
+        500
+      ],
+      [
+        "(12.34)",
+        -1234
+      ],
+      [
+        "( 12.34 )",
+        -1234
+      ],
+      [
+        "-0",
+        0
+      ]
     ],
-
     "_tooPrecise": "Three decimals would have to be rounded, and a silent rounding is the one thing a ledger may not do. Refusing sends the person back to a field they can see.",
     "tooPrecise": [
-      ["1.005",  null],
-      ["12.345", null],
-      ["0.001",  null]
+      [
+        "1.005",
+        null
+      ],
+      [
+        "12.345",
+        null
+      ],
+      [
+        "0.001",
+        null
+      ]
     ],
-
     "_notAmounts": "Nothing here is a number a person meant.",
     "notAmounts": [
-      ["",         null],
-      ["   ",      null],
-      [".",        null],
-      ["-",        null],
-      ["$",        null],
-      ["()",       null],
-      ["abc",      null],
-      ["1.2.3",    null],
-      ["1-2",      null],
-      ["--5",      null],
-      ["(5",       null],
-      ["5)",       null],
-      ["-(5)",     null],
-      ["1e3",      null],
-      ["Infinity", null],
-      ["NaN",      null],
-      ["12 34",    null]
+      [
+        "",
+        null
+      ],
+      [
+        "   ",
+        null
+      ],
+      [
+        ".",
+        null
+      ],
+      [
+        "-",
+        null
+      ],
+      [
+        "$",
+        null
+      ],
+      [
+        "()",
+        null
+      ],
+      [
+        "abc",
+        null
+      ],
+      [
+        "1.2.3",
+        null
+      ],
+      [
+        "1-2",
+        null
+      ],
+      [
+        "--5",
+        null
+      ],
+      [
+        "(5",
+        null
+      ],
+      [
+        "5)",
+        null
+      ],
+      [
+        "-(5)",
+        null
+      ],
+      [
+        "1e3",
+        null
+      ],
+      [
+        "Infinity",
+        null
+      ],
+      [
+        "NaN",
+        null
+      ],
+      [
+        "12 34",
+        null
+      ]
     ],
-
     "_limits": "Past MAX_CENTS the value stops being worth trusting. It is a refusal, not a clamp — a clamp would store a number nobody typed.",
     "limits": [
-      ["10000000000",    1000000000000],
-      ["10000000000.01", null],
-      ["99999999999999", null]
+      [
+        "10000000000",
+        1000000000000
+      ],
+      [
+        "10000000000.01",
+        null
+      ],
+      [
+        "99999999999999",
+        null
+      ]
     ]
   },
-
   "format": [
-    [0,         "$0.00"],
-    [1,         "$0.01"],
-    [50,        "$0.50"],
-    [999,       "$9.99"],
-    [1000,      "$10.00"],
-    [1200,      "$12.00"],
-    [1250,      "$12.50"],
-    [100000,    "$1,000.00"],
-    [123456,    "$1,234.56"],
-    [123456700, "$1,234,567.00"],
-    [-500,      "-$5.00"],
-    [-1,        "-$0.01"],
-    [-123456,   "-$1,234.56"]
+    [
+      0,
+      "$0.00"
+    ],
+    [
+      1,
+      "$0.01"
+    ],
+    [
+      50,
+      "$0.50"
+    ],
+    [
+      999,
+      "$9.99"
+    ],
+    [
+      1000,
+      "$10.00"
+    ],
+    [
+      1200,
+      "$12.00"
+    ],
+    [
+      1250,
+      "$12.50"
+    ],
+    [
+      100000,
+      "$1,000.00"
+    ],
+    [
+      123456,
+      "$1,234.56"
+    ],
+    [
+      123456700,
+      "$1,234,567.00"
+    ],
+    [
+      -500,
+      "-$5.00"
+    ],
+    [
+      -1,
+      "-$0.01"
+    ],
+    [
+      -123456,
+      "-$1,234.56"
+    ]
   ],
-
   "_roundTrip": "Every amount the parser accepts must survive format -> parse unchanged. This is the property the whole module exists for.",
-  "roundTrip": [0, 1, 50, 999, 1000, 1250, 123456, 123456700, -1, -500, -123456, 1000000000000]
+  "roundTrip": [
+    0,
+    1,
+    50,
+    999,
+    1000,
+    1250,
+    123456,
+    123456700,
+    -1,
+    -500,
+    -123456,
+    1000000000000
+  ],
+  "_entry": "Typing an amount, which is a different problem from parsing one. Digits fill up from the CENTS (450 is $4.50) because most amounts in a ledger have cents; a typed '.' overrides that and the string reads the ordinary way, so '50.' is $50.00. The '.00' toggle flips the default for bare digits and a typed dot still wins. A third decimal place is KEPT in the field and reads as null, so a pasted 1.005 is refused rather than quietly becoming 1.00 — the same refusal parseAmount makes, for the same reason. Rows are [what was typed, what the field keeps, cents or null]. Produced by a second implementation written from the prose above rather than from the code.",
+  "entry": {
+    "cents": [
+      [
+        "",
+        "",
+        null
+      ],
+      [
+        "-",
+        "-",
+        null
+      ],
+      [
+        ".",
+        ".",
+        null
+      ],
+      [
+        "5",
+        "5",
+        5
+      ],
+      [
+        "50",
+        "50",
+        50
+      ],
+      [
+        "450",
+        "450",
+        450
+      ],
+      [
+        "1234",
+        "1234",
+        1234
+      ],
+      [
+        "0",
+        "0",
+        0
+      ],
+      [
+        "00",
+        "00",
+        0
+      ],
+      [
+        "0050",
+        "0050",
+        50
+      ],
+      [
+        "-450",
+        "-450",
+        -450
+      ],
+      [
+        "-1234",
+        "-1234",
+        -1234
+      ],
+      [
+        "12.34",
+        "12.34",
+        1234
+      ],
+      [
+        "50.",
+        "50.",
+        5000
+      ],
+      [
+        "12.3",
+        "12.3",
+        1230
+      ],
+      [
+        ".5",
+        ".5",
+        50
+      ],
+      [
+        ".",
+        ".",
+        null
+      ],
+      [
+        "-50.",
+        "-50.",
+        -5000
+      ],
+      [
+        "1,234.56",
+        "1234.56",
+        123456
+      ],
+      [
+        "$450",
+        "450",
+        450
+      ],
+      [
+        "12.345",
+        "12.345",
+        null
+      ],
+      [
+        "-0",
+        "-0",
+        0
+      ],
+      [
+        "999999999999999",
+        "999999999999999",
+        null
+      ]
+    ],
+    "whole": [
+      [
+        "",
+        "",
+        null
+      ],
+      [
+        "-",
+        "-",
+        null
+      ],
+      [
+        ".",
+        ".",
+        null
+      ],
+      [
+        "5",
+        "5",
+        500
+      ],
+      [
+        "50",
+        "50",
+        5000
+      ],
+      [
+        "450",
+        "450",
+        45000
+      ],
+      [
+        "1234",
+        "1234",
+        123400
+      ],
+      [
+        "0",
+        "0",
+        0
+      ],
+      [
+        "00",
+        "00",
+        0
+      ],
+      [
+        "0050",
+        "0050",
+        5000
+      ],
+      [
+        "-450",
+        "-450",
+        -45000
+      ],
+      [
+        "-1234",
+        "-1234",
+        -123400
+      ],
+      [
+        "12.34",
+        "12.34",
+        1234
+      ],
+      [
+        "50.",
+        "50.",
+        5000
+      ],
+      [
+        "12.3",
+        "12.3",
+        1230
+      ],
+      [
+        ".5",
+        ".5",
+        50
+      ],
+      [
+        ".",
+        ".",
+        null
+      ],
+      [
+        "-50.",
+        "-50.",
+        -5000
+      ],
+      [
+        "1,234.56",
+        "1234.56",
+        123456
+      ],
+      [
+        "$450",
+        "450",
+        45000
+      ],
+      [
+        "12.345",
+        "12.345",
+        null
+      ],
+      [
+        "-0",
+        "-0",
+        0
+      ],
+      [
+        "999999999999999",
+        "999999999999999",
+        null
+      ]
+    ]
+  },
+  "_sign": "The sign is a leading '-' in the text and nowhere else, so the minus KEY and the minus BUTTON are the same action and cannot disagree. Rows are [before, after one press].",
+  "sign": [
+    [
+      "",
+      "-"
+    ],
+    [
+      "-",
+      ""
+    ],
+    [
+      "450",
+      "-450"
+    ],
+    [
+      "-450",
+      "450"
+    ],
+    [
+      "12.34",
+      "-12.34"
+    ],
+    [
+      "-12.34",
+      "12.34"
+    ],
+    [
+      ".",
+      "-."
+    ],
+    [
+      "-.",
+      "."
+    ]
+  ]
 }

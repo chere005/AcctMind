@@ -21,7 +21,7 @@
  * time, that is a large amount of machinery to prevent a rare and visible
  * loss rather than a common and silent one.
  */
-import type { Store, Txn } from './types';
+import type { Record_, Store } from './types';
 import { STORE_VERSION } from './types';
 
 /**
@@ -31,8 +31,26 @@ import { STORE_VERSION } from './types';
  * rather than a change — a device that hears its own write back must not
  * treat it as news, or two devices can bounce a record between them for ever.
  */
-export function pickTxn(mine: Txn, theirs: Txn): Txn {
+export function pickTxn<R extends Record_>(mine: R, theirs: R): R {
   return theirs.updated > mine.updated ? theirs : mine;
+}
+
+/**
+ * Merge one collection of records by id.
+ *
+ * Generic over the record shape because the merge reads only `id` and
+ * `updated` — accounts and categories need exactly the same treatment as
+ * transactions, and writing it three times would be three chances to get the
+ * tie rule subtly different on one of them.
+ */
+export function mergeRecords<R extends Record_>(mine: readonly R[], theirs: readonly R[]): R[] {
+  const byId = new Map<string, R>();
+  for (const r of mine) byId.set(r.id, r);
+  for (const r of theirs) {
+    const have = byId.get(r.id);
+    byId.set(r.id, have === undefined ? r : pickTxn(have, r));
+  }
+  return [...byId.values()];
 }
 
 /**
@@ -43,18 +61,20 @@ export function pickTxn(mine: Txn, theirs: Txn): Txn {
  * two claims about one record at one instant, which no rule can separate.
  */
 export function mergeStores(mine: Store, theirs: Store): Store {
-  const byId = new Map<string, Txn>();
-  for (const t of mine.txns) byId.set(t.id, t);
-  for (const t of theirs.txns) {
-    const have = byId.get(t.id);
-    byId.set(t.id, have === undefined ? t : pickTxn(have, t));
-  }
-  return { v: STORE_VERSION, txns: [...byId.values()] };
+  return {
+    v: STORE_VERSION,
+    txns: mergeRecords(mine.txns, theirs.txns),
+    // Accounts and categories merge too, and must: a transaction points at an
+    // account by id, so an account that reached only one device would leave
+    // its rows with nowhere to be drawn on the other.
+    accounts: mergeRecords(mine.accounts, theirs.accounts),
+    categories: mergeRecords(mine.categories, theirs.categories),
+  };
 }
 
 /** What the screens show: everything that is not a tombstone. */
-export function live(txns: readonly Txn[]): Txn[] {
-  return txns.filter((t) => t.deleted !== true);
+export function live<R extends Record_>(recs: readonly R[]): R[] {
+  return recs.filter((r) => r.deleted !== true);
 }
 
 /**
@@ -65,12 +85,18 @@ export function live(txns: readonly Txn[]): Txn[] {
  * that never saw the record still produces a complete row — so a later
  * undelete, or a person reading the raw store, has something to look at.
  */
-export function tombstone(txn: Txn, now: number): Txn {
-  return { ...txn, deleted: true, updated: now };
+export function tombstone<R extends Record_>(txn: R, now: number): R {
+  // Through `touch`, not `now`. A delete is an edit and needs the same clock
+  // guarantee: `pickTxn` breaks a tie by keeping the incumbent, so a delete
+  // stamped with the same millisecond the record was last written ties with
+  // the LIVE copy on another device and loses. The row comes back, and
+  // nothing anywhere reports a failure. Written as `updated: now` this was a
+  // real hole, found while making delete a thing a person can actually tap.
+  return { ...touch(txn, now), deleted: true };
 }
 
 /** Bump the merge clock. Every edit goes through here or it will not travel. */
-export function touch(txn: Txn, now: number): Txn {
+export function touch<R extends Record_>(txn: R, now: number): R {
   // `Math.max(now, txn.updated + 1)`, not `now`: two edits inside the same
   // millisecond would otherwise tie, and a tie keeps the incumbent — so the
   // second edit would be silently dropped by the next merge. A clock that
@@ -93,9 +119,13 @@ export function touch(txn: Txn, now: number): Txn {
 export const TOMBSTONE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 export function prune(store: Store, now: number, ttl: number = TOMBSTONE_TTL_MS): Store {
+  const fresh = <R extends Record_>(recs: readonly R[]): R[] =>
+    recs.filter((r) => r.deleted !== true || now - r.updated < ttl);
   return {
     ...store,
-    txns: store.txns.filter((t) => t.deleted !== true || now - t.updated < ttl),
+    txns: fresh(store.txns),
+    accounts: fresh(store.accounts),
+    categories: fresh(store.categories),
   };
 }
 
@@ -110,13 +140,36 @@ export function prune(store: Store, now: number, ttl: number = TOMBSTONE_TTL_MS)
  * ever.
  */
 export function canonical(store: Store): Store {
+  const byId = <R extends Record_>(recs: readonly R[]): R[] =>
+    [...recs].sort((a, b) => a.id.localeCompare(b.id));
   return {
     ...store,
-    txns: [...store.txns].sort((a, b) => a.id.localeCompare(b.id)),
+    txns: byId(store.txns),
+    accounts: byId(store.accounts),
+    categories: byId(store.categories),
   };
+}
+
+/**
+ * A store as text, with record order AND key order settled.
+ *
+ * `JSON.stringify` writes keys in insertion order, so the same account built
+ * by a literal and by `normalizeTxn`'s spread serialize differently while
+ * being the same account. Comparing those strings answers "has anything
+ * changed?" with yes, for ever: each device sees the other's copy as news,
+ * publishes, and is answered. Sorting the keys is what stops that, and it is
+ * the same fix CalMind's `canon()` carries, for the same reason.
+ */
+function stable(v: unknown): string {
+  if (v === null || typeof v !== 'object') return JSON.stringify(v) ?? 'null';
+  if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+  const o = v as Record<string, unknown>;
+  return '{' + Object.keys(o).sort()
+    .filter((k) => o[k] !== undefined)
+    .map((k) => JSON.stringify(k) + ':' + stable(o[k])).join(',') + '}';
 }
 
 /** Do these two hold the same ledger? Order-insensitive, by construction. */
 export function sameStore(a: Store, b: Store): boolean {
-  return JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+  return stable(canonical(a)) === stable(canonical(b));
 }

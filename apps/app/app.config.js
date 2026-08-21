@@ -71,6 +71,26 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.seancheren.acctmind',
+      infoPlist: {
+        /*
+         * Local-network sync, and the reason it needs no paid membership.
+         *
+         * These two keys are a USAGE DESCRIPTION and a service declaration,
+         * not an entitlement — a free personal team can ship them, which is
+         * the whole point of choosing Bonjour over iCloud for now. iOS shows
+         * the description verbatim the first time the app advertises or
+         * browses, so it is written for the person reading it at that moment,
+         * and it is true: nothing leaves the network.
+         *
+         * NSBonjourServices is an ALLOW-LIST. A service type missing from it
+         * fails silently — the browser simply never finds anything — so it is
+         * checked against core's PEER_SERVICE by tools/check-peer-service.mjs
+         * rather than trusted to stay in step by hand.
+         */
+        NSLocalNetworkUsageDescription:
+          'AcctMind syncs your transactions directly between your own devices on this network. Nothing is sent to a server.',
+        NSBonjourServices: ['_acctmind1._tcp'],
+      },
       ...signing,
     },
     android: {

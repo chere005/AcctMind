@@ -22,6 +22,9 @@ npm run -s test:core -- --reporter=dot
 echo "==> server"
 npm run -s test:server
 
+echo "==> peer service"
+npm run -s test:peer | tail -1
+
 echo "==> deploy guards"
 sh tools/check-deploy-guards.sh | tail -2
 
