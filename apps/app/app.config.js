@@ -87,6 +87,21 @@ module.exports = {
          * checked against core's PEER_SERVICE by tools/check-peer-service.mjs
          * rather than trusted to stay in step by hand.
          */
+        /*
+         * Export compliance, declared once here rather than answered by hand
+         * on every upload.
+         *
+         * `false` means "uses only exempt encryption". This app's only crypto
+         * is the TLS link between a person's own devices — standard TLS with
+         * a pre-shared key, plus HKDF to derive it — which falls squarely
+         * inside the exemption for authentication and for encryption Apple
+         * itself provides. Nothing here implements a cipher, and nothing
+         * encrypts anything for a third party.
+         *
+         * Without this key App Store Connect stops every build and asks, and
+         * the answer given in a hurry is the one that costs a review cycle.
+         */
+        ITSAppUsesNonExemptEncryption: false,
         NSLocalNetworkUsageDescription:
           'AcctMind syncs your transactions directly between your own devices on this network. Nothing is sent to a server.',
         NSBonjourServices: ['_acctmind1._tcp'],
