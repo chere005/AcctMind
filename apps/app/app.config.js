@@ -64,7 +64,7 @@ module.exports = {
     // tools/check-version.mjs. It said 0.1.0 through three tagged releases,
     // so the build on a phone claimed to be a version from days earlier and
     // nothing anywhere disagreed.
-    version: '0.4.1',
+    version: '0.5.0',
     orientation: 'portrait',
     // Both generated from assets/logo-square.svg by tools/make-icons.sh.
     // Never edit a PNG here by hand — re-run the script, so one change to
@@ -75,6 +75,20 @@ module.exports = {
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.seancheren.acctmind',
+      /*
+       * The durable build identifier, HAND-bumped on every build that leaves
+       * this machine — not once per release.
+       *
+       * CalMind's README says why, and this repo proved it the hard way:
+       * without one, every install reads `1`, and "is the thing I just
+       * installed actually on the device?" has no evidence either way. A
+       * whole evening went into telling four builds apart by their features.
+       *
+       * The VERSION answers "which release is this"; the BUILD answers "which
+       * of the eleven times I built that release is on the phone". They are
+       * different questions and need different numbers.
+       */
+      buildNumber: '2',
       infoPlist: {
         /*
          * Local-network sync, and the reason it needs no paid membership.

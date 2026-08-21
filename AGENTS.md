@@ -56,6 +56,29 @@ learned goes in the commit that learns it.
 - **`main` is the branch.** Stage explicit paths — never `git add -A`. Sean
   makes his own commits unless he says otherwise.
 
+## Versions and builds
+
+Two numbers answering two questions, and conflating them cost an evening.
+
+- **`version`** — which RELEASE this is. Semver, and it lives in three files
+  that `tools/check-version.mjs` holds together: the root `package.json`,
+  `apps/app/package.json`, and `app.config.js`. Tags match it. Patch tags are
+  fine; CalMind has 0.8.1 and 0.13.2.
+
+- **`ios.buildNumber`** — which BUILD of that release is on the device.
+  HAND-bumped every time a build leaves this machine, not once per release.
+  CalMind's README says why and this repo proved it: with no build number
+  every install reads `1`, and "is the thing I just installed actually on the
+  device?" has no evidence either way. Four builds went onto a phone in one
+  evening, all reporting `0.4.0/1`, and telling them apart meant hunting for
+  features.
+
+**`app.config.js` is SOURCE; `apps/app/ios/` is prebuild output.** Bumping the
+config and building without `expo prebuild` installs a binary carrying the old
+number — the check goes green while the phone disagrees, because three source
+files agreeing with each other says nothing about the plist that ships. The
+version check reads the generated `Info.plist` for that reason.
+
 ## Shorthand
 
 - **`dtp` = deploy, tag, push.** In that order: `./deploy.sh` (which writes the

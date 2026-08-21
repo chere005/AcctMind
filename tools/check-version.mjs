@@ -28,6 +28,21 @@ const check = (what, ok, detail = '') => {
   if (!ok) failed++;
 };
 
+/*
+ * The build number, which answers a different question from the version.
+ *
+ * Hand-bumped per BUILD, so it is not compared to anything — there is nothing
+ * to compare it to. What is checked is that it exists and has moved off 1: a
+ * build number that never changes is the same as not having one, which is the
+ * state this repo shipped in while four different builds all reported `1`.
+ */
+const build = require('../apps/app/app.config.js').expo.ios?.buildNumber;
+check(
+  'there is an ios.buildNumber',
+  typeof build === 'string' && build !== '',
+  'without one every install reads 1 and builds cannot be told apart',
+);
+
 check(`the root package is ${root}`, typeof root === 'string' && root !== '');
 check("apps/app/package.json agrees", app === root, `it says ${app}`);
 check("app.config.js agrees — this is the one a device shows", config === root, `it says ${config}`);

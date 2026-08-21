@@ -18,9 +18,39 @@ from scratch rather than rediscovered.
 
 ## What it does, in full
 
-One screen, headed **Transactions**, listing them, with the running total
-under the title. A **+** opens a form: **Name** (required), **Description**,
-**Amount**, and a **Date** button that opens a month grid and starts on today.
+Two tabs, on a bar at the bottom.
+
+**Transactions** groups every row under an **account** — a current account, a
+card, cash in a drawer. Each section folds shut, carries its own running
+total, and has its own **+** that adds into that account. A collapse-all sits
+in the top bar. The section picker beside it is CalMind's round colour button:
+one account shows its colour, all of them show the rainbow.
+
+Rows are ordered by **date**, by **amount** (on the absolute value — sorted
+signed, the largest expense sinks below every small credit), or by **hand**.
+The hand order rides on the record, so the Mac agrees with the phone; the
+other two are device preferences. An untouched list looks identical in all
+three.
+
+**Hold a row** for edit, duplicate, copy and delete, or **swipe left** to
+delete. The actions overlay the row rather than pushing it, so nothing moves
+under a thumb that is already aiming.
+
+**Budget** is the same shape for **categories**: a name, a colour, money
+assigned, and what has actually gone through it. Accounts and categories are
+made in one **Manage** screen, reached from the last row of either picker —
+and nowhere else, so there is one place that knows what a new one starts as.
+
+The add form takes a **Name**, a **Category** (a dropdown that filters as you
+type), an **Amount**, and a **Description**. The date is a small calendar
+beside the name, starting on today.
+
+**Amounts fill from the cents.** `450` is $4.50 and `1234` is $12.34, the way
+a card terminal works, because nearly every amount in a ledger has cents in
+it. A typed `.` overrides that — `50.` is $50.00 — and a **.00** toggle in the
+top bar flips the default for anyone entering round numbers all afternoon. A
+**−** toggle sits left of the field, and a leading `-` still works. The value
+formats where it is typed.
 
 ## Where the data lives
 

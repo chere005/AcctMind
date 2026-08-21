@@ -15,6 +15,7 @@ and nobody is looking at it.
 | `npm run test:server` | the doorway over real HTTP, against the real suite auth lib | **yes** |
 | `npm run test:e2e` | the whole app, real mouse, on the EXPORTED bundle, desktop and phone viewports | **yes** (a spot subset on `--quick`) |
 | `npm run test:deploy` | every deploy guard, each proven by breaking a copy | **yes** |
+| `npm run test:version` | one version across three files AND the generated Info.plist, plus a build number that exists | **yes** |
 | `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | **yes** |
 | `npm run test:watch` | core's real feed through the watch's real Swift decoder and formatter | no — needs `swiftc` |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
@@ -70,6 +71,18 @@ of the target (never a retyped copy — that tests the typist), compiles it,
 feeds it what `watchFeed()` really produces, and compares the drawn strings.
 Two copies with a test between them.
 
+## What is NOT covered, and is the next thing to fix
+
+A whole tier of screen went in without tests. Twelve controls are asserted by
+nothing: the **Manage** screen (adding, renaming, recolouring, deleting, and
+the rule that the last account cannot go), the **category filter**, the
+**collapse-all**, the **per-account +**, the **section picker** and its
+Manage row, the **Budget tab**, and **copy pairing code**.
+
+It is written down here rather than left to be discovered because this file
+is supposed to be the map, and a screen that is in neither list is one nobody
+is looking at.
+
 ## What nobody is watching
 
 - **The Mac app, at all.** It compiles for `platform=macOS,variant=Designed
@@ -85,6 +98,14 @@ Two copies with a test between them.
   opening a path the embedded assets do not have — by reading the asset paths
   out of the built binary. It does not watch pixels. Proving that needs
   screen-recording permission or a probe build.
+- **Anything that only breaks on a finger.** Two bugs shipped through 118
+  green gesture tests on 2026-08-21: a tab bar restyled as a bottom bar but
+  left first in the JSX, and a swipe handler that claimed the gesture at six
+  pixels and so cancelled every long press — a held finger drifts further
+  than that, a mouse does not. Both were invisible to the suite because a
+  phone VIEWPORT is not a phone. This is the same trap `hitSlop` set, in a
+  new costume.
+
 - **The phone and the watch, on real hardware.** The web harness runs a phone
   VIEWPORT, which is not a phone: a browser has no status bar to hide under,
   and `hitSlop` is a no-op under react-native-web while it works on native.
