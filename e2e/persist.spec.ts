@@ -6,15 +6,14 @@
  * different angle: **the app must not write over data it could not read.**
  */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh, rows, stored, withStore, KEY } from './helpers';
+import { addTransaction, fresh, rows, stored, withStore, KEY, reload } from './helpers';
 import { STORE_VERSION } from '@acctmind/core';
 
 test('a transaction survives a reload', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Groceries', description: 'co-op', amount: '-84.37' });
 
-  await page.reload();
-  await expect(page.getByTestId('title')).toBeVisible();
+  await reload(page);
   expect(await rows(page)).toEqual([
     { name: 'Groceries', description: 'co-op', amount: '-$84.37', date: expect.any(String) },
   ]);

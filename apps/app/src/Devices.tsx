@@ -15,6 +15,7 @@ import {
   Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 import * as peer from './peer';
 import { SPACE, T, TAP } from './theme';
 
@@ -35,6 +36,7 @@ export function Devices({ visible, peers, onClose }: Props) {
   const [typed, setTyped] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Read the pairing state on each open rather than holding it: it changes
   // from the other side of a native module.
@@ -47,6 +49,7 @@ export function Devices({ visible, peers, onClose }: Props) {
       setTyped('');
       setError(null);
       setJoined(false);
+      setCopied(false);
     }
   }
 
@@ -94,6 +97,23 @@ export function Devices({ visible, peers, onClose }: Props) {
             <View style={styles.codeBox} testID="devices-code-box">
               <Text style={styles.label}>Type this on your other device</Text>
               <Text style={styles.code} testID="devices-code" selectable>{code}</Text>
+              <Pressable
+                onPress={() => {
+                  // Twenty-five characters is a lot to retype. Copying it here
+                  // and pasting on the other device is the same secret by a
+                  // shorter road — and `parsePairCode` already forgives the
+                  // whitespace a paste brings with it.
+                  void Clipboard.setStringAsync(code)
+                    .then(() => setCopied(true))
+                    .catch(() => setError('This device would not reach the clipboard.'));
+                }}
+                style={styles.copyBtn}
+                accessibilityRole="button"
+                accessibilityLabel="Copy pairing code"
+                testID="devices-copy-code"
+              >
+                <Text style={styles.copyText}>{copied ? 'Copied' : 'Copy code'}</Text>
+              </Pressable>
               <Text style={styles.hint}>
                 It is the same code for every device you add. Anyone who has it
                 can read this ledger on your network, so treat it like a wifi
@@ -198,6 +218,13 @@ const styles = StyleSheet.create({
     color: T.text, fontSize: 20, fontWeight: '600', letterSpacing: 1,
     fontVariant: ['tabular-nums'],
   },
+  // Drawn at TAP, like every control here: hitSlop is a no-op on the web.
+  copyBtn: {
+    minHeight: TAP, justifyContent: 'center', alignItems: 'center',
+    borderRadius: 10, backgroundColor: T.field,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
+  copyText: { color: T.accent, fontSize: 16, fontWeight: '600' },
   joinBox: { gap: SPACE.sm },
   input: {
     minHeight: TAP, backgroundColor: T.field, borderRadius: 10, color: T.text,

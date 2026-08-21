@@ -6,7 +6,7 @@
  * way past, and that the two round buttons do what the rules say.
  */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh, rows, stored } from './helpers';
+import { addTransaction, fresh, rows, stored, reload } from './helpers';
 
 // Typed into the field, with both toggles off — the default.
 const CASES: [string, string, number][] = [
@@ -74,8 +74,7 @@ test('the .00 choice is remembered across a reload', async ({ page }) => {
   // again before every single entry, which is the same as not having it.
   await fresh(page);
   await page.getByTestId('whole-toggle').click();
-  await page.reload();
-  await expect(page.getByTestId('title')).toBeVisible();
+  await reload(page);
 
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('50');

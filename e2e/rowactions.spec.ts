@@ -8,7 +8,7 @@
  * an absence.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, rows, stored } from './helpers';
+import { addTransaction, fresh, reload, rows, stored } from './helpers';
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
@@ -81,8 +81,7 @@ test('a deleted row stays deleted across a reload', async ({ page }) => {
   await page.getByTestId('row-delete').click();
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
 
-  await page.reload();
-  await expect(page.getByTestId('title')).toBeVisible();
+  await reload(page);
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
 });
 

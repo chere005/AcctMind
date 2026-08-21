@@ -3,10 +3,14 @@
  * list, and the + that opens the form.
  */
 import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
-  formatAmount, formatDay, sortTxns, total, type Account, type AmountMode, type Txn,
+  formatAmount, formatDay, sortTxns, total,
+  type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
+import { Dot } from './Dot';
+import { SectionPick } from './SectionPick';
+import { SortPick } from './SortPick';
 import { Toggle } from './Toggle';
 import { SPACE, T, TAP } from './theme';
 
@@ -38,20 +42,39 @@ type Props = {
   onAmountMode: (mode: AmountMode) => void;
   /** The accounts, in order. There is always at least one — see ensureAccount. */
   accounts: readonly Account[];
+  /** How the rows are ordered inside each account. */
+  sort: SortMode;
+  onSort: (mode: SortMode) => void;
+  /** Which accounts are folded shut, by id. */
+  collapsed: readonly string[];
+  onCollapsed: (ids: readonly string[]) => void;
 };
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
+  sort, onSort, collapsed, onCollapsed,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
-  const rows = sortTxns(txns);
   const sum = total(txns);
+  const [picking, setPicking] = useState(false);
+  const [view, setView] = useState<string | null>(null);
+
+  const shown = view === null ? accounts : accounts.filter((a) => a.id === view);
+  const sections = shown.map((a) => ({
+    account: a,
+    rows: sortTxns(txns.filter((t) => t.account === a.id), sort),
+  }));
+  const anyRows = sections.some((sec) => sec.rows.length > 0);
+  const allShut = shown.length > 0 && shown.every((a) => collapsed.includes(a.id));
+
+  const toggle = (id: string) =>
+    onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
   /** The row being held open, if any. One at a time, by construction. */
   const [openId, setOpenId] = useState<string | null>(null);
 
   // A row that stops existing — deleted here, or deleted on another device
   // mid-gesture — must not leave its action bar behind attached to nothing.
-  if (openId !== null && !rows.some((t) => t.id === openId)) setOpenId(null);
+  if (openId !== null && !txns.some((t) => t.id === openId)) setOpenId(null);
 
   return (
     <View style={styles.fill}>
@@ -67,6 +90,13 @@ export function TransactionsScreen({
           </Text>
         </View>
         <View style={styles.actions}>
+          <Toggle
+            label={allShut ? '⌄' : '⌃'}
+            on={allShut}
+            onPress={() => onCollapsed(allShut ? [] : shown.map((a) => a.id))}
+            accessibilityLabel={allShut ? 'Expand all accounts' : 'Collapse all accounts'}
+            testID="collapse-all"
+          />
           <Toggle
             label=".00"
             on={amountMode === 'whole'}
@@ -100,26 +130,81 @@ export function TransactionsScreen({
         </View>
       </View>
 
-      <FlatList
-        data={rows}
-        keyExtractor={(t) => t.id}
-        renderItem={({ item }) => (
-          <Row
-            txn={item}
-            open={openId === item.id}
-            onOpen={onAction === undefined ? undefined : () => setOpenId(item.id)}
-            onClose={() => setOpenId(null)}
-            onAction={(a) => { setOpenId(null); onAction?.(a, item); }}
-          />
-        )}
-        contentContainerStyle={rows.length === 0 ? styles.emptyWrap : styles.list}
-        ListEmptyComponent={
+      <View style={styles.pickRow}>
+        <SectionPick
+          label="Accounts"
+          sections={accounts.map((a) => ({ id: a.id, name: a.name, color: a.color }))}
+          value={view}
+          onPick={setView}
+          visible={picking}
+          onOpen={() => setPicking(true)}
+          onClose={() => setPicking(false)}
+        />
+        <SortPick mode={sort} onPick={onSort} />
+      </View>
+
+      {/*
+        `scrollEnabled` follows the content, not the container. A list that
+        bounces with three rows in it reads as broken, and on the web it puts
+        a scrollbar beside something that has nowhere to go.
+      */}
+      <ScrollView
+        contentContainerStyle={styles.list}
+        scrollEnabled={anyRows}
+        testID="txn-scroll"
+      >
+        {!anyRows && (
           <View style={styles.empty} testID="empty-state">
             <Text style={styles.emptyTitle}>No transactions yet</Text>
-            <Text style={styles.emptyBody}>Tap + to add the first one.</Text>
+            <Text style={styles.emptyBody}>Tap + on an account to add the first one.</Text>
           </View>
-        }
-      />
+        )}
+
+        {sections.map(({ account, rows }) => {
+          const shut = collapsed.includes(account.id);
+          return (
+            <View key={account.id} testID="account-section">
+              <View style={styles.head}>
+                <Pressable
+                  onPress={() => toggle(account.id)}
+                  style={styles.headMain}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: !shut }}
+                  testID={`account-head-${account.id}`}
+                >
+                  <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
+                  <Dot colors={[account.color]} size={12} />
+                  <Text style={styles.headName} numberOfLines={1}>{account.name}</Text>
+                  <Text style={styles.headSum}>{formatAmount(total(rows))}</Text>
+                </Pressable>
+                {/* Each account adds into ITSELF: the + is the only thing that
+                    tells the form which section it was opened from. */}
+                <Pressable
+                  onPress={() => onAdd(account.id)}
+                  style={styles.headAdd}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add to ${account.name}`}
+                  testID={`account-add-${account.id}`}
+                >
+                  <Text style={styles.headAddText}>+</Text>
+                </Pressable>
+              </View>
+
+              {!shut && rows.map((t) => (
+                <Row
+                  key={t.id}
+                  txn={t}
+                  open={openId === t.id}
+                  onOpen={onAction === undefined ? undefined : () => setOpenId(t.id)}
+                  onClose={() => setOpenId(null)}
+                  onAction={(a) => { setOpenId(null); onAction?.(a, t); }}
+                />
+              ))}
+            </View>
+          );
+        })}
+      </ScrollView>
+
     </View>
   );
 }
@@ -246,7 +331,24 @@ const styles = StyleSheet.create({
     position: 'absolute', top: 8, right: 8, width: 8, height: 8,
     borderRadius: 4, backgroundColor: T.positive,
   },
-  list: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl },
+  pickRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm,
+  },
+  list: { paddingHorizontal: SPACE.lg, paddingBottom: SPACE.xl, flexGrow: 1 },
+  head: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: SPACE.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
+  },
+  headMain: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flex: 1, minHeight: TAP },
+  chev: { color: T.dim, fontSize: 13, width: 12 },
+  chevShut: { transform: [{ rotate: '-90deg' }] },
+  headName: { color: T.text, fontSize: 15, fontWeight: '700', flex: 1 },
+  headSum: { color: T.dim, fontSize: 14, fontVariant: ['tabular-nums'] },
+  headAdd: {
+    width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center',
+  },
+  headAddText: { color: T.accent, fontSize: 24, lineHeight: 26, fontWeight: '400' },
   row: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     gap: SPACE.md, paddingVertical: SPACE.md,

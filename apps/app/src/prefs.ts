@@ -13,17 +13,25 @@
  * in doubt, a bad preference just means the default.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { AmountMode } from '@acctmind/core';
+import type { AmountMode, SortMode } from '@acctmind/core';
 
 const KEY = 'acctmind.prefs.v1';
 
 export type Prefs = {
   /** How bare digits are read when no `.` has been typed. */
   amountMode: AmountMode;
+  /**
+   * How the list is ordered. A VIEW choice, so it lives here — unlike the
+   * custom order itself, which is a decision about the ledger and rides on
+   * the records where both devices can see it.
+   */
+  sort: SortMode;
+  /** Accounts folded shut, by id. Also a view choice. */
+  collapsed: string[];
 };
 
 /** What a device that has never chosen anything gets. */
-export const DEFAULTS: Prefs = { amountMode: 'cents' };
+export const DEFAULTS: Prefs = { amountMode: 'cents', sort: 'date', collapsed: [] };
 
 export async function loadPrefs(): Promise<Prefs> {
   try {
@@ -35,7 +43,13 @@ export async function loadPrefs(): Promise<Prefs> {
     // Only the two known values. Anything else — an older build, a hand-edited
     // file — falls back rather than putting the field into a state no code
     // here understands.
-    return { amountMode: mode === 'whole' ? 'whole' : 'cents' };
+    const sort = (data as Record<string, unknown>)['sort'];
+    const collapsed = (data as Record<string, unknown>)['collapsed'];
+    return {
+      amountMode: mode === 'whole' ? 'whole' : 'cents',
+      sort: sort === 'custom' || sort === 'amount' ? sort : 'date',
+      collapsed: Array.isArray(collapsed) ? collapsed.filter((c): c is string => typeof c === 'string') : [],
+    };
   } catch {
     return DEFAULTS;
   }

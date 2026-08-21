@@ -13,9 +13,16 @@ import { expect, type Page } from '@playwright/test';
 
 export const KEY = 'acctmind.store.v1';
 
-/** Open the app on a device with nothing saved. */
+/**
+ * Open the app on a device with nothing saved, on the Transactions tab.
+ *
+ * Budget is the FIRST tab now, so every test that is about transactions has
+ * to say so. Doing it here rather than in each spec means the day a third tab
+ * arrives, one line moves.
+ */
 export async function fresh(page: Page): Promise<void> {
   await page.goto('./');
+  await page.getByTestId('tab-transactions').click();
   await expect(page.getByTestId('title')).toBeVisible();
 }
 
@@ -26,6 +33,10 @@ export async function withStore(page: Page, raw: string): Promise<void> {
     [KEY, raw] as const,
   );
   await page.goto('./');
+  // A damaged store shows no tabs at all, so this is speculative and gets its
+  // own short timeout — a click on a control that has gone waits out the whole
+  // test budget and reads as a hang.
+  await page.getByTestId('tab-transactions').click({ timeout: 1500 }).catch(() => {});
 }
 
 /** Fill the add form and save. Leaves the date alone unless one is given. */
@@ -103,4 +114,17 @@ export async function rows(page: Page) {
       amount: el.querySelector('[data-testid="txn-amount"]')?.textContent ?? '',
       date: el.querySelector('[data-testid="txn-date"]')?.textContent ?? '',
     })));
+}
+
+/**
+ * Reload and come back to Transactions.
+ *
+ * The app opens on Budget every time, by design — so a reload in the middle
+ * of a transactions test lands somewhere else, and asserting on rows there
+ * fails for a reason that has nothing to do with what is being tested.
+ */
+export async function reload(page: Page): Promise<void> {
+  await page.reload();
+  await page.getByTestId('tab-transactions').click();
+  await expect(page.getByTestId('title')).toBeVisible();
 }

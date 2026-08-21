@@ -23,8 +23,9 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
-  addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn, newId,
-  tombstone, txnText, updateTxn, type Draft, type Store, type Txn,
+  PALETTE, addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn,
+  newId, nextColor, putCategory, tombstone, txnText, updateTxn,
+  type Draft, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
 import * as peer from './src/peer';
@@ -32,6 +33,8 @@ import * as sync from './src/sync';
 import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
+import { BudgetScreen } from './src/BudgetScreen';
+import { Tabs, type Tab } from './src/Tabs';
 import { TransactionsScreen, type RowAction } from './src/TransactionsScreen';
 import { load, save } from './src/persist';
 import { DEFAULTS, loadPrefs, savePrefs, type Prefs } from './src/prefs';
@@ -55,6 +58,8 @@ export default function App() {
    * which section it was opened from.
    */
   const [addingTo, setAddingTo] = useState('');
+  /** Budget first, as asked. */
+  const [tab, setTab] = useState<Tab>('budget');
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
   /** The ledger outgrew iCloud's megabyte. Also shown, for the same reason. */
@@ -78,11 +83,13 @@ export default function App() {
     return () => { running = false; };
   }, []);
 
-  /** Remember the choice, on this device only. */
-  const setAmountMode = useCallback((amountMode: Prefs['amountMode']) => {
-    const next = { amountMode };
-    setPrefs(next);
-    void savePrefs(next);
+  /** Remember a view choice, on this device only. */
+  const setPref = useCallback(<K extends keyof Prefs>(key: K, value: Prefs[K]) => {
+    setPrefs((p) => {
+      const next = { ...p, [key]: value };
+      void savePrefs(next);
+      return next;
+    });
   }, []);
 
   /**
@@ -314,7 +321,33 @@ export default function App() {
                 text="Saved on this device, but too large for iCloud — your other devices will not see it."
               />
             )}
+            <Tabs tab={tab} onTab={setTab} />
+
+            {tab === 'budget' && (
+              <BudgetScreen
+                txns={live(phase.store.txns)}
+                categories={live(phase.store.categories)}
+                collapsed={prefs.collapsed}
+                onCollapsed={(ids) => setPref('collapsed', [...ids])}
+                onAddCategory={() => {
+                  const cats = live(phase.store.categories);
+                  commit(phase, putCategory(phase.store, {
+                    id: `cat-${newId()}`,
+                    name: `Category ${cats.length + 1}`,
+                    // Cycle the palette rather than always opening blue, so a
+                    // list of new categories is telling apart at a glance.
+                    color: nextColor(cats.map((c) => c.color)) ?? PALETTE[0],
+                    budget: 0,
+                    order: cats.length,
+                    created: Date.now(),
+                    updated: Date.now(),
+                  }));
+                }}
+              />
+            )}
+
             {/* Tombstones travel; they are not shown. */}
+            {tab === 'transactions' && (
             <TransactionsScreen
               txns={live(phase.store.txns)}
               onAdd={(account) => {
@@ -326,9 +359,14 @@ export default function App() {
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
               amountMode={prefs.amountMode}
-              onAmountMode={setAmountMode}
+              onAmountMode={(m) => setPref('amountMode', m)}
               accounts={live(phase.store.accounts)}
+              sort={prefs.sort}
+              onSort={(m) => setPref('sort', m)}
+              collapsed={prefs.collapsed}
+              onCollapsed={(ids) => setPref('collapsed', [...ids])}
             />
+            )}
             <Devices
               visible={showDevices}
               peers={peers}
