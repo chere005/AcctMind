@@ -67,6 +67,8 @@ describe('makeTxn', () => {
     expect(t).toEqual({
       id: 'id1', name: 'Coffee', description: 'hot',
       amount: 450, date: '2026-08-20', created: 7,
+      // A new record has never been edited: its merge clock starts at birth.
+      updated: 7,
     });
   });
 
@@ -87,7 +89,7 @@ describe('emptyDraft', () => {
 
 describe('total', () => {
   const t = (amount: number, id: string): Txn =>
-    ({ id, name: id, description: '', amount, date: '2026-08-20', created: 0 });
+    ({ id, name: id, description: '', amount, date: '2026-08-20', created: 0, updated: 0 });
 
   it('adds cents as integers', () => {
     expect(total([])).toBe(0);

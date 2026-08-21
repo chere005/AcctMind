@@ -13,6 +13,20 @@ export type Txn = {
   date: string;
   /** Epoch milliseconds. Breaks ties between two transactions on one day. */
   created: number;
+  /**
+   * Epoch milliseconds of the last edit — the merge clock.
+   *
+   * Two devices holding the same id keep the higher `updated`. This is the
+   * ONLY field merging looks at, which is why it must move on every change,
+   * including a delete.
+   */
+  updated: number;
+  /**
+   * A tombstone. The record stays, marked dead, because a merge cannot tell
+   * "deleted here" from "not yet arrived here" if the row simply vanishes —
+   * the other device would helpfully hand it back on the next sync, for ever.
+   */
+  deleted?: true;
 };
 
 /** What the add form holds while it is being typed — all strings, all raw. */
@@ -36,8 +50,13 @@ export type DraftErrors = Partial<Record<keyof Draft, string>>;
  * able to reach them all at once.
  */
 export type Store = {
-  v: 1;
+  v: 2;
   txns: Txn[];
 };
 
-export const STORE_VERSION = 1 as const;
+/**
+ * v1 had no `updated` and no tombstones — it could not merge. A v1 store is
+ * READ and upgraded rather than refused: refusing it would strand the ledger
+ * already sitting on a device. See `parseStore`.
+ */
+export const STORE_VERSION = 2 as const;

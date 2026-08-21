@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <!--
+    The APP ICON cut of the mark: full-bleed square, no corner radius of its
+    own, border pulled further in.
+
+    iOS, macOS and watchOS mask every app icon to a squircle themselves. An
+    icon that arrives pre-rounded gets masked a SECOND time — and because the
+    system radius (~22.4% of the edge) is rounder than the tile's own 20/96,
+    the mask cuts inside the artwork and takes the corners of the green border
+    with it. So this cut is square to the edge and keeps its border inside the
+    safe area the mask leaves alone.
+
+    assets/logo.svg is the rounded cut, for the web, the favicon and anywhere
+    the mark appears as a picture rather than as an app icon.
+  -->
+  <rect width="96" height="96" fill="#111111"/>
+  <rect x="9" y="9" width="78" height="78" rx="13" fill="none" stroke="#34d399" stroke-width="3.5"/>
+  <path d="M 16 74.5 L 36 20.5 L 57 73.5 C 58 76 59 76 60 73.5 L 60 46.5 L 70 59.5 L 80 46.5 L 80 74.5"
+        fill="none" stroke="#34d399" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

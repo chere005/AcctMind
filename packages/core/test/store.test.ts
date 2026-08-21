@@ -15,7 +15,7 @@ import type { Txn } from '../src/index';
 
 const txn = (over: Partial<Txn> = {}): Txn => ({
   id: 'a', name: 'Coffee', description: '', amount: -450,
-  date: '2026-08-20', created: 1000, ...over,
+  date: '2026-08-20', created: 1000, updated: 1000, ...over,
 });
 
 describe('a store that was never written', () => {
@@ -42,12 +42,14 @@ describe('a store that is damaged', () => {
     }
   });
 
-  it('refuses a version it does not read', () => {
-    // A file from a NEWER build. Rendering it would be wrong; saving over it
-    // would be worse.
-    const r = parseStore('{"v":2,"txns":[]}');
+  it('refuses a version NEWER than it reads', () => {
+    // A file from a newer build. Rendering it would be wrong; saving over it
+    // would be worse. (An OLDER version is upgraded instead — see
+    // merge.test.ts. The asymmetry is deliberate.)
+    const r = parseStore('{"v":3,"txns":[]}');
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain('version 2');
+    if (!r.ok) expect(r.error).toContain('version 3');
+    // No version at all is not a store this build should touch either.
     expect(parseStore('{"txns":[]}').ok).toBe(false);
   });
 

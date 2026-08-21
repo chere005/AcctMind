@@ -55,6 +55,9 @@ export function makeTxn(draft: Draft, id: string, created: number): Txn {
     amount,
     date: draft.date,
     created,
+    // A new record has never been edited, so its merge clock starts where it
+    // was born. Every later change goes through `touch`.
+    updated: created,
   };
 }
 

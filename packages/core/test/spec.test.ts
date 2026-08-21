@@ -119,7 +119,7 @@ describe('spec/sort.json', () => {
   for (const c of s.cases) {
     it(c.name, () => {
       const txns: Txn[] = c.in.map((r) => ({
-        ...r, name: r.id, description: '', amount: 0,
+        ...r, name: r.id, description: '', amount: 0, updated: r.created,
       }));
       expect(sortTxns(txns).map((t) => t.id)).toEqual(c.out);
     });

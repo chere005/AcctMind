@@ -21,29 +21,71 @@
  */
 const baseUrl = process.env.ACCTMIND_BASE_URL || '/AcctMind';
 
+/**
+ * Signing, and iCloud, which are two separate questions.
+ *
+ * APPLE_TEAM_ID signs the app. A FREE personal Apple team is enough for that,
+ * and enough to run on a device, on the Mac under "Designed for iPad", and on
+ * the watch.
+ *
+ * ACCTMIND_ICLOUD=1 additionally requests the key-value-store entitlement
+ * that sync needs — and that is where the tiers part company. **A personal
+ * team cannot use the iCloud capability at all**; Xcode refuses to make a
+ * profile, with "Personal development teams ... do not support the iCloud
+ * capability", and the build fails before it compiles anything. It needs a
+ * paid Apple Developer Program membership.
+ *
+ * They are separate flags because coupling them, which is what this file did
+ * first, means a free team cannot build the app AT ALL — the entitlement
+ * rides in with the team and takes the whole build down with it. Off by
+ * default, so the common case is the one that works: the app runs everywhere,
+ * purely local, and `available()` reports no iCloud exactly as it does for a
+ * signed-out user.
+ */
+const team = process.env.APPLE_TEAM_ID;
+const wantsICloud = process.env.ACCTMIND_ICLOUD === '1';
+const signing = {
+  ...(team ? { appleTeamId: team } : {}),
+  ...(wantsICloud
+    ? {
+        entitlements: {
+          'com.apple.developer.ubiquity-kvstore-identifier':
+            '$(TeamIdentifierPrefix)$(CFBundleIdentifier)',
+        },
+      }
+    : {}),
+};
+
 module.exports = {
   expo: {
     name: 'AcctMind',
     slug: 'acctmind',
     version: '0.1.0',
     orientation: 'portrait',
+    // Both generated from assets/logo-square.svg by tools/make-icons.sh.
+    // Never edit a PNG here by hand — re-run the script, so one change to
+    // the mark reaches all six surfaces at once.
+    icon: './assets/icon.png',
     userInterfaceStyle: 'dark',
     backgroundColor: '#111111',
     ios: {
       supportsTablet: true,
       bundleIdentifier: 'com.seancheren.acctmind',
-      // Needed to sign the watch target for a DEVICE; the simulator does not
-      // care, so a checkout with no team set still builds and runs. Kept in
-      // the environment rather than the repo so this config names nobody's
-      // account: export APPLE_TEAM_ID, or set it in .env.local.
-      ...(process.env.APPLE_TEAM_ID ? { appleTeamId: process.env.APPLE_TEAM_ID } : {}),
+      ...signing,
     },
     android: {
       package: 'com.seancheren.acctmind',
       predictiveBackGestureEnabled: false,
+      adaptiveIcon: {
+        // Android masks its own way and crops harder than iOS, so the
+        // foreground is the same full-bleed cut on the tile's own colour.
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: '#111111',
+      },
     },
     web: {
       bundler: 'metro',
+      favicon: './assets/favicon.png',
     },
     experiments: {
       baseUrl,

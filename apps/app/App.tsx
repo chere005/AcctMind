@@ -23,8 +23,10 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
-  addTxn, emptyStore, makeTxn, newId, type Draft, type Store,
+  addTxn, emptyStore, live, makeTxn, newId, type Draft, type Store,
 } from '@acctmind/core';
+import * as sync from './src/sync';
+import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { TransactionsScreen } from './src/TransactionsScreen';
 import { load, save } from './src/persist';
@@ -40,16 +42,58 @@ export default function App() {
   const [adding, setAdding] = useState(false);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
+  /** The ledger outgrew iCloud's megabyte. Also shown, for the same reason. */
+  const [tooBig, setTooBig] = useState(false);
 
   useEffect(() => {
-    let live = true;
-    load().then((r) => {
-      if (!live) return;
-      setPhase(r.ok ? { k: 'ready', store: r.store, dropped: r.dropped }
-                    : { k: 'blocked', error: r.error });
+    let running = true;
+    load().then(async (r) => {
+      if (!running) return;
+      if (!r.ok) { setPhase({ k: 'blocked', error: r.error }); return; }
+
+      // Show the device's own ledger FIRST, then reconcile. iCloud is
+      // eventually consistent and may take a while to answer; waiting on it
+      // before drawing would make a local-first app feel like a networked one.
+      setPhase({ k: 'ready', store: r.store, dropped: r.dropped });
+
+      // The wrist may never have heard from this phone. Push what we have
+      // before reconciling, so a watch is current within a second of launch
+      // rather than only after the next edit.
+      void pushToWatch(r.store);
+
+      const out = await sync.reconcile(r.store);
+      if (!running) return;
+      setTooBig(out.tooBig);
+      if (out.changedLocally) {
+        setPhase({ k: 'ready', store: out.store, dropped: r.dropped });
+        // A merge result is only ours once it is on the disk. Saving here is
+        // what stops the next launch starting from the pre-merge copy and
+        // re-doing the whole reconciliation.
+        save(out.store).catch((e: unknown) => setSaveError(String(e)));
+        void pushToWatch(out.store);
+      }
     });
-    return () => { live = false; };
+    return () => { running = false; };
   }, []);
+
+  // Another device wrote. The notification carries the new value, so no
+  // second round trip — and no window in which a fresh pull could return
+  // something older than what woke us.
+  useEffect(() => sync.onRemoteChange((remote) => {
+    setPhase((p) => {
+      // Never reconcile on top of a store we could not read. The local copy
+      // is the thing in doubt; merging into it would launder the damage.
+      if (p.k !== 'ready') return p;
+      void sync.reconcile(p.store, remote).then((out) => {
+        setTooBig(out.tooBig);
+        if (!out.changedLocally) return;
+        setPhase({ ...p, store: out.store });
+        save(out.store).catch((e: unknown) => setSaveError(String(e)));
+        void pushToWatch(out.store);
+      });
+      return p;
+    });
+  }), []);
 
   /**
    * Show it, then write it.
@@ -71,6 +115,13 @@ export default function App() {
     save(next)
       .then(() => setSaveError(null))
       .catch((e: unknown) => setSaveError(String(e)));
+    // Publishing is separate from saving, and failing at it is not failing to
+    // save: the transaction is safely on this device either way. Only the
+    // sharing of it is in doubt, so it gets its own, quieter banner.
+    void sync.publish(next).then((ok) => setTooBig(!ok && sync.available()));
+    // And the wrist, which is a separate link on a separate transport: the
+    // watch keeps working when iCloud is unavailable, and vice versa.
+    void pushToWatch(next);
   }, []);
 
   const onSave = useCallback((draft: Draft) => {
@@ -106,7 +157,15 @@ export default function App() {
             {saveError !== null && (
               <Banner testID="save-error" tone="bad" text={`Not saved — ${saveError}`} />
             )}
-            <TransactionsScreen txns={phase.store.txns} onAdd={() => setAdding(true)} />
+            {tooBig && (
+              <Banner
+                testID="toobig-banner"
+                tone="warn"
+                text="Saved on this device, but too large for iCloud — your other devices will not see it."
+              />
+            )}
+            {/* Tombstones travel; they are not shown. */}
+            <TransactionsScreen txns={live(phase.store.txns)} onAdd={() => setAdding(true)} />
             <AddTransaction
               visible={adding}
               onSave={onSave}

@@ -15,8 +15,11 @@ import { isDay } from './day';
 
 /** A load either produced a store, or failed and must not be written over. */
 export type LoadResult =
-  | { ok: true; store: Store; dropped: number }
+  | { ok: true; store: Store; dropped: number; migrated: boolean }
   | { ok: false; error: string };
+
+/** Versions this build can READ. It writes STORE_VERSION and nothing else. */
+export const READABLE_VERSIONS = [1, STORE_VERSION] as const;
 
 export function emptyStore(): Store {
   return { v: STORE_VERSION, txns: [] };
@@ -40,7 +43,7 @@ export function serialize(store: Store): string {
  */
 export function parseStore(raw: string | null | undefined): LoadResult {
   if (raw === null || raw === undefined || raw.trim() === '') {
-    return { ok: true, store: emptyStore(), dropped: 0 };
+    return { ok: true, store: emptyStore(), dropped: 0, migrated: false };
   }
 
   let data: unknown;
@@ -55,12 +58,15 @@ export function parseStore(raw: string | null | undefined): LoadResult {
   }
 
   const obj = data as Record<string, unknown>;
-  if (obj['v'] !== STORE_VERSION) {
-    // Refusing an unknown version is the same trade as refusing bad JSON: a
-    // newer file is one this build cannot understand, and the only thing
-    // worse than not showing it is overwriting it with a downgrade.
-    return { ok: false, error: `the saved data is version ${String(obj['v'])}, and this app reads ${STORE_VERSION}` };
+  const version = obj['v'];
+  // OLDER is upgraded; NEWER is refused. The asymmetry is the point: a v1
+  // store is a real ledger on a real device and refusing it would strand it,
+  // while a v3 store is one this build cannot understand, and the only thing
+  // worse than not showing it is overwriting it with a downgrade.
+  if (!READABLE_VERSIONS.includes(version as 1 | typeof STORE_VERSION)) {
+    return { ok: false, error: `the saved data is version ${String(version)}, and this app reads ${READABLE_VERSIONS.join(' and ')}` };
   }
+  const migrated = version !== STORE_VERSION;
   if (!Array.isArray(obj['txns'])) {
     return { ok: false, error: 'the saved data has no transaction list' };
   }
@@ -77,7 +83,7 @@ export function parseStore(raw: string | null | undefined): LoadResult {
     txns.push(t);
   }
 
-  return { ok: true, store: { v: STORE_VERSION, txns }, dropped };
+  return { ok: true, store: { v: STORE_VERSION, txns }, dropped, migrated };
 }
 
 /**
@@ -108,6 +114,15 @@ export function normalizeTxn(row: unknown): Txn | null {
   const created = r['created'];
   const createdN = typeof created === 'number' && Number.isFinite(created) ? created : 0;
 
+  // A v1 record has no merge clock. Seeding it from `created` is the only
+  // honest choice: it is the last moment we KNOW the record was written, so
+  // an edit made on any device afterwards outranks it, which is the answer
+  // we want. Seeding from `now` instead would make every device's copy of
+  // every old row claim to be the newest, and the first merge would be a
+  // coin toss between two full ledgers.
+  const updated = r['updated'];
+  const updatedN = typeof updated === 'number' && Number.isFinite(updated) ? updated : createdN;
+
   const description = r['description'];
 
   return {
@@ -117,6 +132,9 @@ export function normalizeTxn(row: unknown): Txn | null {
     amount,
     date,
     created: createdN,
+    updated: updatedN,
+    // Only the literal `true` is a tombstone; anything else is a live record.
+    ...(r['deleted'] === true ? { deleted: true as const } : {}),
   };
 }
 

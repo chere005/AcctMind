@@ -1,0 +1,60 @@
+{
+  "_": "Merging two copies of the ledger, with nothing arbitrating. Records are written [id, updated, live|dead, name]; 'want' is the id->name the merge must produce, or DEAD for a tombstone. Every case is run BOTH ways round (a+b and b+a) by the replay, because order-independence is the property that makes a serverless sync work at all.",
+
+  "cases": [
+    {
+      "name": "disjoint ledgers become their union",
+      "a": [["x", 100, "live", "mine"]],
+      "b": [["y", 100, "live", "theirs"]],
+      "want": { "x": "mine", "y": "theirs" }
+    },
+    {
+      "name": "the newer edit wins",
+      "a": [["x", 100, "live", "old"]],
+      "b": [["x", 200, "live", "new"]],
+      "want": { "x": "new" }
+    },
+    {
+      "_": "A tie is an echo of our own write coming back. Keeping the incumbent is what makes that a no-op; preferring the incoming copy would let two devices trade one record for ever.",
+      "name": "a tie keeps what was already there",
+      "a": [["x", 100, "live", "incumbent"]],
+      "b": [["x", 100, "live", "challenger"]],
+      "want": { "x": "incumbent" },
+      "orderDependent": true
+    },
+    {
+      "name": "a delete travels as a tombstone and beats an older edit",
+      "a": [["x", 100, "live", "alive"]],
+      "b": [["x", 200, "dead", "alive"]],
+      "want": { "x": "DEAD" }
+    },
+    {
+      "_": "The row was deleted on one device and then edited on another, later. Later wins, so it comes back. That is the same rule, not an exception to it.",
+      "name": "an edit newer than the tombstone resurrects the row",
+      "a": [["x", 200, "dead", "gone"]],
+      "b": [["x", 300, "live", "back"]],
+      "want": { "x": "back" }
+    },
+    {
+      "name": "a tombstone for a row the other side never had is still kept",
+      "a": [],
+      "b": [["x", 200, "dead", "never seen"]],
+      "want": { "x": "DEAD" }
+    },
+    {
+      "name": "many records merge independently of one another",
+      "a": [["x", 100, "live", "a-old"], ["y", 300, "live", "a-new"], ["z", 100, "live", "a-only"]],
+      "b": [["x", 200, "live", "b-new"], ["y", 200, "live", "b-old"]],
+      "want": { "x": "b-new", "y": "a-new", "z": "a-only" }
+    }
+  ],
+
+  "_properties": "Checked by the replay over every case above rather than written out as vectors, because they are statements about the FUNCTION and not about any one input: merging is idempotent (a+a = a), associative ((a+b)+c = a+(b+c)), and commutative except where two records tie exactly, which is the one case no rule can separate.",
+
+  "_migration": "A v1 store has no merge clock. Each record's `updated` is seeded from its `created` — the last moment we know it was written — so any later edit on any device outranks it. Seeding from 'now' would make every device claim every old row was the newest.",
+  "migration": {
+    "in": { "v": 1, "txns": [{ "id": "old", "name": "Rent", "amount": -185050, "date": "2026-08-01", "created": 1750000000000 }] },
+    "wantUpdated": 1750000000000,
+    "wantMigrated": true
+  }
+}
