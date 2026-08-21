@@ -15,8 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   amountInput, amountIsNegative, cleanAmountText, draftOf, emptyDraft, entryCents,
   formatAmount, formatDay, isValid, toggleAmountSign, today, validateDraft,
-  type AmountMode, type Draft, type DraftErrors, type Txn,
+  type AmountMode, type Category, type Draft, type DraftErrors, type Txn,
 } from '@acctmind/core';
+import { CategoryPick } from './CategoryPick';
 import { DayPicker } from './DayPicker';
 import { Toggle } from './Toggle';
 import { SPACE, T, TAP } from './theme';
@@ -35,6 +36,8 @@ type Props = {
   editing?: Txn | undefined;
   /** The account a new transaction goes into — the section whose + was pressed. */
   account: string;
+  /** Everything a transaction can be filed under. */
+  categories: readonly Category[];
   /**
    * How bare digits are read. Owned by the screen behind this one, because it
    * is a setting that outlives any one entry — see TransactionsScreen.
@@ -42,7 +45,7 @@ type Props = {
   mode: AmountMode;
 };
 
-export function AddTransaction({ visible, onSave, onCancel, editing, mode, account }: Props) {
+export function AddTransaction({ visible, onSave, onCancel, editing, mode, account, categories }: Props) {
   const [draft, setDraft] = useState<Draft>(() => emptyDraft(today(), account));
   const [errors, setErrors] = useState<DraftErrors>({});
   const [picking, setPicking] = useState(false);
@@ -144,15 +147,41 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
 
           <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
             <Field label="Name" error={errors.name}>
+              <View style={styles.nameRow}>
               <TextInput
                 value={draft.name}
                 onChangeText={set('name')}
-                style={styles.input}
+                style={[styles.input, styles.nameField]}
                 placeholder="Coffee"
                 placeholderTextColor={T.faint}
                 autoFocus
                 returnKeyType="next"
                 testID="name-input"
+              />
+              {/*
+                The date, as a calendar next to the name. It starts on today
+                and most transactions are entered on the day they happen, so
+                it earns a glyph rather than a field: the day it shows is the
+                answer nearly every time, and it is one tap when it is not.
+              */}
+              <Pressable
+                onPress={() => setPicking(true)}
+                style={styles.calBtn}
+                accessibilityRole="button"
+                accessibilityLabel={`Date, ${formatDay(draft.date)}`}
+                testID="date-button"
+              >
+                <CalendarIcon day={draft.date} />
+              </Pressable>
+              </View>
+              <Text style={styles.dateUnder} testID="date-value">{formatDay(draft.date)}</Text>
+            </Field>
+
+            <Field label="Category">
+              <CategoryPick
+                categories={categories}
+                value={draft.category}
+                onPick={(id) => setDraft((d) => ({ ...d, category: id }))}
               />
             </Field>
 
@@ -180,8 +209,42 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
                   testID="sign-toggle"
                 />
                 <TextInput
-                  value={amountText}
-                  onChangeText={setAmount}
+                  /*
+                   * The FORMATTED value, in the cell. The raw digits stay in
+                   * `amountText` and are what the rules read; this is only
+                   * what is drawn.
+                   */
+                  value={cents === null ? amountText : formatAmount(cents)}
+                  onChangeText={(next) => {
+                    /*
+                     * Two kinds of text arrive here and they mean different
+                     * things.
+                     *
+                     * Editing what is DRAWN — the value carries a '$', because
+                     * that is what `formatAmount` puts there — is a digit
+                     * gesture: typing appends a digit and backspace removes
+                     * one, and the dot on screen is punctuation this code
+                     * added, not something the person typed. Reading it as a
+                     * decimal point would make every keystroke past two
+                     * decimals a refusal.
+                     *
+                     * Anything without a '$' is raw: typed before formatting
+                     * caught up, or pasted. There the dot is REAL and its
+                     * POSITION is the whole meaning — `12.3` is $12.30 and
+                     * `1.005` is refused, and both must survive the trip.
+                     */
+                    const digits = next.replace(/[^0-9]/g, '');
+                    const neg = next.trimStart().startsWith('-');
+                    const dot = next.indexOf('.');
+                    const raw = next.includes('$') || dot < 0
+                      ? digits + (next.trimEnd().endsWith('.') ? '.' : '')
+                      : (() => {
+                          const after = next.slice(dot + 1).replace(/[^0-9]/g, '').length;
+                          const cut = digits.length - after;
+                          return digits.slice(0, cut) + '.' + digits.slice(cut);
+                        })();
+                    setAmount((neg ? '-' : '') + raw);
+                  }}
                   style={[styles.input, styles.amountField]}
                   placeholder={mode === 'whole' ? '0' : '0.00'}
                   placeholderTextColor={T.faint}
@@ -193,30 +256,17 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
                   testID="amount-input"
                 />
               </View>
-              {/* The digits are not the amount, so the amount is shown. This
-                  is what makes the two modes safe to have at all: nobody has
-                  to remember which one is on. */}
+              {/* Kept for the tests and the screen reader: the cell shows the
+                  amount now, so this is the same string, not a second one. */}
               <Text
-                style={[styles.preview, cents !== null && cents > 0 && styles.previewUp]}
+                style={styles.previewHidden}
+                accessibilityElementsHidden
                 testID="amount-preview"
               >
-                {cents === null ? ' ' : formatAmount(cents)}
+                {cents === null ? '' : formatAmount(cents)}
               </Text>
             </Field>
 
-            <Field label="Date" error={errors.date}>
-              <Pressable
-                onPress={() => setPicking(true)}
-                style={[styles.input, styles.dateBtn]}
-                testID="date-button"
-              >
-                {/* The value carries its own testID: the button also holds
-                    the 'Change' hint, and a text assertion on the whole
-                    control has to fight whitespace normalization. */}
-                <Text style={styles.dateText} testID="date-value">{formatDay(draft.date)}</Text>
-                <Text style={styles.dateHint}>Change</Text>
-              </Pressable>
-            </Field>
           </ScrollView>
 
           <DayPicker
@@ -228,6 +278,16 @@ export function AddTransaction({ visible, onSave, onCancel, editing, mode, accou
         </View>
       </KeyboardAvoidingView>
     </Modal>
+  );
+}
+
+/** A little calendar showing the day it will file the transaction under. */
+function CalendarIcon({ day }: { day: string }) {
+  return (
+    <View style={styles.cal}>
+      <View style={styles.calTop} />
+      <Text style={styles.calDay}>{Number(day.slice(8, 10))}</Text>
+    </View>
   );
 }
 
@@ -258,12 +318,21 @@ const styles = StyleSheet.create({
   barTitle: { color: T.text, fontSize: 17, fontWeight: '600' },
   body: { padding: SPACE.lg, gap: SPACE.lg },
   field: { gap: SPACE.xs },
+  nameRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  nameField: { flex: 1 },
+  calBtn: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
+  cal: {
+    width: 26, height: 26, borderRadius: 5, overflow: 'hidden',
+    borderWidth: 1.5, borderColor: T.dim, alignItems: 'center', justifyContent: 'flex-end',
+  },
+  calTop: { position: 'absolute', top: 0, left: 0, right: 0, height: 6, backgroundColor: T.dim },
+  calDay: { color: T.text, fontSize: 13, fontWeight: '700', lineHeight: 17 },
+  dateUnder: { color: T.dim, fontSize: 13 },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
   amountField: { flex: 1 },
   // A non-breaking space holds the line's height when there is nothing to
   // show, so the form does not jump on the first keystroke.
-  preview: { color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'], minHeight: 20 },
-  previewUp: { color: T.positive },
+  previewHidden: { height: 0, opacity: 0 },
   label: { color: T.dim, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.6 },
   input: {
     backgroundColor: T.card, color: T.text, fontSize: 17, borderRadius: 10,

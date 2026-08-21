@@ -112,7 +112,8 @@ test('the − button and the minus key are the same thing', async ({ page }) => 
   await page.getByTestId('amount-input').fill('450');
   await page.getByTestId('sign-toggle').click();
   await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
-  await expect(page.getByTestId('amount-input')).toHaveValue('-450');
+  // The cell shows the formatted amount now, not the digits that made it.
+  await expect(page.getByTestId('amount-input')).toHaveValue('-$4.50');
 
   // Pressing it again puts it back.
   await page.getByTestId('sign-toggle').click();
@@ -130,6 +131,7 @@ test('a third decimal is refused, not quietly trimmed', async ({ page }) => {
   await fresh(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('1.005');
+  // Refused, so there is nothing to format: the raw text stays on screen.
   await expect(page.getByTestId('amount-input')).toHaveValue('1.005');
   await expect(page.getByTestId('amount-preview')).toHaveText('');
 });

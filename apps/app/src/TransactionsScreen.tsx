@@ -2,8 +2,8 @@
  * The one screen: a header that says Transactions, the running total, the
  * list, and the + that opens the form.
  */
-import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   formatAmount, formatDay, sortTxns, total,
   type Account, type AmountMode, type SortMode, type Txn,
@@ -209,6 +209,9 @@ export function TransactionsScreen({
   );
 }
 
+/** How far a row must travel before letting go deletes it. */
+const SWIPE_DELETE = 96;
+
 function Row({ txn, open, onOpen, onClose, onAction }: {
   txn: Txn;
   open: boolean;
@@ -216,8 +219,43 @@ function Row({ txn, open, onOpen, onClose, onAction }: {
   onClose: () => void;
   onAction: (action: RowAction) => void;
 }) {
+  const dx = useRef(new Animated.Value(0)).current;
+  /*
+   * Swipe left to delete.
+   *
+   * The gesture is claimed only once it is clearly HORIZONTAL and past a few
+   * pixels — a list that grabs every touch cannot be scrolled, and one that
+   * grabs at one pixel fires on a tap that wobbled. Letting go short of the
+   * threshold springs back, so a half-swipe is a decision not to.
+   */
+  const pan = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_e, g) => g.dx < -6 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+      onPanResponderMove: (_e, g) => { if (g.dx < 0) dx.setValue(g.dx); },
+      onPanResponderRelease: (_e, g) => {
+        if (g.dx < -SWIPE_DELETE) {
+          // Off the edge first, so the row is gone before the list reflows —
+          // otherwise it snaps back for a frame on its way out.
+          Animated.timing(dx, { toValue: -600, duration: 140, useNativeDriver: false })
+            .start(() => onAction('delete'));
+        } else {
+          Animated.spring(dx, { toValue: 0, useNativeDriver: false }).start();
+        }
+      },
+      onPanResponderTerminate: () => {
+        Animated.spring(dx, { toValue: 0, useNativeDriver: false }).start();
+      },
+    }),
+  ).current;
+
   return (
     <View testID="txn-row">
+      {/* Sits behind the row and is revealed by the swipe, so the intent is
+          visible before the finger lifts. */}
+      <View style={styles.swipeBack} pointerEvents="none">
+        <Text style={styles.swipeText}>Delete</Text>
+      </View>
+      <Animated.View style={{ transform: [{ translateX: dx }] }} {...pan.panHandlers}>
       <Pressable
         onLongPress={onOpen}
         onPress={open ? onClose : undefined}
@@ -247,9 +285,10 @@ function Row({ txn, open, onOpen, onClose, onAction }: {
         <Text style={styles.date} testID="txn-date">{formatDay(txn.date)}</Text>
         </View>
       </Pressable>
+      </Animated.View>
 
       {open && (
-        <View style={styles.rowActions} testID="row-actions">
+        <View style={styles.rowActions} testID="row-actions" pointerEvents="box-none">
           {/*
             Right to left: delete, copy, duplicate, edit. Delete is the one
             that cannot be undone, so it sits furthest from where a thumb
@@ -355,12 +394,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
   },
   rowOpen: { opacity: 0.55 },
+  swipeBack: {
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+    backgroundColor: T.danger, alignItems: 'flex-end', justifyContent: 'center',
+    paddingRight: SPACE.lg, borderRadius: 6,
+  },
+  swipeText: { color: '#ffffff', fontSize: 15, fontWeight: '700' },
   // `rowActions`, not `actions`: the header already has one of those, and a
   // duplicate key in a StyleSheet is a typecheck error rather than a subtle
   // wrong-looking row, which is the only reason this was noticed at once.
+  /*
+   * Absolutely positioned OVER the row, not under it.
+   *
+   * Laid out in flow, opening a row pushed everything below it down — so the
+   * list moved under the thumb at the exact moment a person was aiming at
+   * one of four small buttons, and the row they were looking at slid away.
+   * Overlaying costs nothing and keeps the list still.
+   */
   rowActions: {
-    flexDirection: 'row', justifyContent: 'flex-end', gap: SPACE.xs,
-    paddingBottom: SPACE.sm,
+    position: 'absolute', left: 0, right: 0, top: 0, bottom: 0,
+    flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center',
+    gap: SPACE.xs, paddingRight: SPACE.xs,
+    backgroundColor: T.bg + 'ee',
   },
   // Drawn at TAP height, never padded up to it — hitSlop is a no-op on the web.
   action: {

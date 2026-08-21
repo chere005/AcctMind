@@ -377,6 +377,7 @@ export default function App() {
               editing={editing ?? undefined}
               mode={prefs.amountMode}
               account={addingTo}
+              categories={live(phase.store.categories)}
               onSave={onSave}
               onCancel={() => { setAdding(false); setEditing(null); }}
             />
