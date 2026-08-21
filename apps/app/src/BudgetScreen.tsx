@@ -24,9 +24,12 @@ import { BarRow, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
 export type LinePick = { line: Line; spent: number };
+/** Which of a line's two editable numbers was tapped. */
+export type LineField = 'budget' | 'available';
 
 export function BudgetScreen({
   txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine, onEditLine,
+  onEditAmount,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
@@ -37,8 +40,10 @@ export function BudgetScreen({
   onManage: () => void;
   /** The + beside a category: a new line inside it. */
   onAddLine: (category: string) => void;
-  /** Tapping a line — its name or either number — opens it. */
+  /** Tapping a line's NAME opens the full editor — rename, delete. */
   onEditLine: (pick: LinePick) => void;
+  /** Tapping either AMOUNT opens the small pad over this page. */
+  onEditAmount: (pick: LinePick, field: LineField) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -153,27 +158,49 @@ export function BudgetScreen({
 
               {!shut && rows.map((l) => {
                 const spentHere = spentOn(l.id);
+                const pick = { line: l, spent: spentHere };
                 return (
-                  <Pressable
-                    key={l.id}
-                    onPress={() => onEditLine({ line: l, spent: spentHere })}
-                    style={styles.row}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${l.name}, ${formatAmount(l.budget)} budgeted`}
-                    testID={`line-row-${l.id}`}
-                  >
-                    <Text style={[styles.rowName, styles.colName]} numberOfLines={1}>
-                      {l.name === '' ? 'Untitled' : l.name}
-                    </Text>
-                    <Money style={styles.rowNum} cents={l.budget} testID={`line-budgeted-${l.id}`} />
+                  <View key={l.id} style={styles.row} testID={`line-row-${l.id}`}>
+                    {/* The NAME opens the whole line — rename, delete. */}
+                    <Pressable
+                      onPress={() => onEditLine(pick)}
+                      style={styles.colName}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${l.name}, rename or delete`}
+                      testID={`line-name-${l.id}`}
+                    >
+                      <Text style={styles.rowName} numberOfLines={1}>
+                        {l.name === '' ? 'Untitled' : l.name}
+                      </Text>
+                    </Pressable>
+                    {/* Each editable NUMBER opens the pad on this page. Not a
+                        screen: changing one number is a two-second thought,
+                        and a full editor for it hides the list you were
+                        reading to decide. */}
+                    <Pressable
+                      onPress={() => onEditAmount(pick, 'budget')}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Budgeted ${formatAmount(l.budget)}`}
+                      testID={`line-budgeted-tap-${l.id}`}
+                    >
+                      <Money style={styles.rowNum} cents={l.budget} testID={`line-budgeted-${l.id}`} />
+                    </Pressable>
+                    {/* Spent is not tappable. It is what actually moved. */}
                     <Money style={styles.rowNum} cents={spentHere} testID={`line-spent-${l.id}`} />
-                    <Money
-                      style={styles.rowNum}
-                      cents={availableOf(l.budget, spentHere)}
-                      testID={`line-available-${l.id}`}
-                      tone
-                    />
-                  </Pressable>
+                    <Pressable
+                      onPress={() => onEditAmount(pick, 'available')}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Available ${formatAmount(availableOf(l.budget, spentHere))}`}
+                      testID={`line-available-tap-${l.id}`}
+                    >
+                      <Money
+                        style={styles.rowNum}
+                        cents={availableOf(l.budget, spentHere)}
+                        testID={`line-available-${l.id}`}
+                        tone
+                      />
+                    </Pressable>
+                  </View>
                 );
               })}
             </View>

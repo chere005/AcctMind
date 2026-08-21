@@ -101,6 +101,15 @@ version check reads the generated `Info.plist` for that reason.
   the add form stayed open. Updaters are pure. Compute from current state in
   the handler and call the effect there. Pinned by `e2e/add.spec.ts`.
 
+- **`npx expo run:ios` for a SIMULATOR never exits.** It builds, installs,
+  launches — and then stays attached streaming the app's own log. A script
+  that ends with `echo "STATUS=$?"` therefore never writes that line, and a
+  monitor waiting for it waits until it times out while the app has been
+  running happily for twenty minutes. The giveaway in the log is RUNTIME
+  chatter (`RCTScrollViewComponentView`, `SyncedDefaults`) where build output
+  should be. Either background it and watch for the launch, or build with
+  `xcodebuild` and install separately, as the device path already does.
+
 - **`npx expo run:ios --device` HANGS on a locked phone, after a successful
   build.** The build finishes, the install starts, and then it sits on
   `Connecting to: iPhoooooone` for ever because the launch step cannot reach a

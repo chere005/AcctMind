@@ -50,10 +50,17 @@ three numbers:
 | **Spent** | the sum of the line's transactions. Read-only — a budget screen that let you type over the money that actually moved would be a budget screen that lies. |
 | **Available** | budgeted **plus** spent. Money out is negative, so it is a sum. |
 
+Tapping either editable number opens a small **pad over the list** — not a
+screen instead of it, because changing one figure is a two-second thought and
+a full editor hides the list you were reading to decide. The pad has the
+amount and **=**, **+**, **−** underneath, **defaulting to +**: adjusting is
+the common case and setting is the one worth a deliberate tap. `+` and `−`
+work from the value as it stood when you chose the operator, so typing two
+digits does not compound. Tapping the line's NAME opens the whole line, to
+rename or remove it.
+
 Edit **either** budgeted or available and the other follows, because they are
-two views of one stored number. Tapping either offers **=**, **+** and **−**:
-`=` replaces, `+` and `−` change what is there by what you type, from the
-value as it stood when you chose the operator.
+two views of one stored number.
 
 Categories and accounts are made in one **Manage** screen, reached from the
 last row of either picker — and nowhere else, so there is one place that knows

@@ -23,7 +23,8 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
-  addTxn, applyDraft, duplicateTxn, emptyStore, ensureAccount, live, makeTxn,
+  addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
+  live, makeTxn,
   newId, nextColor, putAccount, putCategory, putLine, reorder, tombstone, touch, txnText,
   updateTxn,
   type Category, type Draft, type Line, type Store, type Txn,
@@ -34,7 +35,8 @@ import * as sync from './src/sync';
 import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
-import { BudgetScreen } from './src/BudgetScreen';
+import { BudgetScreen, type LineField } from './src/BudgetScreen';
+import { AmountPad } from './src/AmountPad';
 import { LineEditor } from './src/LineEditor';
 import { Manage } from './src/Manage';
 import { Tabs, type Tab } from './src/Tabs';
@@ -88,6 +90,17 @@ export default function App() {
    */
   const [lineEdit, setLineEdit] = useState<
     { category: string; line: Line | null; spent: number } | null
+  >(null);
+  /**
+   * The amount being changed on the Budget page, if any.
+   *
+   * Separate from `lineEdit` because it is a different weight of thing: a
+   * pad over the list rather than a screen instead of it. `budget` holds the
+   * value as it is being typed, so the pad can show the result live and one
+   * `Done` writes it.
+   */
+  const [pad, setPad] = useState<
+    { line: Line; spent: number; field: LineField; budget: number } | null
   >(null);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -362,6 +375,8 @@ export default function App() {
                 onAddLine={(category) => setLineEdit({ category, line: null, spent: 0 })}
                 onEditLine={({ line, spent }) =>
                   setLineEdit({ category: line.category, line, spent })}
+                onEditAmount={({ line, spent }, field) =>
+                  setPad({ line, spent, field, budget: line.budget })}
               />
             )}
 
@@ -463,6 +478,33 @@ export default function App() {
                   if (a === undefined) return;
                   commit(phase, putAccount(phase.store, tombstone(a, now)));
                 }
+              }}
+            />
+            {/*
+              The pad, over the Budget page. `available` edits do not store a
+              third number — they say what `budget` has to be, given what has
+              moved. See core/budget.ts.
+            */}
+            <AmountPad
+              visible={pad !== null}
+              title={pad?.line.name === '' ? 'Untitled' : pad?.line.name ?? ''}
+              field={pad?.field === 'available' ? 'Available' : 'Budgeted'}
+              spent={pad?.spent ?? 0}
+              value={pad === null
+                ? 0
+                : pad.field === 'available' ? availableOf(pad.budget, pad.spent) : pad.budget}
+              onValue={(next) => setPad((p) => (p === null ? p : {
+                ...p,
+                budget: p.field === 'available' ? budgetFor(next, p.spent) : next,
+              }))}
+              onCancel={() => setPad(null)}
+              onDone={() => {
+                if (phase.k !== 'ready' || pad === null) return;
+                commit(phase, putLine(
+                  phase.store,
+                  touch({ ...pad.line, budget: pad.budget }, Date.now()),
+                ));
+                setPad(null);
               }}
             />
             <LineEditor
