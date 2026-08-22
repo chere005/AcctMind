@@ -33,7 +33,13 @@ STAGE="$ROOT/desktop/dist-desktop"
 # The config says what the next export will be; the stamp says what this one
 # IS, and this one is what we are about to ship. check-assets.sh holds the
 # window `url` in tauri.conf.json to the same value.
-BASE="$(node -e "process.stdout.write(require('$DIST/build.json').baseUrl.replace(/^\//,''))")"
+# `cd` first, and require a RELATIVE path. Handing node an absolute path built
+# by the shell breaks on Windows: under Git Bash `pwd` yields an MSYS path
+# (/d/a/AcctMind/...), node resolves that as a Windows path off the drive root,
+# and the CI build died with MODULE_NOT_FOUND naming a file that is plainly
+# there. A relative require resolves against node's own cwd, which every shell
+# hands it correctly.
+BASE="$(cd "$DIST" && node -e "process.stdout.write(require('./build.json').baseUrl.replace(/^\//,''))")"
 [ -n "$BASE" ] || { echo "the export's build.json names no baseUrl" >&2; exit 1; }
 
 rm -rf "$STAGE"
