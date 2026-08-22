@@ -136,6 +136,35 @@ gate naming a real disagreement that no web deploy could ever have caused.
   job is telling two builds apart, and which nothing checked until it slipped
   through once.
 
+## Platforms
+
+Five surfaces, shipped by two different pipelines.
+
+- **Web** — this app's own server. Production at `seancheren.com/AcctMind`,
+  a separate test deploy at `test.seancheren.com/AcctMind`. `./deploy.sh`
+  writes both, sandbox first — see "Deploy to both, for now" above. This is
+  the platform `dtp`/`tdtp` (above) actually ship.
+- **Windows** — built and smoke-tested on a Windows GitHub Actions runner,
+  `.github/workflows/desktop-windows.yml`, dispatched by `dtp`/`tdtp`'s push
+  step (above). Tauri can't cross-compile it — see "tauri.conf.json" below.
+- **macOS** — the Tauri desktop bundle in `desktop/`. Not built by this
+  repo's own deploy; built by CoreMind's shared `bin/build-platforms.sh
+  --mac` (smoke-tested locally with `desktop/smoke.sh`). No `dmg` — see
+  "tauri.conf.json" below. (`apps/app/ios` can separately be built and run
+  as "My Mac (Designed for iPad)" — CLI-unlaunchable, Xcode GUI only, not
+  part of any deploy or build-platforms run; the README's "Running it"
+  section has the full story and is not repeated here.)
+- **iOS** — installs to the physical phone, one of its 3 free-tier device
+  slots, via CoreMind's `bin/build-platforms.sh --ios` (confirmed
+  2026-08-22).
+- **Android** — builds, installs and launches on a local emulator via
+  CoreMind's `bin/build-platforms.sh --android` (confirmed 2026-08-22).
+- **No watchOS target** — see "The watch is out, for now" below.
+
+`sh bin/dtp.sh all --full --platforms`, run from CoreMind, drives the whole
+suite's `tdtp` lane and builds whatever each app's own deploy does not ship
+by itself — for AcctMind, that's macOS, iOS and Android.
+
 ## tauri.conf.json takes no notes, so its notes live here
 
 - **NO `dmg` in `bundle.targets`.** create-dmg's `bundle_dmg.sh` needs Finder
