@@ -136,6 +136,21 @@ gate naming a real disagreement that no web deploy could ever have caused.
   job is telling two builds apart, and which nothing checked until it slipped
   through once.
 
+## tauri.conf.json takes no notes, so its notes live here
+
+- **NO `dmg` in `bundle.targets`.** create-dmg's `bundle_dmg.sh` needs Finder
+  and AppleScript and dies on this machine, so `tauri build` failed AFTER
+  bundling a perfectly good `AcctMind.app` — the release had already shipped
+  and the desktop step reported a failure whose first 12 lines are all
+  successes. CalMind and ChefMind have excluded it for exactly this reason and
+  the note only ever got written down in ChefMind's rules, which is why this
+  one had to be rediscovered by watching it fail (2026-08-22).
+- **`msi`/`nsis` are config-only here.** Tauri does not cross-compile;
+  Windows builds on a windows runner — `.github/workflows/desktop-windows.yml`,
+  dispatched after a dtp's push.
+- **The file takes NO extra keys.** A `"_note"` beside the real ones fails the
+  schema outright: `Additional properties are not allowed`. Hence this section.
+
 ## The watch is out, for now
 
 Sean, 2026-08-21: drop the watch component entirely for now. So

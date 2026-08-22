@@ -22,13 +22,23 @@
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
-      "dangerousDisableAssetCspModification": ["style-src"]
+      "dangerousDisableAssetCspModification": [
+        "style-src"
+      ]
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "msi", "nsis"],
-    "icon": ["icons/icon.icns", "icons/icon.ico", "icons/128x128.png"],
+    "targets": [
+      "app",
+      "msi",
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/128x128.png"
+    ],
     "category": "Finance"
   }
 }
