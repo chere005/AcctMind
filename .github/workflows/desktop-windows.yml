@@ -56,18 +56,40 @@ jobs:
           $msi = Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1
           if (-not $msi) { throw 'no MSI to smoke' }
           Write-Host "installing $($msi.Name)"
-          Start-Process msiexec.exe -ArgumentList '/i', "`"$($msi.FullName)`"", '/quiet', '/norestart' -Wait
-          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA","$env:ProgramFiles" -Filter 'AcctMind.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $exe) { throw 'the MSI installed nothing named AcctMind.exe' }
-          $p = Start-Process $exe.FullName -PassThru
-          Start-Sleep -Seconds 10
-          if ($p.HasExited) { throw "it exited on its own with $($p.ExitCode)" }
-          Write-Host 'alive after 10s'
-          Stop-Process -Id $p.Id -Force
+          # msiexec's EXIT CODE, checked. Without -PassThru and this test a
+          # failed install walked on to the search below and reported "the MSI
+          # installed nothing named AcctMind.exe" — which blames the bundle for
+          # an install that never happened, and is what this job said for its
+          # first three runs.
+          $p = Start-Process msiexec -ArgumentList "/i `"$($msi.FullName)`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec failed with exit $($p.ExitCode)" }
+          # BOTH names, and the three places Windows installs to. productName is
+          # AcctMind but the crate is acctmind-desktop, and which one names the
+          # binary is Tauri's business, not this script's.
+          $exe = Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}","$env:LOCALAPPDATA\Programs" -Recurse -Include AcctMind.exe,acctmind-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'the MSI reported success but installed no AcctMind binary' }
+          Write-Host "launching $($exe.FullName)"
+          $app = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "the installed app exited within 8 seconds (code $($app.ExitCode))" }
+          # The window takes a beat to be titled; three looks over six seconds.
+          $title = ''
+          foreach ($i in 1..3) {
+            $title = (Get-Process -Id $app.Id -ErrorAction SilentlyContinue).MainWindowTitle
+            if ($title -like '*AcctMind*') { break }
+            Start-Sleep -Seconds 2
+          }
+          if ($title -notlike '*AcctMind*') { throw "the app is running but shows no AcctMind window - got '$title'" }
+          Write-Host "window up: '$title' - stopping it"
+          Stop-Process -Id $app.Id
 
       - uses: actions/upload-artifact@v4
         with:
           name: acctmind-windows
+          # error, not the default warn: a green run that uploaded NOTHING is
+          # the kind of check that cannot fail. CalMind's job learned this by
+          # doing exactly that once.
+          if-no-files-found: error
           path: |
             desktop/src-tauri/target/release/bundle/msi/*.msi
             desktop/src-tauri/target/release/bundle/nsis/*.exe
