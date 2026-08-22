@@ -81,15 +81,42 @@ version check reads the generated `Info.plist` for that reason.
 
 ## Shorthand
 
-- **`dtp` = deploy, tag, push.** In that order: `./deploy.sh` (which writes the
-  sandbox and then production), then a git tag, then `git push` with the tag.
+- **`dtp` = TEST, deploy, tag, push.** In that order. Sean, 2026-08-21 —
+  the `t` is the tests, not the tag; the tag is the third step and has no
+  letter of its own. Written down wrong here first, which is exactly the kind
+  of thing this file exists to stop.
+
+  1. **Test** — `npm run test:core` and the full Playwright run, plus the
+     typecheck. Everything that does not need a server.
+  2. **Deploy** — `./deploy.sh`, which writes the sandbox and then production
+     and runs its own gate on the way.
+  3. **Tag** — an annotated tag at the new version.
+  4. **Push** — `git push --follow-tags`.
+
   Sean's shorthand, carried over from CalMind. It was not written down in
-  either repo, which cost two rounds of asking — hence this line.
+  either repo, which cost two rounds of asking — hence this entry.
 
   The deploy runs the full gate, `npm test`, and that includes
   `npm run test:server`. A `dtp` is therefore blocked whenever the server
   suite is red, and it should stay blocked: the gate failing is the gate
   working.
+
+  **A `dtp` bumps the MINOR version.** Sean, 2026-08-21. Not a judgement call
+  each time about whether something was "big enough" — 0.9.2 goes to 0.10.0,
+  and so does the one after it. The build number restarts at 1 with it.
+
+  The reason to take the choice away: a `dtp` is what puts a build on his
+  phone, so every one of them is a thing he will later want to name. Deciding
+  patch-or-minor per release means the numbers encode my opinion of the work
+  rather than counting the times it shipped, and this session alone produced
+  0.8.1, 0.9.1 and 0.9.2 by that opinion. Counting is more useful than
+  grading.
+
+  Verify the bump rather than assuming it: a `sed` that matches nothing
+  reports success. `tools/check-version.mjs` compares all seven files AND the
+  generated `Info.plist`, including the build number — the field whose whole
+  job is telling two builds apart, and which nothing checked until it slipped
+  through once.
 
 ## The watch is out, for now
 
@@ -106,6 +133,14 @@ day the target comes back. Restoring is one `git revert` of the commit that
 removed it, plus the plugin line in `app.config.js`.
 
 ## Traps that have cost real time HERE
+
+- **Backticks inside `git commit -m "…"` are command substitution.** A message
+  reading ``runs the same `submit` the button does`` was committed and pushed
+  as "runs the same  the button does" — the shell ran `submit`, found nothing,
+  and dropped the word. Nothing failed; the commit succeeded with a hole in
+  it. Every message worth writing goes through a heredoc to a file and
+  `git commit -F`, which is what the long ones already do.
+
 
 - **A side effect inside a `setState` updater silently discards the other
   updates batched with it.** `setPhase(p => { save(...); return next; })`
