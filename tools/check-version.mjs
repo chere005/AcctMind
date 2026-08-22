@@ -18,6 +18,23 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
+
+/*
+ * --sources-only skips the GENERATED plist checks below.
+ *
+ * For the release lane, and for one reason: `apps/app/ios/` is prebuild
+ * output, so immediately after a version bump it is stale BY DEFINITION —
+ * nothing has prebuilt yet. Running the full check there made the bump
+ * always fail on a machine that had ever built for iOS, and the lane exited
+ * with six files modified and uncommitted, which its own dirty-tree guard
+ * then refused on every re-run. The lane was unrunnable and said so in a
+ * message about versions disagreeing.
+ *
+ * What this does NOT do is weaken the gate anywhere it already ran: `npm
+ * test` and `npm run test:version` still call this file bare, plist and all.
+ * The lane prints the prebuild reminder itself.
+ */
+const SOURCES_ONLY = process.argv.includes('--sources-only');
 const root = require('../package.json').version;
 const app = require('../apps/app/package.json').version;
 const config = require('../apps/app/app.config.js').expo.version;
@@ -88,7 +105,7 @@ check('the desktop crate agrees', cargo === root, `it says ${cargo}`);
  * present. Present and WRONG is not.
  */
 const plist = new URL('../apps/app/ios/AcctMind/Info.plist', import.meta.url);
-if (existsSync(plist)) {
+if (!SOURCES_ONLY && existsSync(plist)) {
   const xml = readFileSync(plist, 'utf8');
   const m = /<key>CFBundleShortVersionString<\/key>\s*<string>([^<]*)<\/string>/.exec(xml);
   const built = m?.[1] ?? null;
@@ -124,5 +141,8 @@ if (tag !== null && tag !== root) {
 }
 
 console.log('');
-console.log(failed === 0 ? 'one version everywhere' : `${failed} disagreement(s)`);
+if (SOURCES_ONLY && existsSync(plist)) {
+  console.log('  note  --sources-only: the generated Info.plist was NOT checked');
+}
+console.log(failed === 0 ? (SOURCES_ONLY ? 'one version across the sources' : 'one version everywhere') : `${failed} disagreement(s)`);
 process.exit(failed === 0 ? 0 : 1);
