@@ -8,7 +8,7 @@
  * the app has to do, just one level down.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { fresh, stored } from './helpers';
+import { fresh, setSign, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -159,6 +159,10 @@ test('a chosen line is stored on the transaction and rolls up to its category', 
   await page.getByTestId('add-button').click();
   await page.getByTestId('name-input').fill('Co-op');
   await page.getByTestId('amount-input').fill('1250');
+  // A CREDIT, said out loud: the form opens negative and the field cannot
+  // clear that any more — only the button can. This test wants money IN,
+  // which is the direction that makes the roll-up interesting.
+  await setSign(page, false);
   await page.getByTestId('category-button').click();
   await page.getByTestId(`category-opt-${line}`).click();
   await page.getByTestId('save-button').click();
@@ -189,6 +193,10 @@ test('deleting a category leaves its transactions alone', async ({ page }) => {
   await page.getByTestId('add-button').click();
   await page.getByTestId('name-input').fill('Co-op');
   await page.getByTestId('amount-input').fill('1250');
+  // A CREDIT, said out loud: the form opens negative and the field cannot
+  // clear that any more — only the button can. This test wants money IN,
+  // which is the direction that makes the roll-up interesting.
+  await setSign(page, false);
   await page.getByTestId('category-button').click();
   await page.getByTestId(`category-opt-${line}`).click();
   await page.getByTestId('save-button').click();

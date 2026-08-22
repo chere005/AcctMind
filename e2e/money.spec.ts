@@ -6,7 +6,7 @@
  * way past, and that the two round buttons do what the rules say.
  */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh, rows, stored, reload } from './helpers';
+import { addTransaction, fresh, rows, setSign, stored, reload } from './helpers';
 
 // Typed into the field, with both toggles off — the default.
 const CASES: [string, string, number][] = [
@@ -18,7 +18,9 @@ const CASES: [string, string, number][] = [
   ['12.34',         '$12.34',        1234],   // a typed dot reads the ordinary way
   ['12.3',          '$12.30',        1230],
   ['50.',           '$50.00',        5000],   // a trailing dot means "that was the whole part"
-  ['-8437',         '-$84.37',       -8437],  // a leading minus still works
+  // A leading minus here is the − BUTTON, not a keystroke: the field takes
+  // digits only. See `addTransaction`.
+  ['-8437',         '-$84.37',       -8437],
   ['-84.37',        '-$84.37',       -8437],
   ['1,234.56',      '$1,234.56',     123456], // pasted grouping is noise, not an error
   ['$450',          '$4.50',         450],
@@ -42,6 +44,9 @@ test('the preview shows what the digits mean, before saving', async ({ page }) =
   await fresh(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('1234');
+  // Pinned positive rather than left on whichever way the form opens: this
+  // test is about the DIGITS, and a new transaction starts negative.
+  await setSign(page, false);
   await expect(page.getByTestId('amount-preview')).toHaveText('$12.34');
 });
 
@@ -50,6 +55,7 @@ test('.00 is off to begin with', async ({ page }) => {
   await expect(page.getByTestId('whole-toggle')).toBeVisible();
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('1450');
+  await setSign(page, false);
   await expect(page.getByTestId('amount-preview')).toHaveText('$14.50');
 });
 
@@ -61,6 +67,7 @@ test('the .00 button reads bare digits as whole dollars', async ({ page }) => {
   await page.getByTestId('add-button').click();
   await page.getByTestId('name-input').fill('Rent');
   await page.getByTestId('amount-input').fill('1450');
+  await setSign(page, false);
   await expect(page.getByTestId('amount-preview')).toHaveText('$1,450.00');
 
   await page.getByTestId('save-button').click();
@@ -78,6 +85,7 @@ test('the .00 choice is remembered across a reload', async ({ page }) => {
 
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('50');
+  await setSign(page, false);
   await expect(page.getByTestId('amount-preview')).toHaveText('$50.00');
 });
 
@@ -102,26 +110,46 @@ test('a typed dot beats the .00 button', async ({ page }) => {
   await page.getByTestId('whole-toggle').click();
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('12.34');
+  await setSign(page, false);
   // Whole mode is on, but the dot is explicit and wins.
   await expect(page.getByTestId('amount-preview')).toHaveText('$12.34');
 });
 
-test('the − button and the minus key are the same thing', async ({ page }) => {
+test('the − button is the ONLY sign, and the field never draws one', async ({ page }) => {
+  // Sean, 2026-08-21: "don't show the - in the input field and only allow
+  // numbers to be typed."
+  //
+  // This test said the opposite until today — "the − button and the minus key
+  // are the same thing" — because the sign used to live in the text, where
+  // the button and the key both wrote it. Now the button holds it alone.
   await fresh(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('450');
-  await page.getByTestId('sign-toggle').click();
-  await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
-  // The cell shows the formatted amount now, not the digits that made it.
-  await expect(page.getByTestId('amount-input')).toHaveValue('-$4.50');
+  await setSign(page, true);
 
-  // Pressing it again puts it back.
+  // Negative, and the field says so NOWHERE: the minus is the button's, once.
+  await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
+  await expect(page.getByTestId('amount-input')).toHaveValue('$4.50');
+
+  // Pressing it again puts it back, and the field does not move.
   await page.getByTestId('sign-toggle').click();
   await expect(page.getByTestId('amount-preview')).toHaveText('$4.50');
+  await expect(page.getByTestId('amount-input')).toHaveValue('$4.50');
+});
 
-  // And typing the minus reaches the same place.
-  await page.getByTestId('amount-input').fill('-450');
-  await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
+test('the minus KEY does nothing at all, and neither does any other letter', async ({ page }) => {
+  // The other half: a field that only draws digits is no good if the digits
+  // it draws came from somewhere else. This types the characters rather than
+  // filling, because `fill` sets a value wholesale and would never exercise
+  // the filter one keystroke at a time.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('amount-input').click();
+  await page.getByTestId('amount-input').pressSequentially('-4a5-');
+  await setSign(page, false);
+
+  await expect(page.getByTestId('amount-input')).toHaveValue('$0.45');
+  await expect(page.getByTestId('amount-preview')).toHaveText('$0.45');
 });
 
 test('a third decimal is refused, not quietly trimmed', async ({ page }) => {

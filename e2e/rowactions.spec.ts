@@ -574,10 +574,14 @@ test('a tap on the amount edits it in place, under the same entry rules', async 
   await page.getByTestId('txn-amount-tap').click();
   await expect(page.getByTestId('txn-amount-input')).toBeVisible();
   // Seeded with the canonical string, so it reads the same under either
-  // entry mode — the same pair the add form uses.
-  await expect(page.getByTestId('txn-amount-input')).toHaveValue('-4.50');
+  // entry mode — the same pair the add form uses. UNSIGNED: the row is
+  // -$4.50 and the field says 4.50, because the − beside it says the rest.
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('4.50');
 
+  // And the minus key does nothing on the way in, so the digits are all that
+  // lands and the sign the row opened with is the sign it keeps.
   await page.getByTestId('txn-amount-input').fill('-1275');
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('1275');
   await page.getByTestId('txn-amount-input').press('Enter');
   await expect(page.getByTestId('txn-amount')).toHaveText('-$12.75');
   await expect(page.getByTestId('total')).toHaveText('-$12.75');
@@ -627,10 +631,13 @@ test('the inline amount has a − beside it, and pressing it does not commit', a
   await addTransaction(page, { name: 'Refund', amount: '-450' });
 
   await page.getByTestId('txn-amount-tap').click();
-  await expect(page.getByTestId('txn-amount-input')).toHaveValue('-4.50');
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('4.50');
 
   await page.getByTestId('txn-amount-sign').click();
-  // Still open — the press must not have committed — and the sign has flipped.
+  // Still open — the press must not have committed — and the sign has
+  // flipped WITHOUT the digits moving. That last part is the new claim: the
+  // field held `-4.50` before today, so a flip rewrote the text under the
+  // cursor; now it rewrites nothing the person can see except the button.
   await expect(page.getByTestId('txn-amount-input')).toBeVisible();
   await expect(page.getByTestId('txn-amount-input')).toHaveValue('4.50');
 
@@ -640,8 +647,8 @@ test('the inline amount has a − beside it, and pressing it does not commit', a
 });
 
 test('and flipping it back leaves the row where it started', async ({ page }) => {
-  // Two presses is a no-op, which is only true if the button reads the TEXT
-  // rather than keeping a sign of its own.
+  // Two presses is a no-op — now a claim about the BUTTON's own state, where
+  // it used to be a claim about the text the button rewrote.
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '-450' });
   await page.getByTestId('txn-amount-tap').click();

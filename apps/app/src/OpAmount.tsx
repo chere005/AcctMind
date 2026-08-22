@@ -17,8 +17,8 @@
  * because two copies of a rule about money is two chances for them to drift.
  */
 import { useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { AMOUNT_OPS, applyOp, cleanAmountText, formatAmount, parseAmount, type AmountOp } from '@acctmind/core';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { AMOUNT_OPS, amountDigits, applyOp, formatAmount, parseAmount, type AmountOp } from '@acctmind/core';
 import { SPACE, T, TAP } from './theme';
 
 export function OpAmount({
@@ -59,7 +59,10 @@ export function OpAmount({
   };
 
   const type = (raw: string) => {
-    const clean = cleanAmountText(raw);
+    // Digits only. A typed minus here was never a sign — the − BUTTON is an
+    // operator, so `-5` with `+` chosen quietly subtracted, which is the
+    // button's job said a second way and no way to tell which one applied.
+    const clean = amountDigits(raw);
     setText(clean);
     /*
      * The FULL parser, not the entry rules, and the `.00` toggle does not
@@ -96,8 +99,8 @@ export function OpAmount({
         placeholderTextColor={T.faint}
         autoFocus={autoFocus}
         selectTextOnFocus
-        keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-        inputMode="text"
+        keyboardType="decimal-pad"
+        inputMode="decimal"
         returnKeyType={onSubmit === undefined ? 'default' : 'done'}
         onSubmitEditing={onSubmit}
         testID={testID}

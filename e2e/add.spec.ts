@@ -62,33 +62,41 @@ test('cancel adds nothing, and does not keep what was typed', async ({ page }) =
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
   expect(await storedTxns(page)).toEqual([]);
 
-  // Reopening is a blank form, not the abandoned one. The amount reads '-'
-  // rather than empty because a new transaction starts NEGATIVE — almost
-  // everything in a ledger is money going out. A lone sign is not an amount,
-  // which the required-field test below still relies on.
+  // Reopening is a blank form, not the abandoned one. BLANK, including the
+  // amount: the default is still negative, but the sign lives in the button
+  // now and never appears in the field. Sean, 2026-08-21.
   await page.getByTestId('add-button').click();
   await expect(page.getByTestId('name-input')).toHaveValue('');
-  await expect(page.getByTestId('amount-input')).toHaveValue('-');
+  await expect(page.getByTestId('amount-input')).toHaveValue('');
 });
 
-test('a new transaction starts negative, and the sign alone is not an amount', async ({ page }) => {
+test('a new transaction starts negative, with an EMPTY field', async ({ page }) => {
   // Sean, 2026-08-21. Starting positive means tapping − on nearly every
   // entry, and the one that gets forgotten is a payment recorded as income —
   // wrong by twice its own size.
+  //
+  // The default used to be a '-' sitting in the field, which is the thing
+  // Sean asked to be rid of: "don't show the - in the input field". So the
+  // default is now invisible until there is an amount for it to apply to,
+  // and the only way to see it is to type — which is what this does.
   await fresh(page);
   await page.getByTestId('add-button').click();
-  await expect(page.getByTestId('amount-input')).toHaveValue('-');
+  await expect(page.getByTestId('amount-input')).toHaveValue('');
+
   // Typing digits gives money OUT without touching the toggle.
   await page.getByTestId('name-input').fill('Coffee');
-  await page.getByTestId('amount-input').fill('-450');
+  await page.getByTestId('amount-input').fill('450');
+  await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
   await page.getByTestId('save-button').click();
   await expect(page.getByTestId('save-button')).toBeHidden();
   await expect(page.getByTestId('total')).toHaveText('-$4.50');
 
-  // And an EDIT is seeded from the record, not from the default.
+  // And an EDIT is seeded from the record, not from the default — the sign
+  // on the button, the digits in the field, and no minus drawn twice.
   await page.getByTestId('edit-toggle').click();
   await page.getByTestId('row-edit').first().click();
-  await expect(page.getByTestId('amount-input')).toHaveValue('-$4.50');
+  await expect(page.getByTestId('amount-input')).toHaveValue('$4.50');
+  await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
 });
 
 test('every bad field complains at once, and each clears when touched', async ({ page }) => {

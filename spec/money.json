@@ -254,7 +254,7 @@
     -123456,
     1000000000000
   ],
-  "_entry": "Typing an amount, which is a different problem from parsing one. Digits fill up from the CENTS (450 is $4.50) because most amounts in a ledger have cents; a typed '.' overrides that and the string reads the ordinary way, so '50.' is $50.00. The '.00' toggle flips the default for bare digits and a typed dot still wins. A third decimal place is KEPT in the field and reads as null, so a pasted 1.005 is refused rather than quietly becoming 1.00 — the same refusal parseAmount makes, for the same reason. Rows are [what was typed, what the field keeps, cents or null]. Produced by a second implementation written from the prose above rather than from the code.",
+  "_entry": "Typing an amount, which is a different problem from parsing one. Digits fill up from the CENTS (450 is $4.50) because most amounts in a ledger have cents; a typed '.' overrides that and the string reads the ordinary way, so '50.' is $50.00. The '.00' toggle flips the default for bare digits and a typed dot still wins. A third decimal place is KEPT in the field and reads as null, so a pasted 1.005 is refused rather than quietly becoming 1.00 — the same refusal parseAmount makes, for the same reason. NO SIGN APPEARS HERE any more: a typed '-' is dropped like any other character that is not a digit, and the sign is composed separately — see `signed`. Rows are [what was typed, what the field keeps, cents or null].",
   "entry": {
     "cents": [
       [
@@ -264,7 +264,7 @@
       ],
       [
         "-",
-        "-",
+        "",
         null
       ],
       [
@@ -309,13 +309,13 @@
       ],
       [
         "-450",
-        "-450",
-        -450
+        "450",
+        450
       ],
       [
         "-1234",
-        "-1234",
-        -1234
+        "1234",
+        1234
       ],
       [
         "12.34",
@@ -344,8 +344,8 @@
       ],
       [
         "-50.",
-        "-50.",
-        -5000
+        "50.",
+        5000
       ],
       [
         "1,234.56",
@@ -364,7 +364,7 @@
       ],
       [
         "-0",
-        "-0",
+        "0",
         0
       ],
       [
@@ -381,7 +381,7 @@
       ],
       [
         "-",
-        "-",
+        "",
         null
       ],
       [
@@ -426,13 +426,13 @@
       ],
       [
         "-450",
-        "-450",
-        -45000
+        "450",
+        45000
       ],
       [
         "-1234",
-        "-1234",
-        -123400
+        "1234",
+        123400
       ],
       [
         "12.34",
@@ -461,8 +461,8 @@
       ],
       [
         "-50.",
-        "-50.",
-        -5000
+        "50.",
+        5000
       ],
       [
         "1,234.56",
@@ -481,7 +481,7 @@
       ],
       [
         "-0",
-        "-0",
+        "0",
         0
       ],
       [
@@ -491,39 +491,140 @@
       ]
     ]
   },
-  "_sign": "The sign is a leading '-' in the text and nowhere else, so the minus KEY and the minus BUTTON are the same action and cannot disagree. Rows are [before, after one press].",
-  "sign": [
+  "_digits": "What an amount FIELD keeps. Sean, 2026-08-21: \"don't show the - in the input field and only allow numbers to be typed.\" So the field holds digits and at most one dot and nothing else — a typed minus is not a sign any more, it is simply refused, and the sign lives in the − button beside the field and nowhere else. That is the OPPOSITE of the rule this replaced, which had the minus key and the minus button as the same action. Rows are [what arrived, what the field keeps].",
+  "digits": [
     [
       "",
-      "-"
-    ],
-    [
-      "-",
       ""
     ],
     [
       "450",
-      "-450"
+      "450"
     ],
     [
       "-450",
       "450"
     ],
     [
-      "12.34",
-      "-12.34"
+      "-",
+      ""
     ],
     [
-      "-12.34",
+      "- 450",
+      "450"
+    ],
+    [
+      "450-",
+      "450"
+    ],
+    [
+      "12.34",
       "12.34"
     ],
     [
       ".",
-      "-."
+      "."
     ],
     [
       "-.",
       "."
+    ],
+    [
+      "1,234.56",
+      "1234.56"
+    ],
+    [
+      "$450",
+      "450"
+    ],
+    [
+      "12.34.5",
+      "12.345"
+    ],
+    [
+      "4a5",
+      "45"
+    ],
+    [
+      "  450  ",
+      "450"
+    ],
+    [
+      "1e3",
+      "13"
+    ],
+    [
+      "−50",
+      "50"
+    ]
+  ],
+  "_signed": "The field carries no sign, so an amount is the digits and the − button TOGETHER. Two sources, one number, composed in core rather than in each of the three screens that own such a field. Rows are [digits, is the − button on, cents in cents mode, cents in whole mode].",
+  "signed": [
+    [
+      "",
+      false,
+      null,
+      null
+    ],
+    [
+      "",
+      true,
+      null,
+      null
+    ],
+    [
+      ".",
+      true,
+      null,
+      null
+    ],
+    [
+      "450",
+      false,
+      450,
+      45000
+    ],
+    [
+      "450",
+      true,
+      -450,
+      -45000
+    ],
+    [
+      "5",
+      true,
+      -5,
+      -500
+    ],
+    [
+      "12.34",
+      false,
+      1234,
+      1234
+    ],
+    [
+      "12.34",
+      true,
+      -1234,
+      -1234
+    ],
+    [
+      "0",
+      true,
+      0,
+      0
+    ],
+    [
+      "00",
+      true,
+      0,
+      0
+    ],
+    [
+      "12.345",
+      true,
+      null,
+      null
     ]
   ]
 }

@@ -144,11 +144,21 @@ export type AmountMode = 'cents' | 'whole';
 const FRAC_MAX = 2;
 
 /**
- * Reduce a raw field value to what an amount may contain.
+ * Reduce a raw field value to what an amount FIELD may contain: digits, and
+ * at most one dot.
  *
- * Everything else is dropped rather than rejected — `$`, spaces and grouping
- * commas are noise a person may paste in, and a field that refuses to accept
- * a pasted `$1,234.56` is a field that argues with its user.
+ * No sign. Sean, 2026-08-21: "don't show the - in the input field and only
+ * allow numbers to be typed." The sign is held by the − button beside the
+ * field and nowhere else, which is the reverse of the rule this replaced —
+ * that one put the sign in the text so the minus KEY and the minus BUTTON
+ * could not disagree. They cannot disagree now either, for the stronger
+ * reason that there is only one of them. `signedCents` is where the two
+ * sources are put back together.
+ *
+ * A minus is dropped exactly like a `$` or a comma. So is everything else:
+ * `$`, spaces and grouping commas are noise a person may paste in, and a
+ * field that refuses a pasted `$1,234.56` is a field that argues with its
+ * user.
  *
  * A third decimal digit is KEPT, deliberately, even though no amount can have
  * one. Silently dropping it would turn a pasted `1.005` into `1.00` — a value
@@ -157,29 +167,27 @@ const FRAC_MAX = 2;
  * is told. Refusing sends someone back to a field they can see; truncating
  * sends them a balance they cannot explain.
  */
-export function cleanAmountText(raw: string): string {
-  const negative = raw.trimStart().startsWith('-');
-  let digitsAndDot = '';
+export function amountDigits(raw: string): string {
+  let out = '';
   let seenDot = false;
   for (const ch of raw) {
     if (ch >= '0' && ch <= '9') {
-      digitsAndDot += ch;
+      out += ch;
     } else if (ch === '.' && !seenDot) {
       seenDot = true;
-      digitsAndDot += ch;
+      out += ch;
     }
   }
-  return (negative ? '-' : '') + digitsAndDot;
+  return out;
 }
 
-/** Is what has been typed a negative amount? Draws the − button's state. */
+/**
+ * Does this composed string carry a sign? Internal to `entryCents` and to
+ * `parseAmount`'s callers — a FIELD never holds a sign to read, which is why
+ * nothing in a screen calls this any more.
+ */
 export function amountIsNegative(text: string): boolean {
   return text.startsWith('-');
-}
-
-/** What the − button does: add the leading `-`, or take it away. */
-export function toggleAmountSign(text: string): string {
-  return amountIsNegative(text) ? text.slice(1) : '-' + text;
 }
 
 /**
@@ -219,4 +227,27 @@ export function entryCents(text: string, mode: AmountMode): number | null {
   if (!Number.isSafeInteger(cents) || cents > MAX_CENTS) return null;
   // And the same -0 guard — see parseAmount.
   return negative && cents !== 0 ? -cents : cents;
+}
+
+/**
+ * An amount from its two halves: the digits in the field, and the − button
+ * beside it.
+ *
+ * The composition is here rather than in each screen because there are three
+ * fields of this shape — the add form, the row's inline editor, and the
+ * budget pad — and a screen that composes it itself is a screen that has
+ * composed it wrong on five other surfaces. It is one line; being one line is
+ * not a reason to write it three times.
+ *
+ * Zero is the case worth having a vector for: `-0` is not `0` under
+ * `Object.is` and turns back into `0` through JSON, so an amount that changes
+ * identity when it is saved would be a failing equality somewhere far from
+ * here. `entryCents` already guards it, and this inherits that.
+ */
+export function signedCents(
+  digits: string,
+  negative: boolean,
+  mode: AmountMode,
+): number | null {
+  return entryCents(negative ? `-${digits}` : digits, mode);
 }

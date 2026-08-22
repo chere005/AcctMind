@@ -4,13 +4,12 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import {
-  Animated, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text,
+  Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text,
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  amountInput, amountIsNegative, claimsSwipe, cleanAmountText, entryCents, formatAmount,
-  formatDay, rowTap, selectedTotal, sortTxns, swipeArms, toggleAmountSign, toggleSelected,
-  total,
+  amountDigits, amountInput, claimsSwipe, formatAmount, formatDay, rowTap, selectedTotal,
+  signedCents, sortTxns, swipeArms, toggleSelected, total,
   type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -797,7 +796,21 @@ function InlineAmount({ value, onDone, testID }: {
   onDone: (next: number | null) => void;
   testID: string;
 }) {
-  const [text, setText] = useState(() => amountInput(value));
+  /*
+   * The digits and the sign are SEPARATE, and that is the change.
+   *
+   * They used to be one string with a leading `-`, so the field drew the
+   * minus as well as the button beside it — the same fact twice, in two
+   * places, one of them a text cursor away from being edited into something
+   * else. Sean, 2026-08-21: "don't show the - in the input field and only
+   * allow numbers to be typed."
+   *
+   * So the field holds digits (see core's `amountDigits`, which drops a typed
+   * minus like any other stray character) and the button holds a boolean, and
+   * `signedCents` is the one place they are put back together.
+   */
+  const [digits, setDigits] = useState(() => amountDigits(amountInput(value)));
+  const [negative, setNegative] = useState(value < 0);
   const field = useRef<TextInput>(null);
   /*
    * Pressing the − BLURS the field, and blur is what commits.
@@ -809,7 +822,7 @@ function InlineAmount({ value, onDone, testID }: {
    * the same machinery for the same reason.
    */
   const flipping = useRef(false);
-  const done = () => onDone(entryCents(cleanAmountText(text), 'cents'));
+  const done = () => onDone(signedCents(digits, negative, 'cents'));
 
   return (
     <View style={styles.inlineAmountRow}>
@@ -831,24 +844,24 @@ function InlineAmount({ value, onDone, testID }: {
          */
         onPressIn={() => {
           flipping.current = true;
-          setText((t) => toggleAmountSign(t));
+          setNegative((n) => !n);
         }}
         onPress={() => { field.current?.focus(); }}
         {...KEEP_FOCUS}
-        style={[styles.inlineSign, amountIsNegative(text) && styles.inlineSignOn]}
+        style={[styles.inlineSign, negative && styles.inlineSignOn]}
         accessibilityRole="button"
         accessibilityLabel="Negative"
-        accessibilityState={{ selected: amountIsNegative(text) }}
+        accessibilityState={{ selected: negative }}
         testID="txn-amount-sign"
       >
-        <Text style={[styles.inlineSignText, amountIsNegative(text) && styles.inlineSignTextOn]}>
+        <Text style={[styles.inlineSignText, negative && styles.inlineSignTextOn]}>
           −
         </Text>
       </Pressable>
       <TextInput
         ref={field}
-        value={text}
-        onChangeText={(raw) => setText(cleanAmountText(raw))}
+        value={digits}
+        onChangeText={(raw) => setDigits(amountDigits(raw))}
         onBlur={() => {
           if (flipping.current) { flipping.current = false; return; }
           done();
@@ -857,8 +870,13 @@ function InlineAmount({ value, onDone, testID }: {
         style={[styles.amount, styles.inlineField, styles.inlineAmount]}
         autoFocus
         selectTextOnFocus
-        keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-        inputMode="text"
+        // A NUMBER pad now, not punctuation: with the sign gone from the
+        // text there is nothing here to type but digits and a dot, and a
+        // keyboard offering a minus key would be offering a key that does
+        // nothing. The cost is iOS's return key, which a number pad has none
+        // of — tapping away still commits, which is the documented way out.
+        keyboardType="decimal-pad"
+        inputMode="decimal"
         returnKeyType="done"
         testID={testID}
       />

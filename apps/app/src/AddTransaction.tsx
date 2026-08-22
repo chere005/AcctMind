@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  amountInput, amountIsNegative, cleanAmountText, draftOf, emptyDraft, entryCents,
-  formatAmount, formatDay, isValid, toggleAmountSign, today, validateDraft,
+  amountDigits, amountInput, draftOf, emptyDraft, formatAmount, formatDay, isValid,
+  signedCents, today, validateDraft,
   type AmountMode, type Category, type Draft, type DraftErrors, type Line, type Txn,
 } from '@acctmind/core';
 import { CategoryPick } from './CategoryPick';
@@ -56,14 +56,20 @@ export function AddTransaction({
   const [errors, setErrors] = useState<DraftErrors>({});
   const [picking, setPicking] = useState(false);
   /**
-   * What has actually been typed, and how bare digits are read.
+   * What has actually been typed, and the sign held beside it.
    *
-   * Kept separately from `draft.amount`, which holds a CANONICAL string
+   * TWO pieces of state, not one string with a `-` on the front. Sean,
+   * 2026-08-21: "don't show the - in the input field and only allow numbers
+   * to be typed." The field draws digits; the − button draws the sign; core's
+   * `signedCents` is the only place they meet.
+   *
+   * Both kept separately from `draft.amount`, which holds a CANONICAL string
    * (`-4.50`) that `validateDraft` and `parseAmount` understand without
    * knowing this screen exists. Two representations, one direction: typing
    * updates both, and core never sees the half-finished one.
    */
-  const [amountText, setAmountText] = useState('');
+  const [digits, setDigits] = useState('');
+  const [negative, setNegative] = useState(true);
   const insets = useSafeAreaInsets();
 
   // Opening is a fresh form, dated today. Computed on the transition rather
@@ -95,7 +101,8 @@ export function AddTransaction({
        * its own dot and so reads the same under either entry mode, where
        * '450' would reopen at $4.50 having saved $450.00.
        */
-      setAmountText(editing === undefined ? '-' : cleanAmountText(start.amount));
+      setDigits(amountDigits(start.amount));
+      setNegative(editing === undefined ? true : start.amount.trimStart().startsWith('-'));
     }
   }
 
@@ -107,10 +114,11 @@ export function AddTransaction({
   };
 
   /** Every route into the amount — the keys and the − button. */
-  const setAmount = (rawText: string) => {
-    const text = cleanAmountText(rawText);
-    setAmountText(text);
-    const cents = entryCents(text, mode);
+  const setAmount = (rawText: string, sign: boolean) => {
+    const text = amountDigits(rawText);
+    setDigits(text);
+    setNegative(sign);
+    const cents = signedCents(text, sign, mode);
     /*
      * There are two ways to have no amount, and they deserve different
      * sentences.
@@ -127,15 +135,15 @@ export function AddTransaction({
      * $1,234.00. Handing the raw text over would silently multiply by a
      * hundred at the last step.
      */
-    const digits = /[0-9]/.test(text);
+    const anyDigits = /[0-9]/.test(text);
     setDraft((d) => ({
       ...d,
-      amount: cents !== null ? amountInput(cents) : digits ? text : '',
+      amount: cents !== null ? amountInput(cents) : anyDigits ? text : '',
     }));
     setErrors((e) => (e.amount === undefined ? e : { ...e, amount: undefined }));
   };
 
-  const cents = entryCents(amountText, mode);
+  const cents = signedCents(digits, negative, mode);
 
   const submit = () => {
     const found = validateDraft(draft);
@@ -244,18 +252,22 @@ export function AddTransaction({
                     so it is reached before the number too. */}
                 <Toggle
                   label="−"
-                  on={amountIsNegative(amountText)}
-                  onPress={() => setAmount(toggleAmountSign(amountText))}
+                  on={negative}
+                  onPress={() => setAmount(digits, !negative)}
                   accessibilityLabel="Negative"
                   testID="sign-toggle"
                 />
                 <TextInput
                   /*
-                   * The FORMATTED value, in the cell. The raw digits stay in
-                   * `amountText` and are what the rules read; this is only
-                   * what is drawn.
+                   * The FORMATTED value, in the cell, and UNSIGNED — the − to
+                   * the left of it is what says negative. `formatAmount` puts
+                   * a minus on a negative, so the sign is taken off again
+                   * here rather than drawn twice.
+                   *
+                   * The raw digits stay in `digits` and are what the rules
+                   * read; this is only what is drawn.
                    */
-                  value={cents === null ? amountText : formatAmount(cents)}
+                  value={cents === null ? digits : formatAmount(Math.abs(cents))}
                   onChangeText={(next) => {
                     /*
                      * Two kinds of text arrive here and they mean different
@@ -274,26 +286,29 @@ export function AddTransaction({
                      * POSITION is the whole meaning — `12.3` is $12.30 and
                      * `1.005` is refused, and both must survive the trip.
                      */
-                    const digits = next.replace(/[^0-9]/g, '');
-                    const neg = next.trimStart().startsWith('-');
+                    const only = next.replace(/[^0-9]/g, '');
                     const dot = next.indexOf('.');
                     const raw = next.includes('$') || dot < 0
-                      ? digits + (next.trimEnd().endsWith('.') ? '.' : '')
+                      ? only + (next.trimEnd().endsWith('.') ? '.' : '')
                       : (() => {
                           const after = next.slice(dot + 1).replace(/[^0-9]/g, '').length;
-                          const cut = digits.length - after;
-                          return digits.slice(0, cut) + '.' + digits.slice(cut);
+                          const cut = only.length - after;
+                          return only.slice(0, cut) + '.' + only.slice(cut);
                         })();
-                    setAmount((neg ? '-' : '') + raw);
+                    // The sign is not typed and is not read back out of the
+                    // text: it rides along untouched from the button.
+                    setAmount(raw, negative);
                   }}
                   style={[styles.input, styles.amountField]}
                   placeholder={mode === 'whole' ? '0' : '0.00'}
                   placeholderTextColor={T.faint}
-                  // 'decimal-pad' has no minus sign, and a leading '-' is
-                  // still a supported way to enter an expense even though the
-                  // − button exists. Both, not either.
-                  keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
-                  inputMode="text"
+                  // A NUMBER pad, which has no minus key — and now that the
+                  // sign lives entirely in the − button, a minus key would be
+                  // one that does nothing. The note that used to sit here
+                  // said the opposite, back when a leading '-' was a second
+                  // supported way to enter an expense.
+                  keyboardType="decimal-pad"
+                  inputMode="decimal"
                   returnKeyType="done"
                   onSubmitEditing={submit}
                   testID="amount-input"

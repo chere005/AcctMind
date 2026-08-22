@@ -39,7 +39,22 @@ export async function withStore(page: Page, raw: string): Promise<void> {
   await page.getByTestId('tab-transactions').click({ timeout: 1500 }).catch(() => {});
 }
 
-/** Fill the add form and save. Leaves the date alone unless one is given. */
+/**
+ * Fill the add form and save. Leaves the date alone unless one is given.
+ *
+ * A leading `-` on `amount` means the − BUTTON, not a keystroke. Sean,
+ * 2026-08-21: the field takes digits only, so typing a minus into it does
+ * nothing at all — every caller here that wanted a negative used to get one
+ * by putting a `-` in the string, and every caller that wanted a positive got
+ * one because `fill()` REPLACED the default sign that a person's typing would
+ * have left in place. Both were accidents of the driver.
+ *
+ * The sign is set by reading the form's own preview rather than by counting
+ * on the default: the app says what sign it is currently on, and this presses
+ * the button when that disagrees. A helper that assumed "new transactions
+ * open negative" would go quietly wrong the day that default moved, and it
+ * would go wrong in every test at once.
+ */
 export async function addTransaction(
   page: Page,
   fields: { name: string; description?: string; amount: string; day?: string },
@@ -51,12 +66,32 @@ export async function addTransaction(
   if (fields.description !== undefined) {
     await page.getByTestId('description-input').fill(fields.description);
   }
-  await page.getByTestId('amount-input').fill(fields.amount);
+  await page.getByTestId('amount-input').fill(fields.amount.replace('-', ''));
+  await setSign(page, fields.amount.trimStart().startsWith('-'));
 
   if (fields.day !== undefined) await pickDay(page, fields.day);
 
   await page.getByTestId('save-button').click();
   await expect(page.getByTestId('save-button')).toBeHidden();
+}
+
+/**
+ * Put the add form's − button into a known state, by asking the form.
+ *
+ * `accessibilityState={{ checked }}` does not reach the DOM as `aria-checked`
+ * under react-native-web — the toggle's only tell is a class name, which is
+ * not something to assert on. The PREVIEW is the app's own statement of the
+ * sign, so that is what gets read.
+ */
+export async function setSign(page: Page, negative: boolean): Promise<void> {
+  const shown = (await page.getByTestId('amount-preview').textContent()) ?? '';
+  // LOUD when it cannot tell, rather than silently leaving the sign alone.
+  // An empty preview means no amount has been typed yet, and there is nothing
+  // to read the sign from — at which point "no click needed" and "no idea"
+  // look identical, which is how a guard ends up passing while doing nothing.
+  expect(shown, 'set the amount before the sign — the preview is what says which way it points')
+    .not.toBe('');
+  if (shown.startsWith('-') !== negative) await page.getByTestId('sign-toggle').click();
 }
 
 /** Choose a sort order from the dropdown in the bar. */

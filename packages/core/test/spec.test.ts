@@ -9,9 +9,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, addMonths, applyOp, availableOf, budgetFor, cleanAmountText, dayOf,
+  addDays, addMonths, amountDigits, applyOp, availableOf, budgetFor, dayOf,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
-  parseAmount, sortTxns, toggleAmountSign,
+  parseAmount, signedCents, sortTxns,
 } from '../src/index';
 import type { AmountOp } from '../src/index';
 import type { AmountMode } from '../src/index';
@@ -56,29 +56,46 @@ describe('spec/money.json', () => {
 describe('spec/money.json — typing an amount', () => {
   const m = spec<{
     entry: Record<AmountMode, [string, string, number | null][]>;
-    sign: [string, string][];
+    digits: [string, string][];
+    signed: [string, boolean, number | null, number | null][];
   }>('money');
 
   for (const mode of ['cents', 'whole'] as const) {
     it(`keeps and reads what is typed, in ${mode} mode`, () => {
       for (const [typed, kept, cents] of m.entry[mode]) {
-        const text = cleanAmountText(typed);
+        const text = amountDigits(typed);
         expect(text, `cleaning ${JSON.stringify(typed)}`).toBe(kept);
         expect(entryCents(text, mode), `${JSON.stringify(typed)} in ${mode}`).toBe(cents);
       }
     });
   }
 
-  it('the minus button and the minus key are the same action', () => {
-    for (const [before, after] of m.sign) {
-      expect(toggleAmountSign(before), before).toBe(after);
+  it('the field keeps digits and a dot, and no sign at all', () => {
+    for (const [raw, kept] of m.digits) {
+      expect(amountDigits(raw), JSON.stringify(raw)).toBe(kept);
     }
   });
 
-  it('and pressing it twice is where you started', () => {
-    for (const [before] of m.sign) {
-      expect(toggleAmountSign(toggleAmountSign(before))).toBe(before);
+  it('never keeps a character it was not given', () => {
+    // The other half of the same claim, as a property rather than a table: a
+    // filter that PASSED something through would be caught by the rows above,
+    // but one that INVENTED a character would not.
+    for (const [raw, kept] of m.digits) {
+      for (const ch of kept) expect(raw.includes(ch), `${raw} -> ${kept}`).toBe(true);
+      expect(/^[0-9.]*$/.test(kept), kept).toBe(true);
     }
+  });
+
+  it('composes the digits with the button beside them', () => {
+    for (const [digits, negative, inCents, inWhole] of m.signed) {
+      expect(signedCents(digits, negative, 'cents'), `${digits} ${negative}`).toBe(inCents);
+      expect(signedCents(digits, negative, 'whole'), `${digits} ${negative}`).toBe(inWhole);
+    }
+  });
+
+  it('and never produces a negative zero, which JSON would turn back into zero', () => {
+    expect(Object.is(signedCents('0', true, 'cents'), -0)).toBe(false);
+    expect(Object.is(signedCents('00', true, 'whole'), -0)).toBe(false);
   });
 
   it('what the field produces is always something parseAmount can read back', () => {
@@ -87,9 +104,11 @@ describe('spec/money.json — typing an amount', () => {
     // form tells them it is not one.
     for (const mode of ['cents', 'whole'] as const) {
       for (const [typed] of m.entry[mode]) {
-        const cents = entryCents(cleanAmountText(typed), mode);
-        if (cents === null) continue;
-        expect(parseAmount(formatAmount(cents)), `${typed} in ${mode}`).toBe(cents);
+        for (const negative of [false, true]) {
+          const cents = signedCents(amountDigits(typed), negative, mode);
+          if (cents === null) continue;
+          expect(parseAmount(formatAmount(cents)), `${typed} in ${mode}`).toBe(cents);
+        }
       }
     }
   });
