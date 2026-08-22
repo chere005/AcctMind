@@ -23,10 +23,15 @@ jobs:
 
       # The gates that do not need a browser. A Windows bundle built from
       # code that fails the typecheck is a bundle nobody should install.
-      - name: Typecheck and core
-        run: |
-          npm run typecheck
-          npm run test:core
+      # TWO STEPS, not one `run:` block with two lines. The default shell on a
+      # windows runner is pwsh, which fails the step on the LAST command's exit
+      # code only — so a broken typecheck would have been masked by a core
+      # suite that then passed, and the job would have gone green with a type
+      # error in it.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Core suite
+        run: npm run test:core
 
       # export:web, not a bare `expo export` — the head patch and the build
       # stamp ride in it, and the Windows bundle should carry the same

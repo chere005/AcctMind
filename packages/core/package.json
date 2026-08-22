@@ -8,7 +8,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "test": "TZ=America/Chicago vitest"
+    "test": "vitest"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
