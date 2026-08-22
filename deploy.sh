@@ -110,12 +110,31 @@ if [ -z "${SSH_DEST:-}" ]; then echo "deploy.conf sets no SSH_DEST" >&2; exit 1;
 if [ -z "${SITE_URL:-}" ]; then echo "deploy.conf sets no SITE_URL" >&2; exit 1; fi
 SITE_URL="${SITE_URL%/}"
 
+# WHERE A FILE SITS AND WHAT THE WORLD CALLS IT ARE TWO DIFFERENT FACTS.
+#
+# The sandbox's files live in /home/public/test/AcctMind, and until the site
+# moved test and dev onto subdomains (2026-08-20) that was also its address.
+# It is not any more: the apex /test/ 404s BY DESIGN, so the URL this script
+# built by pasting TEST_PATH onto SITE_URL — https://seancheren.com/test/
+# AcctMind/ — is a dead path, and the post-deploy proof failed on a deploy
+# that had in fact landed correctly.
+#
+# CalMind hit this first and its server/deploy.sh carries the same note. It
+# hardcodes the subdomain; this repo deliberately names no host, so the host
+# is taken from SITE_URL and the label prefixed onto it.
+TEST_URL="$(printf '%s' "$SITE_URL" | sed 's|^\(https\{0,1\}://\)|\1test.|')$PROD_PATH"
+PROD_URL="$SITE_URL$PROD_PATH"
+case "$TEST_URL" in
+  https://test.*|http://test.*) ;;
+  *) echo "guard: the sandbox URL '$TEST_URL' is not on a test. host" >&2; exit 1 ;;
+esac
+
 # ------------------------------------------------------------------- --verify
 if [ "$VERIFY" = "1" ]; then
   for inst in $INSTANCES; do
     case "$inst" in
-      test) url="$SITE_URL$TEST_PATH" ;;
-      prod) url="$SITE_URL$PROD_PATH" ;;
+      test) url="$TEST_URL" ;;
+      prod) url="$PROD_URL" ;;
     esac
     echo "==> [$inst] $url"
     code=$(curl -s -o /dev/null -w '%{http_code}' "$url" || echo "---")
@@ -155,8 +174,8 @@ fi
 # --------------------------------------------------------------------- upload
 for inst in $INSTANCES; do
   case "$inst" in
-    test) WEB="$TEST_WEB"; SHELL_DIR="$TEST_SHELL_DIR"; URL="$SITE_URL$TEST_PATH"; BASE="/test/AcctMind" ;;
-    prod) WEB="$PROD_WEB"; SHELL_DIR="$PROD_SHELL_DIR"; URL="$SITE_URL$PROD_PATH"; BASE="/AcctMind" ;;
+    test) WEB="$TEST_WEB"; SHELL_DIR="$TEST_SHELL_DIR"; URL="$TEST_URL"; BASE="/test/AcctMind" ;;
+    prod) WEB="$PROD_WEB"; SHELL_DIR="$PROD_SHELL_DIR"; URL="$PROD_URL"; BASE="/AcctMind" ;;
   esac
   guard_web "$WEB"; guard_shell "$SHELL_DIR"
 
