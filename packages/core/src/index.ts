@@ -18,4 +18,3 @@ export * from './store';
 export * from './merge';
 export * from './sync';
 export * from './peer';
-export * from './watch';

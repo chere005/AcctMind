@@ -91,6 +91,20 @@ version check reads the generated `Info.plist` for that reason.
   suite is red, and it should stay blocked: the gate failing is the gate
   working.
 
+## The watch is out, for now
+
+Sean, 2026-08-21: drop the watch component entirely for now. So
+`apps/app/targets/watch/`, `apps/app/modules/watch-bridge`,
+`packages/core/src/watch.ts`, `apps/app/src/watch.ts` and
+`tools/check-watch-feed.sh` are gone, along with the `test:watch` script, the
+`@bacons/apple-targets` plugin and its dependency.
+
+FOR NOW is the operative phrase and the reason nothing below was deleted with
+it. The watch traps in this file stay: every one of them cost time, none of
+them is about code that still exists, and all of them will be true again the
+day the target comes back. Restoring is one `git revert` of the commit that
+removed it, plus the plugin line in `app.config.js`.
+
 ## Traps that have cost real time HERE
 
 - **A side effect inside a `setState` updater silently discards the other

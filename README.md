@@ -6,7 +6,7 @@ Feel free to deploy this on your own website, build and deploy the iOS version, 
 
 A ledger. One list of transactions, on every screen Sean owns.
 
-Six surfaces — web, iOS, Android, watch, macOS, Windows — from two builds and
+Five surfaces — web, iOS, Android, macOS, Windows — from two builds and
 a shell. Every rule the product has is written once, in TypeScript, and every
 surface renders it. The whole feature set today is a list and an add form,
 deliberately: the point of this commit is a template that already deploys and
@@ -80,7 +80,7 @@ formats where it is typed.
 ## Where the data lives
 
 **On the device.** There is no API and no database. The web app keeps its
-ledger in the browser's own storage; the phone, the watch and the desktop
+ledger in the browser's own storage; the phone and the desktop
 shells keep theirs on the machine.
 
 That has one consequence worth stating plainly, because the code is shaped
@@ -98,7 +98,6 @@ so any of them can deliver in any order, twice, or years late.
 | Link | Between | Needs | State |
 | --- | --- | --- | --- |
 | Local network | iPhone ⇄ Mac ⇄ iPad | A free Apple team | **On** |
-| WatchConnectivity | iPhone → Watch | A free Apple team | On, one-way |
 | iCloud key-value | Any Apple devices | A **paid** membership | Written, off |
 
 **Local network** is Bonjour discovery and a TLS connection carrying whole
@@ -129,9 +128,6 @@ Developer Program membership. The code is written and tested; it is gated
 behind `ACCTMIND_ICLOUD=1` and off by default, so a free team builds
 everything.
 
-**The watch** gets a feed, not the store: the twenty most recent rows and the
-total of *all* of them. It draws; it does not edit.
-
 ## The sign-in, and what it is for
 
 The web build is on the open internet, so that surface asks who you are. It reuses the live suite's sign-in exactly: same accounts, same
@@ -140,7 +136,7 @@ being signed into the suite signs you into this.
 
 That is the entire server side. `server/public/index.php` decides whether to
 hand over the page and serves it; there is nothing else there, and no user
-data for it to hold. **No other surface has a login** — the phone, the watch
+data for it to hold. **No other surface has a login** — the phone
 and both desktop shells read a ledger that never left the machine, and a
 password on those would protect nothing.
 
@@ -150,7 +146,7 @@ password on those would protect nothing.
 packages/core/   The brain, shared verbatim by every surface: money in
                  integer cents, days as local YYYY-MM-DD, the month grid,
                  validation, ordering, the store's damage handling, and the
-                 watch feed. No dependencies, no build step — consumed as
+                 No dependencies, no build step — consumed as
                  TypeScript source. Its typecheck forbids Node, DOM and
                  React Native types, so "core is platform-neutral" is a
                  checked property rather than a convention.
@@ -160,13 +156,9 @@ spec/            The behavior contract as JSON vectors — the same file a
 apps/app/        One Expo app -> iOS, Android and web. Screens, gestures and
                  styling only; every rule is imported from core.
 apps/app/modules/         Three small native modules, all Apple-only and all
-                 no-ops elsewhere: peer-sync (Bonjour + TLS), watch-bridge
-                 (WatchConnectivity), icloud-sync (key-value store). Each
+                 no-ops elsewhere: peer-sync (Bonjour + TLS) and
+                 icloud-sync (key-value store). Each
                  moves opaque strings; none of them merges anything.
-apps/app/targets/watch/   The SwiftUI watch app, generated into the Xcode
-                 project by @bacons/apple-targets. Read-only. Its formatter
-                 is a deliberate twin of core's, held to it by
-                 tools/check-watch-feed.sh.
 server/          The doorway, in plain PHP. Roughly forty lines that reuse
                  the suite's sign-in and serve the app shell.
 desktop/         A Tauri 2 shell around the identical web export -> macOS
@@ -186,7 +178,6 @@ npm test                          # core + server + the full gesture run
 npm run web                       # Expo web on :8081
 npm run export:web                # the dist every shell and the e2e suite run on
 npx playwright test --ui          # the gesture suite, watchable
-npm run test:watch                # core's real feed through the watch's real Swift
 npm run test:peer                 # the Bonjour service type, plist against core
 sh desktop/check-assets.sh        # the desktop's cheap checks
 ./desktop/smoke.sh                # macOS: build, carry THIS export, launch, quit

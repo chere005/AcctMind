@@ -1,7 +1,7 @@
 /**
  * Merging two copies of the ledger.
  *
- * AcctMind syncs between a phone, a Mac and a watch through iCloud, with no
+ * AcctMind syncs between a phone and a Mac, with no
  * server anywhere. Nothing arbitrates, so the rule has to be one that gives
  * the same answer whichever device applies it, in whatever order things
  * arrive, however many times they arrive:

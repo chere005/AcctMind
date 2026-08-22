@@ -17,7 +17,6 @@ and nobody is looking at it.
 | `npm run test:deploy` | every deploy guard, each proven by breaking a copy | **yes** |
 | `npm run test:version` | one version across three files AND the generated Info.plist, plus a build number that exists | **yes** |
 | `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | **yes** |
-| `npm run test:watch` | core's real feed through the watch's real Swift decoder and formatter | no — needs `swiftc` |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
 | `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits | no — compiles Rust |
 
@@ -63,13 +62,6 @@ ever, and there is no failure anywhere to read. This asserts the plist against
 core's `PEER_SERVICE`, that nothing stale is listed beside it, that the usage
 description exists (without it iOS terminates the app the moment it browses),
 and that no Swift file has grown its own copy of the string.
-
-**`tools/check-watch-feed.sh`** — the watch is a separate process in another
-language, so `formatAmount` exists twice: once in `packages/core/src/money.ts`
-and once in `apps/app/targets/watch/Feed.swift`. This lifts the real Swift out
-of the target (never a retyped copy — that tests the typist), compiles it,
-feeds it what `watchFeed()` really produces, and compares the drawn strings.
-Two copies with a test between them.
 
 ## Rules that were in a screen, and are not any more
 
@@ -232,7 +224,7 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
   all three were watched failing. This is the same trap `hitSlop` set, in
   three new costumes.
 
-- **The phone and the watch, on real hardware.** The web harness runs a phone
+- **The phone, on real hardware.** The web harness runs a phone
   VIEWPORT, which is not a phone: a browser has no status bar to hide under,
   and `hitSlop` is a no-op under react-native-web while it works on native.
   Open the simulator and look — the iOS app and both modals were checked that
@@ -275,11 +267,6 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
   `peers` on the Devices screen is the only tell in the UI; the device log
   under `com.apple.network:boringssl` is the only real diagnosis.
 
-- **The watch's transport, on hardware.** The feed shape is proven and the
-  decoder is proven, and `WatchBridgeModule` now compiles — it did not for a
-  whole commit, because nothing had triggered a full iOS build since it was
-  added. Compiling is not delivering: nobody has watched a feed reach a real
-  wrist.
 - **iOS and Android builds, on a schedule.** `ios/` and `android/` are
   `expo prebuild` output and disposable; nothing rebuilds them automatically.
   Both have been built and run by hand (2026-08-20).
@@ -301,8 +288,6 @@ been watched failing on purpose:
 - all fourteen deploy guards, against copies with their constants rewritten,
   plus the two text rules (`--delete`, the `index.html` exclusion) removed
   from the real script;
-- the watch checker, against a Swift formatter with its digit grouping taken
-  out;
 - the pairing tests, against five mutations of `peer.ts` — a plain sum for
   Luhn, no checksum at all, the O/I/L folding removed, a 40-bit secret, and a
   confusable character put back in the alphabet. The first of those is why

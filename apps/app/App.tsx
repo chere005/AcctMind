@@ -32,7 +32,6 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import * as peer from './src/peer';
 import * as sync from './src/sync';
-import { pushToWatch } from './src/watch';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
 import { BudgetScreen, type Anchor, type LineField } from './src/BudgetScreen';
@@ -187,12 +186,7 @@ export default function App() {
       // before drawing would make a local-first app feel like a networked one.
       setPhase({ k: 'ready', store: r.store, dropped: r.dropped });
 
-      // The wrist may never have heard from this phone. Push what we have
-      // before reconciling, so a watch is current within a second of launch
-      // rather than only after the next edit.
-      void pushToWatch(r.store);
-
-      // And any peer that connected WHILE this was loading. Its opening
+      // Any peer that connected WHILE this was loading. Its opening
       // frame arrived with `current()` still null and was dropped — rightly,
       // since there was nothing to merge into yet — and nothing would have
       // asked again until the connection was rebuilt. Publishing here is what
@@ -210,7 +204,6 @@ export default function App() {
         // what stops the next launch starting from the pre-merge copy and
         // re-doing the whole reconciliation.
         save(out.store).catch((e: unknown) => setSaveError(String(e)));
-        void pushToWatch(out.store);
         peer.publish(out.store);
       }
     });
@@ -231,7 +224,6 @@ export default function App() {
         storeRef.current = out.store;
         setPhase({ ...p, store: out.store });
         save(out.store).catch((e: unknown) => setSaveError(String(e)));
-        void pushToWatch(out.store);
       });
       return p;
     });
@@ -250,7 +242,6 @@ export default function App() {
       storeRef.current = store;
       setPhase((p) => (p.k === 'ready' ? { ...p, store } : p));
       save(store).catch((e: unknown) => setSaveError(String(e)));
-      void pushToWatch(store);
     },
     status: setPeers,
   }), []);
@@ -282,8 +273,6 @@ export default function App() {
     // sharing of it is in doubt, so it gets its own, quieter banner.
     void sync.publish(next).then((ok) => setTooBig(!ok && sync.available()));
     // And the wrist, which is a separate link on a separate transport: the
-    // watch keeps working when iCloud is unavailable, and vice versa.
-    void pushToWatch(next);
     // And any device on this wifi. Three transports, none of which is
     // allowed to break when another is unavailable.
     peer.publish(next);

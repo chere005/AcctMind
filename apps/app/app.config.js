@@ -64,7 +64,7 @@ module.exports = {
     // tools/check-version.mjs. It said 0.1.0 through three tagged releases,
     // so the build on a phone claimed to be a version from days earlier and
     // nothing anywhere disagreed.
-    version: '0.8.1',
+    version: '0.9.0',
     orientation: 'portrait',
     // Both generated from assets/logo-square.svg by tools/make-icons.sh.
     // Never edit a PNG here by hand — re-run the script, so one change to
@@ -88,7 +88,7 @@ module.exports = {
        * of the eleven times I built that release is on the phone". They are
        * different questions and need different numbers.
        */
-      buildNumber: '2',
+      buildNumber: '1',
       infoPlist: {
         /*
          * Local-network sync, and the reason it needs no paid membership.
@@ -143,10 +143,14 @@ module.exports = {
     experiments: {
       baseUrl,
     },
-    // The watch app is a real Apple target, generated INTO the Xcode project
-    // from targets/watch/ during `expo prebuild`. Without this plugin that
-    // directory is just three files nothing reads — which is exactly what it
-    // was until this line was added.
-    plugins: ['@bacons/apple-targets'],
+    /*
+     * No `plugins` here since the watch went.
+     *
+     * `@bacons/apple-targets` existed to generate the watchOS target from
+     * `targets/watch/` at prebuild. With that directory gone the plugin has
+     * nothing to generate, and left in it adds an extra target to every
+     * prebuild for no reason. Sean, 2026-08-21: drop the watch for now — so
+     * this comes back with it, together with the dependency.
+     */
   },
 };

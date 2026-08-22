@@ -15,7 +15,6 @@
     "test:e2e:fast": "playwright test",
     "test:deploy": "sh tools/check-deploy-guards.sh",
     "test:peer": "node --import ./tools/register-ts.mjs tools/check-peer-service.mjs",
-    "test:watch": "sh tools/check-watch-feed.sh",
     "typecheck": "tsc --noEmit -p packages/core && tsc --noEmit -p packages/core/tsconfig.test.json && tsc --noEmit -p apps/app",
     "web": "npm -w app run web",
     "export:web": "npm -w app exec expo export -- -p web && node tools/patch-web-html.mjs",
@@ -28,5 +27,5 @@
     "typescript": "~6.0.3"
   },
   "license": "BSD-3-Clause",
-  "version": "0.8.1"
+  "version": "0.9.0"
 }
