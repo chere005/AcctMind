@@ -137,3 +137,51 @@ test('a description is optional and its line is absent without one', async ({ pa
   await addTransaction(page, { name: 'Bare', amount: '1' });
   await expect(page.getByTestId('txn-description')).toHaveCount(0);
 });
+
+test('Return saves the transaction, from either field', async ({ page }) => {
+  // Sean, 2026-08-21, from the Mac: on a keyboard the form is three fields
+  // and a button, and reaching for the mouse to finish something you have
+  // just typed is the slowest part of entering a transaction.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').fill('Coffee');
+  await page.getByTestId('amount-input').fill('-450');
+  await page.getByTestId('amount-input').press('Enter');
+
+  await expect(page.getByTestId('save-button')).toBeHidden();
+  await expect(page.getByTestId('txn-row')).toHaveCount(1);
+  await expect(page.getByTestId('total')).toHaveText('-$4.50');
+
+  // And from the NAME field, which is where a keyboard starts.
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('amount-input').fill('-1250');
+  await page.getByTestId('name-input').fill('Lunch');
+  await page.getByTestId('name-input').press('Enter');
+  await expect(page.getByTestId('save-button')).toBeHidden();
+  await expect(page.getByTestId('txn-row')).toHaveCount(2);
+});
+
+test('Return in the DESCRIPTION types a newline rather than saving', async ({ page }) => {
+  // The one exception, and it has to be one: a description is the only field
+  // here that can hold more than a line, so Return in it is punctuation.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').fill('Coffee');
+  await page.getByTestId('description-input').click();
+  await page.getByTestId('description-input').press('Enter');
+
+  // Still open, nothing saved — the amount has not even been typed yet.
+  await expect(page.getByTestId('save-button')).toBeVisible();
+  expect(await storedTxns(page)).toEqual([]);
+});
+
+test('Return with nothing typed complains instead of saving', async ({ page }) => {
+  // Return runs the same submit the button does, so it gets the same refusal
+  // rather than a second, quieter path into the ledger.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').press('Enter');
+  await expect(page.getByTestId('save-button')).toBeVisible();
+  await expect(page.getByTestId('error-name')).toBeVisible();
+  await expect(page.getByTestId('error-amount')).toBeVisible();
+});

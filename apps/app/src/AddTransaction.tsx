@@ -175,7 +175,22 @@ export function AddTransaction({
                 placeholder="Coffee"
                 placeholderTextColor={T.faint}
                 autoFocus
-                returnKeyType="next"
+                /*
+                 * Return SAVES — Sean, 2026-08-21, from the Mac.
+                 *
+                 * On a keyboard the form is three fields and a button, and
+                 * reaching for the mouse to finish something you have just
+                 * typed is the slowest part of entering a transaction. It was
+                 * `next`, which on a desktop does nothing anyone asked for.
+                 *
+                 * Wired the same on every surface rather than only on the
+                 * one that asked. Six surfaces disagreeing about what Return
+                 * does is a rule written five different ways; and on a phone
+                 * "done" is a better key than "next" here anyway, because the
+                 * amount is the only field left and it opens its own keypad.
+                 */
+                returnKeyType="done"
+                onSubmitEditing={submit}
                 testID="name-input"
               />
               {/*
@@ -279,6 +294,8 @@ export function AddTransaction({
                   // − button exists. Both, not either.
                   keyboardType={Platform.OS === 'ios' ? 'numbers-and-punctuation' : 'default'}
                   inputMode="text"
+                  returnKeyType="done"
+                  onSubmitEditing={submit}
                   testID="amount-input"
                 />
               </View>
