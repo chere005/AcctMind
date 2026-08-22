@@ -112,10 +112,31 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST'
     $pass = (string) $_POST['password'];
     $want = auth_password_for($cfg, $user);
 
-    // hash_equals, not '===': the comparison takes the same time whether the
-    // first character is wrong or the last one is. Copied from the suite,
-    // where it is the same call for the same reason.
-    if ($want !== null && hash_equals($want, $pass)) {
+    // auth_password_check, NOT hash_equals against the stored value.
+    //
+    // This door used to compare the stored string to the typed one directly,
+    // which was right while the suite stored passwords as typed. The suite
+    // hashed them on 2026-08-20 ("Passwords are hashed, and every existing one
+    // upgrades on its next login"), so auth_password_for() now hands back a
+    // bcrypt hash and that comparison is false for EVERY correct password.
+    //
+    // Worse than a plain break, it was a staggered one: the suite rewrites a
+    // password as a hash the next time its owner signs in THERE, so each
+    // account kept working here until the day its owner logged into the main
+    // site, and then stopped — with the door reporting "Invalid username or
+    // password", which is what a wrong password looks like.
+    //
+    // The lib's own function is the check, and it handles both spellings: a
+    // real hash gets password_verify, a legacy plaintext a constant-time
+    // compare plus the upgrade flag. Same call the suite's own login makes.
+    [$ok, $needsUpgrade] = $want === null ? [false, false] : auth_password_check($want, $pass);
+    if ($ok) {
+        // UPGRADE ON LOGIN, as the suite does it: the one moment the plaintext
+        // is in hand and known to be right. Without this an account that signs
+        // in here and nowhere else would keep its plaintext for ever.
+        if ($needsUpgrade) {
+            auth_password_set($cfg, $user, $pass);
+        }
         // A new id on sign-in, so a session id someone else already holds
         // cannot be promoted to an authenticated one.
         session_regenerate_id(true);

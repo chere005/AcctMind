@@ -115,6 +115,33 @@ check('right password: redirects rather than rendering', $code === 302, "got $co
 check('right password: redirects back to AcctMind, not the calendar',
     (bool) preg_match('~^Location:\s*/\s*$~mi', $head), trim($head));
 
+// --- a LEGACY plaintext password ------------------------------------------
+//
+// The case that broke this door and that nothing here covered. The suite
+// hashed passwords on 2026-08-20 and upgrades each one the next time its
+// owner signs in, so every existing account is plaintext until that happens —
+// and this door compared the stored value to the typed one directly, which is
+// true for plaintext and false for a hash. Seeding only through
+// auth_password_set() meant the suite tested the hashed half exclusively, and
+// the staggered break (each account failing the day its owner logged into the
+// main site) would have arrived here unseen either way round.
+//
+// So: write a plaintext password the way an un-upgraded account holds one,
+// sign in with it, and require BOTH that it works and that it is a hash
+// afterwards.
+$pwFile = auth_passwords_file($cfg);
+$own = store_read($pwFile);
+$own['tester'] = 'correct horse';          // as an un-upgraded account holds it
+store_write($pwFile, $own);
+$legacyJar = "$tmp/j3.txt";
+[$code, , ] = req('/', ['username' => 'tester', 'password' => 'correct horse'], $legacyJar);
+check('a legacy plaintext password still signs in', $code === 302, "got $code");
+$after = (string) (store_read($pwFile)['tester'] ?? '');
+check('…and is upgraded to a hash by that login',
+    (bool) (password_get_info($after)['algo'] ?? null), 'still: ' . substr($after, 0, 12));
+check('the upgraded hash verifies the same password',
+    password_verify('correct horse', $after));
+
 // --- signed in -------------------------------------------------------------
 [$code, $head, $body] = req('/', null, $jar);
 check('signed in: 200', $code === 200, "got $code");
