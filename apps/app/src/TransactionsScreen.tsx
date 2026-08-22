@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import {
   amountInput, amountIsNegative, claimsSwipe, cleanAmountText, entryCents, formatAmount,
-  formatDay, selectedTotal, sortTxns, swipeArms, toggleAmountSign, toggleSelected, total,
+  formatDay, rowTap, selectedTotal, sortTxns, swipeArms, toggleAmountSign, toggleSelected,
+  total,
   type Account, type AmountMode, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -118,7 +119,11 @@ export function TransactionsScreen({
    * no way to tell which one Return will land on.
    */
   const [inline, setInline] = useState<{ id: string; field: 'name' | 'amount' } | null>(null);
-  const leaveEdit = () => { setEdit(false); setPicked([]); };
+  const leaveEdit = () => { setEdit(false); setPicked([]); setSwipedId(null); };
+  // Both directions clear the park. Edit mode HIDES it rather than cancelling
+  // it, so without this the pencil pressed twice brought back a delete armed
+  // on a row the finger left minutes ago.
+  const enterEdit = () => { setSwipedId(null); setEdit(true); };
   /** The sort dropdown, open or not. Owned here so the bar row stays dumb. */
   const [sorting, setSorting] = useState(false);
   /** Is a row mid-drag anywhere? Only the ScrollView needs to know. */
@@ -148,7 +153,7 @@ export function TransactionsScreen({
             {onAction !== undefined && (
               <CircleBtn
                 on={edit}
-                onPress={() => (edit ? leaveEdit() : setEdit(true))}
+                onPress={() => (edit ? leaveEdit() : enterEdit())}
                 label={edit ? 'Done editing' : 'Edit rows'}
                 testID="edit-toggle"
               >
@@ -285,6 +290,29 @@ export function TransactionsScreen({
             onDragging={setDragging}
           />
         ))}
+
+        {/*
+          The rest of the page, when a delete is parked.
+
+          The list's content box already grows to fill the ScrollView
+          (`flexGrow: 1`), so this takes whatever is left under the last row
+          and makes it a way out. Rendered ONLY while something is parked:
+          left there permanently it would sit over the empty state and eat
+          the taps that are supposed to reach it.
+
+          Not a screen-wide backdrop, which is the obvious shape and the
+          wrong one — drawn over everything it would cover the parked delete
+          itself, and the one control the gesture exists to offer would stop
+          working.
+        */}
+        {swipedId !== null && (
+          <Pressable
+            style={styles.dismissRest}
+            onPress={() => setSwipedId(null)}
+            accessibilityLabel="Cancel delete"
+            testID="swipe-dismiss"
+          />
+        )}
       </ScrollView>
 
     </View>
@@ -340,11 +368,22 @@ function Section({
   // a hand order the next render would undo is worse than none.
   const canMove = edit && onMove !== undefined && rows.length > 1;
 
+  /*
+   * A parked delete outranks this header too.
+   *
+   * Same rule as the rows, for the same reason: a tap that lands anywhere
+   * other than the delete is a decision not to delete, and collapsing the
+   * account instead would scroll the armed row out of sight while leaving it
+   * armed.
+   */
+  const parked = swipedId !== null;
+  const dismiss = () => setSwipedId(null);
+
   return (
     <View testID="account-section" style={styles.section}>
       <View style={styles.head}>
         <Pressable
-          onPress={onToggle}
+          onPress={parked ? dismiss : onToggle}
           style={styles.headMain}
           accessibilityRole="button"
           accessibilityState={{ expanded: !shut }}
@@ -358,7 +397,7 @@ function Section({
         {/* Each account adds into ITSELF: the + is the only thing that tells
             the form which section it was opened from. */}
         <Pressable
-          onPress={onAdd}
+          onPress={parked ? dismiss : onAdd}
           style={styles.headAdd}
           accessibilityRole="button"
           accessibilityLabel={`Add to ${account.name}`}
@@ -389,6 +428,7 @@ function Section({
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
             swiped={swipedId === t.id}
+            parked={swipedId !== null}
             onDismiss={() => setSwipedId(null)}
             onSwipe={() => setSwipedId(t.id)}
           />
@@ -401,7 +441,7 @@ function Section({
 
 function Row({
   txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate,
-  onAction, grip, lifted, dy, swiped, onDismiss, onSwipe,
+  onAction, grip, lifted, dy, swiped, parked, onDismiss, onSwipe,
 }: {
   txn: Txn;
   /** Is the page in edit mode? Then this row shows its controls. */
@@ -433,6 +473,8 @@ function Row({
   dy: number;
   /** Is this row's delete parked at its right edge? */
   swiped: boolean;
+  /** Is ANY row's delete parked? Then every tap in here is a dismiss. */
+  parked: boolean;
   /** Put away a parked delete — a tap on any row does it. */
   onDismiss: () => void;
   /** A firm left swipe landed — park the delete. */
@@ -464,6 +506,20 @@ function Row({
     }),
   ).current;
 
+  /*
+   * What a tap does, decided ONCE for the whole row.
+   *
+   * The row body and the three fields each used to answer for themselves,
+   * and the fields answered first — being on top — so a parked delete was
+   * dismissable only by the strip of background between them. See core's
+   * `rowTap`; the precedence is the rule, and this is the one place that
+   * reads it.
+   */
+  const tap = rowTap(parked, edit);
+  /** The tap handler every part of the row shares, `undefined` for none. */
+  const onTap = (own: (() => void) | undefined): (() => void) | undefined =>
+    tap === 'dismiss' ? onDismiss : tap === 'pick' ? onPick : own;
+
   return (
     <View testID="txn-row">
       <Animated.View
@@ -472,15 +528,12 @@ function Row({
       >
       <Pressable
         /*
-         * What a tap does depends on the mode, and only on the mode.
-         *
-         *  · a parked delete showing — put it away. An armed delete that can
-         *    only be dismissed by using it is a trap.
-         *  · edit mode — pick the row out, or put it back.
-         *  · otherwise — nothing. There is no hold gesture any more and no
-         *    mode to fall into by accident.
+         * The row's own background, under `rowTap` like everything else in
+         * here. `undefined` for its own meaning: outside edit mode a tap on
+         * the bare strip beside a field means nothing, because there is no
+         * hold gesture any more and no mode to fall into by accident.
          */
-        onPress={swiped ? onDismiss : edit ? onPick : undefined}
+        onPress={onTap(undefined)}
         style={[
           styles.row,
           edit && !picked && styles.rowOpen,
@@ -538,7 +591,7 @@ function Row({
              * selected nothing while a tap on the thin strip beside it did.
              * A tap has one meaning per mode; the wrapper has to carry it too.
              */
-            onPress={edit ? onPick : onInline === undefined ? undefined : () => onOpenInline('name')}
+            onPress={onTap(onInline === undefined ? undefined : () => onOpenInline('name'))}
             testID="txn-name-tap"
           >
             <Text style={styles.name} numberOfLines={1} testID="txn-name">{txn.name}</Text>
@@ -561,7 +614,7 @@ function Row({
         />
       ) : (
         <Pressable
-          onPress={edit ? onPick : onInline === undefined ? undefined : () => onOpenInline('amount')}
+          onPress={onTap(onInline === undefined ? undefined : () => onOpenInline('amount'))}
           testID="txn-amount-tap"
         >
           <Text
@@ -577,7 +630,7 @@ function Row({
           characters and left the amounts and the dates in one ragged
           column. A tap opens the day grid: a date is picked, never typed. */}
       <Pressable
-        onPress={edit ? onPick : onDate}
+        onPress={onTap(onDate)}
         testID="txn-date-tap"
       >
         <Text style={styles.date} testID="txn-date">{formatDay(txn.date)}</Text>
@@ -892,6 +945,10 @@ const styles = StyleSheet.create({
   // a section head is a LABEL over a group, and with 8 either side it reads
   // as another row of the group above it.
   list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
+  // Whatever the sections leave over. A minimum so a full list still offers
+  // a patch of nothing to tap; `flex: 1` alone is zero when the rows already
+  // fill the screen, which is exactly when a way out is hardest to find.
+  dismissRest: { flex: 1, minHeight: 72 },
   section: { gap: SPACE.sm },
   head: {
     flexDirection: 'row', alignItems: 'center',

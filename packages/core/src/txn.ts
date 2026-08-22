@@ -406,3 +406,30 @@ export function claimsSwipe(dx: number, dy: number): boolean {
 export function swipeArms(dx: number): boolean {
   return dx < -SWIPE_ARM_PX;
 }
+
+/** What a tap on a row — or on anything inside one — is asking for. */
+export type RowTap = 'dismiss' | 'pick' | 'inline';
+
+/**
+ * What does a tap MEAN right now?
+ *
+ * One rule, consulted by every tappable part of a row, because the bug it
+ * fixes was each part answering separately. A parked delete could only be
+ * dismissed by tapping the row's own background — and the name, the amount
+ * and the date cover nearly all of that background, each with a Pressable of
+ * its own that swallowed the tap and opened an editor instead. So the only
+ * ways out of an armed delete were to use it or to find the few pixels
+ * between two fields. Sean, 2026-08-21: tap to exit the swipe delete.
+ *
+ * `parked` is whether ANY row has a delete showing, not this one. A tap on a
+ * different row has to put it away too: an armed delete is modal in effect,
+ * and a tap that lands somewhere else is a decision not to use it.
+ *
+ * Precedence is the whole content of the rule. Dismissing outranks editing,
+ * which is why this cannot live in each caller's `onPress` — three callers
+ * meant three chances to get the order wrong, and two of them did.
+ */
+export function rowTap(parked: boolean, edit: boolean): RowTap {
+  if (parked) return 'dismiss';
+  return edit ? 'pick' : 'inline';
+}

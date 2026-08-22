@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  reorder, respace, selectedTotal, sortTxns, swipeArms, toggleSelected, total,
+  reorder, respace, rowTap, selectedTotal, sortTxns, swipeArms, toggleSelected, total,
   txnText, validateDraft,
 } from '../src/index';
 
@@ -389,6 +389,27 @@ describe('the swipe, as rules rather than as a gesture', () => {
     // The claim distance must sit below the delete distance, or a swipe would
     // engage and then be incapable of ever completing.
     expect(SWIPE_CLAIM_PX).toBeLessThan(SWIPE_ARM_PX);
+  });
+});
+
+describe('what a tap means', () => {
+  it('puts a parked delete away, whatever else was true', () => {
+    // The point of the rule. Every other meaning a tap could have loses to
+    // this one, or an armed delete becomes a state with no way out but the
+    // delete itself.
+    expect(rowTap(true, false)).toBe('dismiss');
+    expect(rowTap(true, true)).toBe('dismiss');
+  });
+
+  it('picks in edit mode and edits in place otherwise', () => {
+    expect(rowTap(false, true)).toBe('pick');
+    expect(rowTap(false, false)).toBe('inline');
+  });
+
+  it('dismisses from a row that is not the swiped one', () => {
+    // `parked` is about the LIST, not the row, so this is the same call —
+    // which is exactly why a tap on any row puts the delete away.
+    expect(rowTap(true, false)).not.toBe('inline');
   });
 });
 

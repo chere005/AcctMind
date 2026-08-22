@@ -14,7 +14,7 @@
  * an absence.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, pickSort, reload, rows, stored } from './helpers';
+import { addTransaction, fresh, pickSort, reload, rows, stored, swipeRow } from './helpers';
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
@@ -374,19 +374,117 @@ test('nothing offers actions until the pencil is pressed', async ({ page }) => {
 });
 
 /*
- * The swipe is NOT driven from here.
+ * The swipe IS driven from here now.
  *
- * Three attempts were: react-native-web's pan responder does not engage under
- * Playwright's mouse, so a 220-pixel drag deleted nothing — which meant the
- * "a half-swipe does not delete" and "the swipe does not steal a long press"
- * tests passed because NOTHING HAPPENED. A check that cannot fail looks
- * exactly like one that passes, and two of those were about to be committed.
+ * It was not, and the comment that stood here said why: three attempts drove
+ * it with `page.mouse`, react-native-web's pan responder never engaged, and a
+ * 220-pixel drag deleted nothing — so "a half-swipe does not delete" passed
+ * because NOTHING HAPPENED. Two such tests were deleted rather than kept.
  *
- * Both thresholds and both decisions are rules stated in a sentence, so they
- * are core's — `claimsSwipe` and `swipeDeletes`, with the six-pixel drift
- * that shipped broken as a named case. They run everywhere and need no
- * finger. What is left unproven here is only that the handler CALLS them.
+ * A real touch stream over CDP does engage it (see `swipeRow`), which is what
+ * changed. The thresholds are still core's and still tested there without a
+ * finger; what these add is the half no unit test can reach — that the
+ * handler calls them, and that what the gesture parks can be got rid of.
+ *
+ * CHROMIUM only: the mobile project is WebKit and has no CDP.
  */
+
+const HARD = -220;   // past SWIPE_ARM_PX
+const SHORT = -60;   // past the claim, short of the arm
+
+test.describe('the swipe', () => {
+  test.skip(({ browserName }) => browserName !== 'chromium', 'CDP touch is Chromium-only');
+
+  test('parks a delete rather than deleting, and the button is what deletes', async ({ page }) => {
+    // Sean, 2026-08-21: the swipe should bring up a delete BUTTON. So the
+    // gesture itself must destroy nothing — the row is still here after it.
+    await fresh(page);
+    await addTransaction(page, { name: 'Coffee', amount: '450' });
+
+    await swipeRow(page, 0, HARD);
+    await expect(page.getByTestId('swipe-park')).toBeVisible();
+    await expect(page.getByTestId('txn-row')).toHaveCount(1);
+
+    await page.getByTestId('swipe-delete').click();
+    await expect(page.getByTestId('txn-row')).toHaveCount(0);
+  });
+
+  test('arms nothing when the finger stops short', async ({ page }) => {
+    // Also what keeps the three tests around it honest: if a 60-pixel drag
+    // armed the delete too, `swipeRow` would be proving only that touching a
+    // row does something.
+    await fresh(page);
+    await addTransaction(page, { name: 'Coffee', amount: '450' });
+    await swipeRow(page, 0, SHORT);
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+  });
+
+  test('is put away by a tap on the row — the NAME and the AMOUNT included', async ({ page }) => {
+    // THE BUG. Sean, 2026-08-21: "tap to exit the swipe delete."
+    //
+    // A tap on the row body already dismissed. But the name, the amount and
+    // the date each sit in a Pressable of their own, on top, and each
+    // answered for itself: they opened an inline editor and the delete
+    // stayed armed underneath. Since those three cover nearly the whole row,
+    // the only way out of an armed delete was to use it.
+    //
+    // So the two assertions per tap are both load-bearing: the delete went,
+    // AND the editor did not open in its place.
+    await fresh(page);
+    await addTransaction(page, { name: 'Coffee', amount: '450' });
+
+    await swipeRow(page, 0, HARD);
+    await expect(page.getByTestId('swipe-park')).toBeVisible();
+    await page.getByTestId('txn-name-tap').click();
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+    await expect(page.getByTestId('txn-name-input')).toBeHidden();
+
+    await swipeRow(page, 0, HARD);
+    await expect(page.getByTestId('swipe-park')).toBeVisible();
+    await page.getByTestId('txn-amount-tap').click();
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+    await expect(page.getByTestId('txn-amount-input')).toBeHidden();
+
+    // And nothing was deleted by any of it.
+    await expect(page.getByTestId('txn-row')).toHaveCount(1);
+  });
+
+  test('is put away by a tap on a DIFFERENT row, and by one on the empty space', async ({ page }) => {
+    // An armed delete is modal in effect: a tap that lands anywhere else is a
+    // decision not to use it, and leaving it armed under a finger that has
+    // moved on is the state this app least wants.
+    await fresh(page);
+    await addTransaction(page, { name: 'first', amount: '100', day: '2026-08-20' });
+    await addTransaction(page, { name: 'second', amount: '200', day: '2026-08-19' });
+
+    await swipeRow(page, 0, HARD);
+    await expect(page.getByTestId('swipe-park')).toBeVisible();
+    await page.getByTestId('txn-name-tap').nth(1).click();
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+    await expect(page.getByTestId('txn-name-input')).toBeHidden();
+
+    // The page under the last row is a way out too — offered only while
+    // something is parked, so it never eats a tap meant for anything else.
+    await expect(page.getByTestId('swipe-dismiss')).toHaveCount(0);
+    await swipeRow(page, 0, HARD);
+    await page.getByTestId('swipe-dismiss').click();
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+    await expect(page.getByTestId('txn-row')).toHaveCount(2);
+  });
+
+  test('does not survive the pencil, in either direction', async ({ page }) => {
+    // Edit mode hides the park — so without clearing it, pressing the pencil
+    // twice brought back a delete armed on a row the finger left minutes ago.
+    await fresh(page);
+    await addTransaction(page, { name: 'Coffee', amount: '450' });
+
+    await swipeRow(page, 0, HARD);
+    await edit(page);
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+    await page.getByTestId('edit-toggle').click();
+    await expect(page.getByTestId('swipe-park')).toBeHidden();
+  });
+});
 
 test('rows are picked out in edit mode, and the bar says what they come to', async ({ page }) => {
   // Sean, 2026-08-21: "in edit mode allow for selecting multiple

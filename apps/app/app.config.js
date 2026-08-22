@@ -64,7 +64,7 @@ module.exports = {
     // tools/check-version.mjs. It said 0.1.0 through three tagged releases,
     // so the build on a phone claimed to be a version from days earlier and
     // nothing anywhere disagreed.
-    version: '0.9.2',
+    version: '0.10.0',
     orientation: 'portrait',
     // Both generated from assets/logo-square.svg by tools/make-icons.sh.
     // Never edit a PNG here by hand — re-run the script, so one change to

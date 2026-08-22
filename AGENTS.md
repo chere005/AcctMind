@@ -134,6 +134,34 @@ removed it, plus the plugin line in `app.config.js`.
 
 ## Traps that have cost real time HERE
 
+- **A `Pressable` inside a row answers the tap BEFORE the row does, so a
+  mode the row is in has to be pushed down into every child.** The swipe
+  parks a delete, and a tap on the row put it away — except the name, the
+  amount and the date each sit in their own `Pressable`, on top, each with an
+  `onPress` that had never heard of the parked delete. Those three cover
+  nearly the whole row, so the only ways out of an armed delete were to use it
+  or to hit the few pixels of background between two fields. Sean found it on
+  the phone: "tap to exit the swipe delete."
+
+  The fix is not four handlers agreeing. It is ONE rule — core's `rowTap` —
+  read once per row, with the precedence stated in it, and every part of the
+  row deferring to that. Four `onPress` expressions is four chances to get an
+  ordering wrong, and two of them had.
+
+- **`PanResponder` ignores Playwright's synthetic MOUSE and obeys a real
+  TOUCH stream, and this repo wrote off the swipe over the difference.**
+  Three attempts drove it with `page.mouse`, nothing engaged, a 220-pixel drag
+  deleted nothing — so the tests passed while doing nothing, two were deleted,
+  and `TESTING.md` gained a section headed "what the harness cannot drive at
+  all". That section was wrong from the day it was written.
+
+  `Input.dispatchTouchEvent` over CDP drives it — `swipeRow` in
+  `e2e/helpers.ts`. Chromium only, since the mobile project is WebKit and has
+  no CDP session. **A gesture that cannot be driven one way has not been shown
+  undrivable**; and any such claim in here is worth re-testing rather than
+  inheriting, because the cost of believing it is a whole feature with no
+  coverage.
+
 - **Backticks inside `git commit -m "…"` are command substitution.** A message
   reading ``runs the same `submit` the button does`` was committed and pushed
   as "runs the same  the button does" — the shell ran `submit`, found nothing,

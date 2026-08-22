@@ -138,3 +138,38 @@ export async function reload(page: Page): Promise<void> {
   await page.getByTestId('tab-transactions').click();
   await expect(page.getByTestId('title')).toBeVisible();
 }
+
+/**
+ * Swipe a row left, with REAL touch events.
+ *
+ * Three earlier attempts drove this with `page.mouse` and every one of them
+ * passed while doing NOTHING: react-native-web's PanResponder never engaged,
+ * so a 220-pixel drag deleted nothing and the test could not fail. Two of
+ * those were deleted rather than kept green, and the swipe went untested at
+ * this level for that reason.
+ *
+ * What works is `Input.dispatchTouchEvent` over CDP — a genuine touch stream
+ * the responder system does pick up. It is CHROMIUM ONLY (the mobile project
+ * is WebKit, which has no CDP), so every caller skips elsewhere; the rules
+ * themselves are core's and run everywhere without a finger.
+ *
+ * The moves are stepped rather than jumped because the responder decides
+ * mid-gesture: one leap from start to end is a single event and reads as a
+ * teleport, not a drag. Proven honest by driving it 60px — short of
+ * SWIPE_ARM_PX — and watching nothing arm.
+ */
+export async function swipeRow(page: Page, index: number, dx: number): Promise<void> {
+  const box = (await page.getByTestId('txn-row-body').nth(index).boundingBox())!;
+  const y = box.y + box.height / 2;
+  const x0 = box.x + box.width - 20;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y }] });
+  const steps = 12;
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove', touchPoints: [{ x: x0 + (dx * i) / steps, y }],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}

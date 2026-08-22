@@ -71,11 +71,13 @@ not do it.
 
 - **The category filter** — substring, case-insensitive, trimmed,
   empty-is-everything. Now `filterByName`, six cases, no browser.
-- **The swipe** — when a drag is claimed and when letting go deletes. Now
-  `claimsSwipe` and `swipeDeletes`. React-native-web's pan responder does not
-  engage under Playwright's mouse, so a 220-pixel drag deleted nothing and
+- **The swipe** — when a drag is claimed and when letting go arms the delete.
+  Now `claimsSwipe` and `swipeArms`. React-native-web's pan responder does not
+  engage under Playwright's MOUSE, so a 220-pixel drag deleted nothing and
   two gesture tests passed because NOTHING HAPPENED. They were deleted rather
-  than kept green.
+  than kept green. A real TOUCH stream does engage it — see below; the rules
+  stayed in core regardless, because they run on both browsers and the driver
+  runs on one.
 - **Sorting** — three modes, now `spec/sortmodes.json` and replayed.
 
 What is left for the gesture suite in each case is only that the screen CALLS
@@ -110,14 +112,29 @@ were tried and all five went red.
 There is still no `spec/` vector for any migration — that remains the gap it
 was, and it matters more now that there are two of them.
 
+## The swipe, drivable after all — with real touch
+
+React-native-web's `PanResponder` ignores Playwright's synthetic MOUSE, which
+is why three attempts at a swipe test passed while doing nothing. It does not
+ignore a real touch stream: `Input.dispatchTouchEvent` over CDP drives it,
+and `swipeRow` in `e2e/helpers.ts` is that (`e2e/rowactions.spec.ts`, five
+tests). Chromium only — the mobile project is WebKit and has no CDP.
+
+Two things keep it honest, and both were watched failing:
+
+- A 60-pixel drag — past `SWIPE_CLAIM_PX`, short of `SWIPE_ARM_PX` — arms
+  NOTHING, asserted in its own test. Without it the suite would be proving
+  only that touching a row does something.
+- Three mutations, 2026-08-21: `rowTap` ignoring `parked` failed the two
+  dismiss tests; removing the background dismiss failed the empty-space one;
+  dropping the pencil's clear failed the pencil one. Each failed alone, which
+  is what says the tests are about different things.
+
+The rules stay in core anyway. The driver covers one browser and no phone;
+`claimsSwipe`, `swipeArms` and `rowTap` cover every surface.
+
 ## What the harness cannot drive at all
 
-React-native-web's `PanResponder` does not engage under Playwright's synthetic
-mouse. Anything that is only a finger is therefore invisible here, and the
-honest response is to move the DECISION into core and check the wiring by eye:
-
-- **Swipe to delete** — `claimsSwipe` / `swipeDeletes` in core. Two browser
-  tests were deleted for passing while nothing happened.
 - **Drag to reorder** (the grip, 2026-08-21) — `reorder` and `orderBetween` in
   core; `rowdrag.ts` turns a finger into a destination index and nothing else.
   What the suite still checks is whether the handle is OFFERED, per sort mode,
