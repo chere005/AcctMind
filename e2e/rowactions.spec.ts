@@ -552,3 +552,31 @@ test('and flipping it back leaves the row where it started', async ({ page }) =>
   await page.getByTestId('txn-amount-input').press('Enter');
   await expect(page.getByTestId('txn-amount')).toHaveText('-$4.50');
 });
+
+test('the − sits against the digits, not across a gap from them', async ({ page }) => {
+  // Sean, from the phone: "spacing of the - and cursor are very weird". The
+  // row's amounts are right-aligned, and the inline field inherited that — so
+  // the digits sat at the far edge of the box with empty field between them
+  // and the −. A text box's width is not its text's width.
+  //
+  // Worse on the web than on the phone: an `<input>` takes a default width of
+  // about twenty characters unless told otherwise, so the `minWidth` that
+  // looked sufficient did nothing at all and the gap measured 122 points.
+  //
+  // The property is therefore about ALIGNMENT plus the field's left edge, not
+  // about the box's width — the width is exactly the thing that misleads.
+  await fresh(page);
+  await addTransaction(page, { name: 'Foo', amount: '-350' });
+  await page.getByTestId('txn-amount-tap').click();
+  await expect(page.getByTestId('txn-amount-input')).toBeVisible();
+
+  const field = page.getByTestId('txn-amount-input');
+  expect(await field.evaluate((el) => getComputedStyle(el).textAlign)).toBe('left');
+
+  const box = await field.boundingBox();
+  const sign = await page.getByTestId('txn-amount-sign').boundingBox();
+  const gap = box!.x - (sign!.x + sign!.width);
+  expect(gap).toBeGreaterThanOrEqual(0);
+  // One space between two parts of one control, not a hole.
+  expect(gap).toBeLessThan(12);
+});

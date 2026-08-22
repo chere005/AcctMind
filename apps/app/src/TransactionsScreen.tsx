@@ -993,20 +993,50 @@ const styles = StyleSheet.create({
   // No padding and no border of its own: a field that swaps in for text has
   // to occupy exactly what the text did, or the row moves as it is touched.
   inlineField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
-  // Smaller — Sean, 2026-08-21. It was 90 wide at the row's own 16pt, which
-  // is more room than any amount in the list needs and pushed the date off
-  // the edge on a narrow phone.
-  inlineAmount: { minWidth: 64, fontSize: 14 },
-  inlineAmountRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
-  // 24, not 44: it lives inside a 36-point row beside a field, and a control
-  // taller than its row is the bug the action cluster already had.
-  inlineSign: {
-    width: 24, height: 24, borderRadius: 12,
-    alignItems: 'center', justifyContent: 'center',
+  /*
+   * The − and the field are ONE control, not two things near each other.
+   *
+   * They were a button and a right-aligned box side by side, and the box's
+   * width is not its text's: with `minWidth: 64` and the digits pushed to the
+   * right edge, the gap between the − and the number was empty field, about
+   * fifty points of it. On the phone that read as two unrelated controls with
+   * a hole between them (Sean, 2026-08-21: "spacing of the - and cursor are
+   * very weird").
+   *
+   * Wrapping them in one bordered pill fixes the appearance and the meaning
+   * at once: whatever space is left over is now visibly INSIDE the field, and
+   * the − reads as part of the thing being edited.
+   */
+  inlineAmountRow: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
+    paddingLeft: 3, paddingRight: SPACE.xs, borderRadius: 8,
     backgroundColor: T.card, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
   },
+  /*
+   * LEFT-aligned, and a fixed width rather than a minimum.
+   *
+   * The row's amounts are right-aligned, and inheriting that here is what put
+   * fifty points of empty field between the − and the digits: a text box's
+   * width is not its text's width, so right-alignment pushes the number to
+   * the far edge of whatever the box happens to be. On the web the box was
+   * far worse than on the phone — an `<input>` takes a default width of about
+   * twenty characters unless told otherwise, so `minWidth` did nothing and
+   * the gap measured 122 points.
+   *
+   * Left-aligned, the digits start where the − ends and any slack falls after
+   * them, inside the pill. 76 fits `-1,234.56` at this size, so the field
+   * does not resize while a number is being typed.
+   */
+  inlineAmount: { width: 76, fontSize: 14, textAlign: 'left' },
+  // 22, not 44: it lives inside a 36-point row, in a pill beside a field, and
+  // a control taller than its row is the bug the action cluster already had.
+  inlineSign: {
+    width: 22, height: 22, borderRadius: 11,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: T.bg, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
   inlineSignOn: { backgroundColor: T.accent, borderColor: T.accent },
-  inlineSignText: { color: T.dim, fontSize: 14, fontWeight: '700' },
+  inlineSignText: { color: T.dim, fontSize: 13, fontWeight: '700' },
   inlineSignTextOn: { color: '#ffffff' },
   // The target: as tall as the row and no taller — see Action.
   actionHit: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
