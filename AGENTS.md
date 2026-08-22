@@ -81,27 +81,33 @@ version check reads the generated `Info.plist` for that reason.
 
 ## Shorthand
 
-- **`dtp` = TEST, deploy, tag, push.** In that order. Sean, 2026-08-21 —
-  the `t` is the tests, not the tag; the tag is the third step and has no
-  letter of its own. Written down wrong here first, which is exactly the kind
-  of thing this file exists to stop.
+- **`dtp` = deploy, tag, push; `tdtp` = TEST, deploy, tag, push.** Two lanes
+  since Sean's 2026-08-22 word, one gesture each: `npm run dtp` /
+  `npm run tdtp` (tools/dtp.sh, tools/tdtp.sh). The `t` in front is the full
+  test run, not the tag — the tag is mid-lane and has no letter of its own.
+  (This entry has been rewritten twice: first written down wrong as
+  test-deploy-tag-push under one name, then split into the two lanes. Which
+  is exactly the kind of thing this file exists to stop costing a third
+  round of asking.)
 
-  1. **Test** — `npm run test:core` and the full Playwright run, plus the
-     typecheck. Everything that does not need a server.
-  2. **Deploy** — `./deploy.sh`, which writes the sandbox and then production
-     and runs its own gate on the way.
-  3. **Tag** — an annotated tag at the new version.
-  4. **Push** — `git push --follow-tags`.
+  1. **Test** — tdtp only: `npm test`, the whole of it, before anything is
+     touched.
+  2. **Deploy** — `./deploy.sh --quick` for dtp, `./deploy.sh` (full) for
+     tdtp. Both write the sandbox and then production and run their own
+     gates on the way — the quick lane's gates are everything that costs
+     seconds plus the spot test, so a dtp is never an unverified deploy.
+  3. **Tag** — an annotated BARE tag at the new version (AcctMind's tags
+     carry no v).
+  4. **Push** — `git push --follow-tags`, then the desktop-windows dispatch.
 
-  Sean's shorthand, carried over from CalMind. It was not written down in
-  either repo, which cost two rounds of asking — hence this entry.
+  A failed deploy stops the lane: nothing is tagged, nothing is pushed, and
+  a re-run reuses the still-untagged version rather than burning a number.
+  The deploy's own gates include `npm run test:server`, so either lane is
+  blocked whenever the server suite is red, and it should stay blocked: the
+  gate failing is the gate working.
 
-  The deploy runs the full gate, `npm test`, and that includes
-  `npm run test:server`. A `dtp` is therefore blocked whenever the server
-  suite is red, and it should stay blocked: the gate failing is the gate
-  working.
-
-  **A `dtp` bumps the MINOR version.** Sean, 2026-08-21. Not a judgement call
+  **A `dtp` bumps the MINOR version — and so does a `tdtp`.** Sean,
+  2026-08-21. Not a judgement call
   each time about whether something was "big enough" — 0.9.2 goes to 0.10.0,
   and so does the one after it. The build number restarts at 1 with it.
 
