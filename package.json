@@ -20,9 +20,10 @@
     "export:web": "npm -w app exec expo export -- -p web && node tools/patch-web-html.mjs",
     "deploy": "sh deploy.sh",
     "deploy:quick": "sh deploy.sh --quick",
-    "test:version": "node tools/check-version.mjs",
+    "test:version": "node tools/check-version.mjs --sources-only",
     "dtp": "sh tools/dtp.sh",
-    "tdtp": "sh tools/tdtp.sh"
+    "tdtp": "sh tools/tdtp.sh",
+    "test:version:device": "node tools/check-version.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",

@@ -76,8 +76,20 @@ Two numbers answering two questions, and conflating them cost an evening.
 **`app.config.js` is SOURCE; `apps/app/ios/` is prebuild output.** Bumping the
 config and building without `expo prebuild` installs a binary carrying the old
 number — the check goes green while the phone disagrees, because three source
-files agreeing with each other says nothing about the plist that ships. The
-version check reads the generated `Info.plist` for that reason.
+files agreeing with each other says nothing about the plist that ships.
+
+WHERE THAT IS CHECKED, since 2026-08-22: `npm run test:version:device`, run by
+CoreMind's `bin/build-platforms.sh` immediately after prebuild — the one moment
+the plist is both fresh and about to be installed. `npm test` runs
+`test:version` (`--sources-only`), which holds the seven source files together
+and says out loud that it skipped the plist.
+
+The split exists because the old arrangement blocked releases. The plist goes
+stale the instant a version bumps and stays stale until something prebuilds, so
+"stale" is the ORDINARY state between a release and the next device build — and
+`npm test` treating it as an error meant every release blocked the next one.
+0.14.0 died exactly there: version 0.13.0, plist 0.11.0, nothing shipped, the
+gate naming a real disagreement that no web deploy could ever have caused.
 
 ## Shorthand
 

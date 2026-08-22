@@ -271,6 +271,22 @@ function Money({ cents, style, testID, tone = false }: {
   );
 }
 
+/**
+ * How far a LINE sits in from the list edge, so it reads as belonging to the
+ * category above it.
+ *
+ * The category head carries its own name in this far with furniture: the
+ * chevron, the colour dot, and a gap either side. The line block had none of
+ * it and sat flush at the edge — which drew every line 47pt to the LEFT of the
+ * category it belongs to, further out than the chevron, reading as a list with
+ * a heading floating off to the right rather than a heading with lines under
+ * it. Measured, not eyeballed: category name at x=63, line name at x=16.
+ *
+ * DERIVED from the four values the head lays out rather than typed as 47, so
+ * resizing the dot or the gap moves both together instead of silently parting.
+ */
+const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
@@ -291,14 +307,14 @@ const styles = StyleSheet.create({
   },
   headAdd: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
   headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
-  colHead: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingTop: SPACE.xs },
+  colHead: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingTop: SPACE.xs, paddingLeft: INDENT },
   colLabel: {
     color: T.faint, fontSize: 10, width: 68, textAlign: 'right',
     textTransform: 'uppercase', letterSpacing: 0.4,
   },
   colName: { flex: 1, minWidth: 0, textAlign: 'left' },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingLeft: INDENT,
     paddingVertical: SPACE.sm, minHeight: 36,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
@@ -311,7 +327,7 @@ const styles = StyleSheet.create({
   // that has to be seen without being read.
   over: { color: T.danger },
   under: { color: T.positive },
-  sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm },
+  sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: INDENT },
   empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },
   emptyBody: { color: T.dim, fontSize: 15 },

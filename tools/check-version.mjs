@@ -30,9 +30,19 @@ const require = createRequire(import.meta.url);
  * then refused on every re-run. The lane was unrunnable and said so in a
  * message about versions disagreeing.
  *
- * What this does NOT do is weaken the gate anywhere it already ran: `npm
- * test` and `npm run test:version` still call this file bare, plist and all.
- * The lane prints the prebuild reminder itself.
+ * WHERE THE PLIST IS CHECKED NOW, after this blocked a release outright.
+ * `apps/app/ios/` goes stale the moment a version bumps and only refreshes
+ * when something runs `expo prebuild` — so the ordinary state between a
+ * release and the next device build is "stale", and `npm test` treating that
+ * as an error meant every release blocked the next one. AcctMind 0.14.0 died
+ * exactly there: version 0.13.0, plist 0.11.0, nothing shipped.
+ *
+ * So the plist assertion moved to the one place it means anything — a DEVICE
+ * BUILD, which CoreMind's bin/build-platforms.sh performs immediately after
+ * prebuild, via `npm run test:version:device`. That is the moment AGENTS.md's
+ * story is actually about: bumping the config and building without
+ * prebuilding installs a binary carrying the old number. A web deploy cannot
+ * do that, and is no longer held to it.
  */
 const SOURCES_ONLY = process.argv.includes('--sources-only');
 const root = require('../package.json').version;
