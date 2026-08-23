@@ -134,20 +134,41 @@ if [ "$WANT_IOS" = 1 ]; then
     || { echo "devicectl cannot list devices — is Xcode installed?" >&2; exit 1; }
   # The UDID, not the CoreDevice identifier: xcodebuild's -destination matches
   # a physical device by UDID, and handing it the other one finds nothing.
-  UDID=$(python3 - "$DEVJSON" <<'PY'
+  # WHICH PHONE, when more than one is paired. Requiring EXACTLY one made a
+  # second paired handset refuse every install on this machine — three releases
+  # in a row reported "no single reachable iPhone" with the right phone sitting
+  # there the whole time (2026-08-23). One device is used as before; several are
+  # disambiguated by NAME, defaulting to Sean's. An ambiguous set still fails,
+  # and now says what it saw.
+  UDID=$(IOS_DEVICE="${IOS_DEVICE:-iPhoooooone}" python3 - "$DEVJSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))
-ok = [x['hardwareProperties']['udid'] for x in d.get('result', {}).get('devices', [])
-      if x.get('hardwareProperties', {}).get('platform') == 'iOS'
-      and x.get('connectionProperties', {}).get('tunnelState') in ('connected', 'available')
-      and x.get('hardwareProperties', {}).get('udid')]
-print(ok[0] if len(ok) == 1 else '')
+import os
+avail = [(x.get('deviceProperties', {}).get('name', '?'), x['hardwareProperties']['udid'])
+         for x in d.get('result', {}).get('devices', [])
+         if x.get('hardwareProperties', {}).get('platform') == 'iOS'
+         and x.get('connectionProperties', {}).get('tunnelState') in ('connected', 'available')
+         and x.get('hardwareProperties', {}).get('udid')]
+want = os.environ.get('IOS_DEVICE', '')
+named = [u for n, u in avail if n == want]
+if len(avail) == 1:
+    print(avail[0][1])
+elif len(named) == 1:
+    print(named[0])
+else:
+    for n, _ in avail:
+        print('    seen: ' + n, file=sys.stderr)
+    print('')
 PY
 )
   rm -f "$DEVJSON"
   # The phone holds 3 apps at a time on the free team: CalMind, ChefMind,
   # AcctMind. Nothing here frees a slot — it installs over this app's own.
-  [ -n "$UDID" ] || { echo "no single reachable iPhone — plug one in" >&2; exit 1; }
+  [ -n "$UDID" ] || {
+    echo "no usable iPhone: none reachable, or several and none named '${IOS_DEVICE:-iPhoooooone}'" >&2
+    echo "  Plug one in, or name it:  IOS_DEVICE='Some iPhone' sh tools/build-platforms.sh --ios" >&2
+    exit 1
+  }
   echo "    device: $UDID"
 
   prebuild_ios || exit 1
