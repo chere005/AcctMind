@@ -115,32 +115,34 @@ check('right password: redirects rather than rendering', $code === 302, "got $co
 check('right password: redirects back to AcctMind, not the calendar',
     (bool) preg_match('~^Location:\s*/\s*$~mi', $head), trim($head));
 
-// --- a LEGACY plaintext password ------------------------------------------
+// --- a PLAINTEXT stored password authenticates NOBODY ----------------------
 //
-// The case that broke this door and that nothing here covered. The suite
-// hashed passwords on 2026-08-20 and upgrades each one the next time its
-// owner signs in, so every existing account is plaintext until that happens —
-// and this door compared the stored value to the typed one directly, which is
-// true for plaintext and false for a hash. Seeding only through
-// auth_password_set() meant the suite tested the hashed half exclusively, and
-// the staggered break (each account failing the day its owner logged into the
-// main site) would have arrived here unseen either way round.
-//
-// So: write a plaintext password the way an un-upgraded account holds one,
-// sign in with it, and require BOTH that it works and that it is a hash
-// afterwards.
+// This block used to assert the opposite: plaintext signs in and upgrades to
+// a hash on the way through. That was the 2026-08-20 migration's contract,
+// and the migration is OVER — on 2026-08-23 every store was converted and
+// verified and the suite's auth_password_check stopped accepting a non-hash
+// at all (Sean: "blow away all plaintext passwords... are all auth for all
+// app capable of only dealing with hashed passwords from now on?"). This door
+// requires the suite's lib, so it inherits that refusal — and this test now
+// proves the refusal REACHES the door, because a hand-edited plaintext line
+// silently working again is exactly the regression worth an alarm.
 $pwFile = auth_passwords_file($cfg);
 $own = store_read($pwFile);
-$own['tester'] = 'correct horse';          // as an un-upgraded account holds it
+$own['tester'] = 'correct horse';          // as the old store held one
 store_write($pwFile, $own);
 $legacyJar = "$tmp/j3.txt";
 [$code, , ] = req('/', ['username' => 'tester', 'password' => 'correct horse'], $legacyJar);
-check('a legacy plaintext password still signs in', $code === 302, "got $code");
+check('a plaintext stored password is refused, even when typed correctly', $code === 401, "got $code");
 $after = (string) (store_read($pwFile)['tester'] ?? '');
-check('…and is upgraded to a hash by that login',
-    (bool) (password_get_info($after)['algo'] ?? null), 'still: ' . substr($after, 0, 12));
-check('the upgraded hash verifies the same password',
-    password_verify('correct horse', $after));
+check('…and the refusal is not a silent rewrite — the bad value is left for a human',
+    $after === 'correct horse', 'was: ' . substr($after, 0, 12));
+// Restore the account to the shape every account has now, and prove that
+// shape opens the door — the pair is the whole contract.
+$own = store_read($pwFile);
+$own['tester'] = password_hash('correct horse', PASSWORD_DEFAULT);
+store_write($pwFile, $own);
+[$code, , ] = req('/', ['username' => 'tester', 'password' => 'correct horse'], $legacyJar);
+check('the same password as a stored hash signs in', $code === 302, "got $code");
 
 // --- signed in -------------------------------------------------------------
 [$code, $head, $body] = req('/', null, $jar);
