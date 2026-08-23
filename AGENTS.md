@@ -150,10 +150,13 @@ Five surfaces, shipped by two different pipelines.
 - **macOS** — the Tauri desktop bundle in `desktop/`. Not built by this
   repo's own deploy; built by CoreMind's shared `bin/build-platforms.sh
   --mac` (smoke-tested locally with `desktop/smoke.sh`). No `dmg` — see
-  "tauri.conf.json" below. (`apps/app/ios` can separately be built and run
-  as "My Mac (Designed for iPad)" — CLI-unlaunchable, Xcode GUI only, not
-  part of any deploy or build-platforms run; the README's "Running it"
-  section has the full story and is not repeated here.)
+  "tauri.conf.json" below. `build-platforms.sh` copies the bundle into
+  `/Applications` and verifies the copy — that step was missing until
+  2026-08-22, so every app's macOS build had succeeded and none of them was
+  installed. (`apps/app/ios` can separately be built as "My Mac (Designed for
+  iPad)". That is NOT the same thing as MyCalMind's Mac Catalyst app, which
+  CoreMind's script now builds and installs properly; this one is still Xcode
+  GUI only and part of no deploy.)
 - **iOS** — installs to the physical phone, one of its 3 free-tier device
   slots, via CoreMind's `bin/build-platforms.sh --ios` (confirmed
   2026-08-22).
