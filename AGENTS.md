@@ -443,9 +443,6 @@ removed it, plus the plugin line in `app.config.js`.
 
 ## Traps, inherited from CalMind
 
-- **The shell's working directory persists between Bash calls.** A `cd` into
-  a subdirectory silently breaks the next command's relative paths. Use
-  absolute paths.
 
 - **A `click()` on a control that has gone does not fail fast.** It waits out
   the whole test budget and reads as a hang. Hence `actionTimeout` in the
