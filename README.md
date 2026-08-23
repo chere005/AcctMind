@@ -8,10 +8,8 @@ A ledger. One list of transactions, on every screen Sean owns.
 
 Five surfaces — web, iOS, Android, macOS, Windows — from two builds and
 a shell. Every rule the product has is written once, in TypeScript, and every
-surface renders it. The whole feature set today is a list and an add form,
-deliberately: the point of this commit is a template that already deploys and
-already has a suite watching it, so that everything after it can be a small
-request.
+surface renders it. Two tabs today — a ledger grouped by account, and a
+two-level budget — plus the optional sync links below.
 
 The architecture is CalMind's (`~/GIT/CalMind`), applied to money and started
 from scratch rather than rediscovered.
@@ -23,7 +21,8 @@ Two tabs, on a bar at the bottom.
 **Transactions** groups every row under an **account** — a current account, a
 card, cash in a drawer. Each section folds shut, carries its own running
 total, and has its own **+** that adds into that account. A collapse-all sits
-in the top bar. The section picker beside it is CalMind's round colour button:
+in the row under the title, with the `.00` toggle and the sort. The section
+picker, up in the top bar after the pencil, is CalMind's round colour button:
 one account shows its colour, all of them show the rainbow.
 
 Rows are ordered by **date**, by **amount** (on the absolute value — sorted
@@ -39,9 +38,12 @@ grows four small circles over its right side (edit, duplicate, copy, delete)
 and rows can be picked out; pick several and the bar under the title reports
 what they come to. **Swipe left** to park a delete button; one more tap on it
 deletes, and a tap anywhere else puts it away. None of this moves the row, so
-nothing shifts under a thumb that is already aiming. In **Custom** order a
-grip appears on the left and rows are dragged by it; its space is reserved in
-every order, so switching sort never slides a name sideways.
+nothing shifts under a thumb that is already aiming. In **Custom** order the
+pencil also grows a grip on the left of each row, and rows are dragged by it —
+custom order alone is not enough, because a hand order the next render would
+undo reads as the app ignoring you. Its space is reserved in every order and
+every mode, so neither switching sort nor opening the pencil ever slides a
+name sideways.
 
 **Budget** is two levels. A **category** is a heading with a name and a colour
 and no money of its own; the **+** beside it adds a **line**, and a line is
@@ -77,7 +79,8 @@ date is a small calendar beside the name, starting on today.
 **Amounts fill from the cents.** `450` is $4.50 and `1234` is $12.34, the way
 a card terminal works, because nearly every amount in a ledger has cents in
 it. A typed `.` overrides that — `50.` is $50.00 — and a **.00** toggle in the
-top bar flips the default for anyone entering round numbers all afternoon. The
+row under the title flips the default for anyone entering round numbers all
+afternoon. The
 value formats where it is typed.
 
 **The sign is a button, and only a button.** A **−** sits left of the field and
@@ -100,8 +103,8 @@ empty ledger, and the app refuses to write until a person says to discard it.
 
 ## Sync, and what each transport actually does
 
-Three links, none of which needs Sean's server, all of which are optional —
-every surface is a working app with all three switched off. What merges is
+Two links, neither of which needs Sean's server, both optional — every
+surface is a working app with both switched off. What merges is
 one function (`mergeStores`), proven commutative, associative and idempotent,
 so any of them can deliver in any order, twice, or years late.
 
@@ -170,8 +173,10 @@ apps/app/modules/
                  elsewhere: peer-sync (Bonjour + TLS) and icloud-sync
                  (key-value store). Each moves opaque strings; neither of
                  them merges anything.
-server/          The doorway, in plain PHP. Roughly forty lines that reuse
-                 the suite's sign-in and serve the app shell.
+server/          The doorway, in plain PHP — index.php, an .htaccess that
+                 pins DirectoryIndex, and the suite that tests them. Under
+                 seventy lines of code in a 185-line file; the rest is the
+                 note on why it is that short.
 desktop/         A Tauri 2 shell around the identical web export -> macOS
                  locally, Windows on a CI runner.
 e2e/             Playwright: the real export at the real base path, on
@@ -188,7 +193,8 @@ tools/           The checks no browser can reach — the deploy guards, the
 npm install                       # once, at the root
 npm run test:dev                  # the between-runs suite — under a minute, no browser
 npm test                          # core + server + the full gesture run
-npm run web                       # Expo web on :8081
+npm run web                       # Expo web on :8083 (pinned — 8081 is where
+                                  #   CalMind's bundler answers)
 npm run export:web                # the dist every shell and the e2e suite run on
 npx playwright test --ui          # the gesture suite, watchable
 npm run test:peer                 # the Bonjour service type, plist against core
@@ -197,9 +203,10 @@ sh desktop/check-assets.sh        # the desktop's cheap checks
 cd apps/app && npx expo start     # then i / a for the iOS / Android simulator
 ```
 
-The Mac app is the iOS binary run natively — no Catalyst, no second codebase,
-and the same bundle identifier as the phone, which is what would let the two
-share a pairing. It builds:
+The iOS binary can also be run natively on the Mac — no Catalyst, no second
+codebase, and the same bundle identifier as the phone, which is what would let
+the two share a pairing. It is **not** the macOS surface (that is `desktop/`'s
+Tauri bundle, above) and it is part of no deploy. It builds:
 
 ```sh
 cd apps/app/ios && xcodebuild -workspace AcctMind.xcworkspace -scheme AcctMind -configuration Release -destination 'platform=macOS,variant=Designed for iPad' build

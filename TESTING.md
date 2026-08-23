@@ -10,21 +10,24 @@ and nobody is looking at it.
 
 | run | what it watches | in the deploy gate? |
 |---|---|---|
-| `npm run test:dev` | the between-runs suite: three typechecks, core, server, deploy guards — under a minute, no browser | (it IS four of the gates, run early) |
+| `npm run test:dev` | the between-runs suite: three typechecks, core, server, version, peer, deploy guards — under a minute, no browser | (three of deploy.sh's four gates, run early; the browser run is not in it) |
 | `npm run test:core` | the behaviour itself, including the `spec/*.json` replay | **yes** |
 | `npm run test:server` | the doorway over real HTTP, against the real suite auth lib | **yes** |
 | `npm run test:e2e` | the whole app on the EXPORTED bundle, desktop and phone viewports — mouse, plus a real touch stream for the swipe | **yes** (a spot subset on `--quick`) |
-| `npm run test:deploy` | every deploy guard, each proven by breaking a copy | **yes** |
-| `npm run test:version` | one version across the SIX source files, plus a build number that exists. `--sources-only`: it does NOT read the plist, and says so | **yes** |
-| `npm run test:version:device` | the same, plus the generated `Info.plist` — version AND build number. Run by CoreMind's `build-platforms.sh` right after prebuild, the one moment the plist is both fresh and about to be installed | no — see below |
-| `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | **yes** |
+| `npm run test:deploy` | every deploy guard, each proven by breaking a copy | no — only under `npm test` |
+| `npm run test:version` | one version across the SIX source files, plus a build number that exists. `--sources-only`: it does NOT read the plist, and says so | no — only under `npm test` |
+| `npm run test:version:device` | the same, plus the generated `Info.plist` — version AND build number. Run by this repo's `tools/build-platforms.sh --ios` around the prebuild, the one moment the plist is both fresh and about to be installed | no — see below |
+| `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | no — only under `npm test` |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
 | `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits | no — compiles Rust |
 
-The three outside the gate are outside it because each needs a toolchain the
-gate cannot assume — `swiftc`, and a Rust compiler. "Outside the gate" is
-exactly how a check stops being run, so they are listed here rather than left
-to be discovered.
+**The deploy gate is `deploy.sh`'s own four** — typechecks, core, server, and
+the browser run (a spot subset on `--quick`). Everything else in this table
+runs under `npm test`, which is what `tdtp` puts in front of a release; the
+`swiftc` row went with the watch, so nothing here needs a Swift compiler any
+more, and only `./desktop/smoke.sh` needs a Rust one. "Outside the gate" is
+exactly how a check stops being run, so the column says so per row rather
+than leaving it to be discovered.
 
 `test:version:device` is outside for a different reason, and AGENTS.md carries
 it in full: the plist goes stale the instant a version bumps and stays stale
@@ -291,13 +294,20 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
   `peers` on the Devices screen is the only tell in the UI; the device log
   under `com.apple.network:boringssl` is the only real diagnosis.
 
-- **iOS and Android builds, on a schedule.** `ios/` and `android/` are
-  `expo prebuild` output and disposable; nothing rebuilds them automatically.
-  Both have been built and run by hand (2026-08-20).
+- **iOS and Android builds, on a schedule.** `apps/app/ios` and
+  `apps/app/android` are `expo prebuild` output and disposable. Since
+  2026-08-23 the release lane DOES rebuild both on every run —
+  `tools/dtp.sh` calls `tools/build-platforms.sh --ios` and `--android` after
+  the push — but non-fatally: a failure is collected and reported, never
+  stops the lane. So a release can be tagged and pushed with neither device
+  build having succeeded, and the report is the only place that says so.
 
-- **The Windows bundle.** The workflow exists and has never run. It needed a
-  GitHub remote, which no longer blocks it — `origin` is chere005/AcctHub as
-  of 2026-08-20 — so this is now just undone rather than impossible.
+- **The Windows bundle, on THIS machine.** The workflow has run — at least
+  three times; commit 3dd5c36 fixed a smoke step that had blamed the bundle
+  for an install it never checked. It installs the MSI, finds the binary,
+  launches it and requires a window titled *AcctMind*. What nobody watches is
+  the window's CONTENTS: a Windows Tauri shell that comes up blank would pass
+  that check, and no one here has a Windows machine to look at.
 
 ## Before you trust a new check
 
@@ -309,9 +319,10 @@ been watched failing on purpose:
   removed;
 - the platform-neutrality typecheck, against an `import 'node:fs'` in core;
 - the freshness gate, against a source edit the dist had not seen;
-- all fourteen deploy guards, against copies with their constants rewritten,
-  plus the two text rules (`--delete`, the `index.html` exclusion) removed
-  from the real script;
+- all nine destination guards, against copies with their constants rewritten,
+  plus the text rules read out of the real script (`--delete`, the
+  `index.html` exclusion, no config uploaded, no data dir written) — fifteen
+  checks in all;
 - the pairing tests, against five mutations of `peer.ts` — a plain sum for
   Luhn, no checksum at all, the O/I/L folding removed, a 40-bit secret, and a
   confusable character put back in the alphabet. The first of those is why

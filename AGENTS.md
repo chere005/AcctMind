@@ -17,7 +17,7 @@ learned goes in the commit that learns it.
 - **Behavior lives in `packages/core`.** A screen holds plumbing. If you can
   describe a rule in a sentence — how an amount is parsed, how the list is
   ordered, what a valid transaction is — it belongs in core, with a test.
-  Six surfaces means a rule written in a screen is a rule written wrong five
+  Five surfaces means a rule written in a screen is a rule written wrong four
   more times. `packages/core/tsconfig.json` sets `"types": []`, so core
   cannot reach a Node, DOM or React Native API without the typecheck failing:
   the neutrality is checked, not trusted.
@@ -81,8 +81,10 @@ number — the check goes green while the phone disagrees, because three source
 files agreeing with each other says nothing about the plist that ships.
 
 WHERE THAT IS CHECKED, since 2026-08-22: `npm run test:version:device`, run by
-CoreMind's `bin/build-platforms.sh` immediately after prebuild — the one moment
-the plist is both fresh and about to be installed. `npm test` runs
+this repo's own `tools/build-platforms.sh --ios` around the prebuild — the one
+moment the plist is both fresh and about to be installed. It is not one call: a
+stale plist gets ONE regeneration and a re-check, and only a second
+disagreement stops the install. `npm test` runs
 `test:version` (`--sources-only`), which holds the six source files together
 and says out loud that it skipped the plist.
 
@@ -104,8 +106,21 @@ gate naming a real disagreement that no web deploy could ever have caused.
      tdtp. Both write the sandbox and then production and run their own
      gates on the way — the quick lane's gates are everything that costs
      seconds plus the spot test, so a dtp is never an unverified deploy.
-  3. **Tag** — an annotated tag at the new version.
-  4. **Push** — `git push --follow-tags`, then the desktop-windows dispatch.
+  3. **macOS** — `tools/build-platforms.sh --mac`, from a clean export of
+     what just shipped, and BEFORE the tag: a broken bundle leaves the
+     version untagged, and a re-run reuses it exactly as a failed deploy
+     does.
+  4. **Tag** — an annotated tag at the new version. BARE — this repo's tags
+     carry no `v`.
+  5. **Push** — `git push --atomic --follow-tags origin main`. Atomic because
+     a per-ref push can land the tag while `main` is rejected; on rejection
+     the local tag comes back off, so a re-run reuses the version. Then the
+     desktop-windows dispatch.
+  6. **Devices** — iOS onto the phone, Android onto the emulator, AFTER the
+     push and reported rather than fatal.
+
+  Naming a platform flag selects only it; naming none means all three;
+  `--web` is how you say "the release and no platform builds".
 
   The deploy's own gates include `npm run test:server`, so either lane is
   blocked whenever the server suite is red, and it should stay blocked: the
@@ -128,30 +143,34 @@ Five surfaces, shipped by two different pipelines.
 - **Web** — this app's own server. Production at `seancheren.com/AcctMind`,
   a separate test deploy at `test.seancheren.com/AcctMind`. `./deploy.sh`
   writes both, sandbox first — see "Deploy to both, for now" above. This is
-  the platform `dtp`/`tdtp` (above) actually ship.
+  the surface `./deploy.sh` writes; `dtp`/`tdtp` ship it and then build
+  macOS, iOS and Android through `tools/build-platforms.sh`, and dispatch
+  Windows to CI.
 - **Windows** — built and smoke-tested on a Windows GitHub Actions runner,
   `.github/workflows/desktop-windows.yml`, dispatched by `dtp`/`tdtp`'s push
   step (above). Tauri can't cross-compile it — see "tauri.conf.json" below.
-- **macOS** — the Tauri desktop bundle in `desktop/`. Not built by this
-  repo's own deploy; built by CoreMind's shared `bin/build-platforms.sh
-  --mac` (smoke-tested locally with `desktop/smoke.sh`). No `dmg` — see
-  "tauri.conf.json" below. `build-platforms.sh` copies the bundle into
+- **macOS** — the Tauri desktop bundle in `desktop/`. Not built by
+  `./deploy.sh`; built by THIS repo's `tools/build-platforms.sh --mac`, which
+  the lane runs before the tag (smoke-tested with `desktop/smoke.sh`). No
+  `dmg` — see "tauri.conf.json" below. The script copies the bundle into
   `/Applications` and verifies the copy — that step was missing until
   2026-08-22, so every app's macOS build had succeeded and none of them was
   installed. (`apps/app/ios` can separately be built as "My Mac (Designed for
-  iPad)". That is NOT the same thing as MyCalMind's Mac Catalyst app, which
-  CoreMind's script now builds and installs properly; this one is still Xcode
-  GUI only and part of no deploy.)
+  iPad)". That is NOT the macOS surface — this one is Xcode GUI only and part
+  of no deploy.)
 - **iOS** — installs to the physical phone, one of its 3 free-tier device
-  slots, via CoreMind's `bin/build-platforms.sh --ios` (confirmed
-  2026-08-22).
+  slots, via `tools/build-platforms.sh --ios`.
 - **Android** — builds, installs and launches on a local emulator via
-  CoreMind's `bin/build-platforms.sh --android` (confirmed 2026-08-22).
+  `tools/build-platforms.sh --android`.
 - **No watchOS target** — see "The watch is out, for now" below.
 
 `sh bin/dtp.sh all --full --platforms`, run from CoreMind, drives the whole
-suite's `tdtp` lane and builds whatever each app's own deploy does not ship
-by itself — for AcctMind, that's macOS, iOS and Android.
+suite's `tdtp` lane. It builds nothing for AcctMind any more: since 2026-08-23
+this repo SELF-SHIPS, CoreMind detects that by the presence of
+`tools/build-platforms.sh` and passes `--platforms` straight through to this
+lane instead of building anything itself. It also tells "shipped, a device
+build is owed" from "did not ship" by looking for a tag at HEAD, so a non-zero
+AcctMind lane does not stop the batch.
 
 ## tauri.conf.json takes no notes, so its notes live here
 
@@ -249,11 +268,15 @@ removed it, plus the plugin line in `app.config.js`.
   being debugged turned out to be correct; on-screen instrumentation printing
   the measured numbers is what proved it.
 
-  **Do not use `expo run:ios` for the simulator.** `tools`' sim script does
-  what the device path does — `xcodebuild -destination "platform=iOS
-  Simulator,id=<udid>"`, then `simctl install`, then `simctl launch` — which
-  ends, reports a status per step, and kills leftovers before touching the
-  build database. And when a screenshot disagrees with the code, check that
+  **Do not use `expo run:ios` for the simulator.** Drive it the way the
+  DEVICE path does — `xcodebuild … build`, then an install step, then a
+  launch step — so it ends, reports a status per step, and kills leftovers
+  before touching the build database. That path is
+  `tools/build-platforms.sh --ios`, and it is device-only: **there is no
+  simulator script in this repo**, and never has been. This trap claimed one
+  existed until 2026-08-23, sending a reader after a file that has never been
+  in the tree. TESTING.md says the same from the other side — the simulator
+  run was done by hand, and nothing in the repo replays it. And when a screenshot disagrees with the code, check that
   the build actually installed before believing either.
 
 - **`npx expo run:ios --device` HANGS on a locked phone, after a successful
@@ -343,9 +366,9 @@ removed it, plus the plugin line in `app.config.js`.
 - **Both of the bugs below were already solved correctly in CalMind, and
   grepping it first would have cost two minutes.** The standing rule says
   "CalMind is the reference — grep it before inventing an approach", and it
-  was not followed. `CalMind-local/app/modules/watch-bridge` already had the
-  delegate as its own `NSObject`, and `CalMind-local/packages/core/src/sync.ts`
-  already stamped every write — deletes included — through
+  was not followed. `~/GIT/CalMind/apps/app/modules/watch-bridge` already had
+  the delegate as its own `NSObject`, and
+  `~/GIT/CalMind/packages/core/src/sync.ts` already stamped every write — deletes included — through
   `Math.max(now, prev.updated + 1)`. AcctMind shipped a watch bridge that
   could not compile and a `tombstone` that could lose a delete on merge.
   Reading first is cheaper than mutation-testing your way back to the same
@@ -436,13 +459,22 @@ removed it, plus the plugin line in `app.config.js`.
 - **A React Native `Modal` is its own window, outside the safe area.**
   Anything positioned in one sits under the clock on a phone, and it is
   invisible in every browser test because a browser has no status bar to hide
-  under. Both modals here re-apply `useSafeAreaInsets` for that reason.
+  under. All NINE modals here re-apply `useSafeAreaInsets` for that reason —
+  Add, AmountPad, CategoryPick, DayPicker, Devices, LineEditor, Manage,
+  SectionPick, SortPick. It said "both" until 2026-08-23, which is an
+  invitation to write a tenth without them.
 
 - **Comments state intent; the code may have drifted.** Two real CalMind bugs
   came from reading one against the other.
 
-- **`dist` holds more than one `index-*.js`.** Read the entry name out of
-  `dist/index.html` rather than `find | head -1`.
+- **`dist` holds more than one `index-*.js`** — in CalMind, where this trap
+  comes from. Read the entry name out of `dist/index.html` rather than
+  `find | head -1`, which is what `desktop/smoke.sh` and
+  `desktop/check-assets.sh` both do. AcctMind's own export holds exactly one:
+  `expo export` wipes `dist` before each run, and this app has no `import()`
+  and so no async chunks — see "One export cannot serve both paths" above,
+  which measured the same thing. It becomes true here the moment anyone
+  writes one.
 
 - **Ask what happens when a write fails.** The worst bugs CalMind found were
   all silent. Search for `.catch(() => {})` and triage each by what is lost.
