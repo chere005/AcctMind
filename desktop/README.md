@@ -2,14 +2,17 @@
 
 A Tauri 2 shell around the identical web export. Rust opens a window;
 everything inside it is the same JavaScript the website serves, and the same
-`packages/core` every other surface uses. Two of the six surfaces —  macOS
+`packages/core` every other surface uses. Two of the five surfaces — macOS
 and Windows — are this one directory.
 
 ```sh
-npm run export:web          # first: the shell carries an export, it does not make one
-cd desktop && npx tauri dev  # a window, with devtools
-./desktop/smoke.sh          # build, prove it carries THIS export, launch, quit
-sh desktop/check-assets.sh  # the same proofs without the 70-second Rust build
+# All four from the REPO ROOT. The block used to cd into desktop halfway
+# through and then give root-relative paths for the rest, which is the
+# persisting-working-directory trap written into its own instructions.
+npm run export:web             # first: the shell carries an export, it does not make one
+npm -w desktop run dev         # a window, with devtools
+./desktop/smoke.sh             # build, prove it carries THIS export, launch, quit
+sh desktop/check-assets.sh     # the same proofs without the 70-second Rust build
 ```
 
 **No sign-in here.** The doorway gates the *web* app because the web app is

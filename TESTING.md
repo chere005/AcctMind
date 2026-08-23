@@ -13,9 +13,10 @@ and nobody is looking at it.
 | `npm run test:dev` | the between-runs suite: three typechecks, core, server, deploy guards — under a minute, no browser | (it IS four of the gates, run early) |
 | `npm run test:core` | the behaviour itself, including the `spec/*.json` replay | **yes** |
 | `npm run test:server` | the doorway over real HTTP, against the real suite auth lib | **yes** |
-| `npm run test:e2e` | the whole app, real mouse, on the EXPORTED bundle, desktop and phone viewports | **yes** (a spot subset on `--quick`) |
+| `npm run test:e2e` | the whole app on the EXPORTED bundle, desktop and phone viewports — mouse, plus a real touch stream for the swipe | **yes** (a spot subset on `--quick`) |
 | `npm run test:deploy` | every deploy guard, each proven by breaking a copy | **yes** |
-| `npm run test:version` | one version across three files AND the generated Info.plist, plus a build number that exists | **yes** |
+| `npm run test:version` | one version across the SIX source files, plus a build number that exists. `--sources-only`: it does NOT read the plist, and says so | **yes** |
+| `npm run test:version:device` | the same, plus the generated `Info.plist` — version AND build number. Run by CoreMind's `build-platforms.sh` right after prebuild, the one moment the plist is both fresh and about to be installed | no — see below |
 | `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | **yes** |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
 | `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits | no — compiles Rust |
@@ -24,6 +25,12 @@ The three outside the gate are outside it because each needs a toolchain the
 gate cannot assume — `swiftc`, and a Rust compiler. "Outside the gate" is
 exactly how a check stops being run, so they are listed here rather than left
 to be discovered.
+
+`test:version:device` is outside for a different reason, and AGENTS.md carries
+it in full: the plist goes stale the instant a version bumps and stays stale
+until something prebuilds, so "stale" is the ORDINARY state between a release
+and the next device build. Gating on it meant every release blocked the next
+one, which is what killed 0.14.0.
 
 ## The layers, and what each one can and cannot prove
 

@@ -32,12 +32,16 @@ The hand order rides on the record, so the Mac agrees with the phone; the
 other two are device preferences. An untouched list looks identical in all
 three.
 
-**Hold a row** for edit, duplicate, copy and delete — four small circles that
-overlay the right of the row. **Swipe left** to park a delete button; one more
-tap on it deletes. Neither moves the row, so nothing shifts under a thumb that
-is already aiming. In **Custom** order a grip appears on the left and rows are
-dragged by it; its space is reserved in every order, so switching sort never
-slides a name sideways.
+**A single tap** on a row's name or amount edits it in place, and a tap on the
+date opens the day grid — the common change costs one tap and never leaves the
+list. The **pencil** in the top bar is edit mode, where every row at once
+grows four small circles over its right side (edit, duplicate, copy, delete)
+and rows can be picked out; pick several and the bar under the title reports
+what they come to. **Swipe left** to park a delete button; one more tap on it
+deletes, and a tap anywhere else puts it away. None of this moves the row, so
+nothing shifts under a thumb that is already aiming. In **Custom** order a
+grip appears on the left and rows are dragged by it; its space is reserved in
+every order, so switching sort never slides a name sideways.
 
 **Budget** is two levels. A **category** is a heading with a name and a colour
 and no money of its own; the **+** beside it adds a **line**, and a line is
@@ -73,9 +77,15 @@ date is a small calendar beside the name, starting on today.
 **Amounts fill from the cents.** `450` is $4.50 and `1234` is $12.34, the way
 a card terminal works, because nearly every amount in a ledger has cents in
 it. A typed `.` overrides that — `50.` is $50.00 — and a **.00** toggle in the
-top bar flips the default for anyone entering round numbers all afternoon. A
-**−** toggle sits left of the field, and a leading `-` still works. The value
-formats where it is typed.
+top bar flips the default for anyone entering round numbers all afternoon. The
+value formats where it is typed.
+
+**The sign is a button, and only a button.** A **−** sits left of the field and
+holds it; the field itself takes digits and at most one dot, so a typed minus
+is dropped like a `$` or a comma. It read the leading `-` too until 0.11.0,
+which meant the minus was drawn twice — once by the button and once in the
+text, a cursor away from being edited into something else. A new transaction
+starts negative, because almost everything in a ledger is money going out.
 
 ## Where the data lives
 
@@ -145,7 +155,7 @@ password on those would protect nothing.
 ```
 packages/core/   The brain, shared verbatim by every surface: money in
                  integer cents, days as local YYYY-MM-DD, the month grid,
-                 validation, ordering, the store's damage handling, and the
+                 validation, ordering, and the store's damage handling.
                  No dependencies, no build step — consumed as
                  TypeScript source. Its typecheck forbids Node, DOM and
                  React Native types, so "core is platform-neutral" is a
@@ -155,16 +165,19 @@ spec/            The behavior contract as JSON vectors — the same file a
                  starts HERE, not in a screen.
 apps/app/        One Expo app -> iOS, Android and web. Screens, gestures and
                  styling only; every rule is imported from core.
-apps/app/modules/         Three small native modules, all Apple-only and all
-                 no-ops elsewhere: peer-sync (Bonjour + TLS) and
-                 icloud-sync (key-value store). Each
-                 moves opaque strings; none of them merges anything.
+apps/app/modules/
+                 Two small native modules, both Apple-only and both no-ops
+                 elsewhere: peer-sync (Bonjour + TLS) and icloud-sync
+                 (key-value store). Each moves opaque strings; neither of
+                 them merges anything.
 server/          The doorway, in plain PHP. Roughly forty lines that reuse
                  the suite's sign-in and serve the app shell.
 desktop/         A Tauri 2 shell around the identical web export -> macOS
                  locally, Windows on a CI runner.
-e2e/             Playwright: the real export at the real base path, driven
-                 by real mouse events, on desktop and phone viewports.
+e2e/             Playwright: the real export at the real base path, on
+                 desktop and phone viewports. Mouse for most of it; the
+                 swipe needs a real touch stream over CDP, which is
+                 Chromium-only — see TESTING.md.
 tools/           The checks no browser can reach — the deploy guards, the
                  Swift seam, the export's head patch and build stamp.
 ```

@@ -59,10 +59,13 @@ learned goes in the commit that learns it.
 
 Two numbers answering two questions, and conflating them cost an evening.
 
-- **`version`** — which RELEASE this is. Semver, and it lives in three files
+- **`version`** — which RELEASE this is. Semver, and it lives in SIX files
   that `tools/check-version.mjs` holds together: the root `package.json`,
-  `apps/app/package.json`, and `app.config.js`. Tags match it. Patch tags are
-  fine; CalMind has 0.8.1 and 0.13.2.
+  `apps/app/package.json`, `app.config.js`, `desktop/package.json`,
+  `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`. It
+  said "three files" here until 2026-08-23, naming only the app-side half —
+  and the three desktop ones are exactly the half a person editing by hand
+  forgets. Tags match it. Patch tags are fine; CalMind has 0.8.1 and 0.13.2.
 
 - **`ios.buildNumber`** — which BUILD of that release is on the device.
   HAND-bumped every time a build leaves this machine, not once per release.
@@ -80,7 +83,7 @@ files agreeing with each other says nothing about the plist that ships.
 WHERE THAT IS CHECKED, since 2026-08-22: `npm run test:version:device`, run by
 CoreMind's `bin/build-platforms.sh` immediately after prebuild — the one moment
 the plist is both fresh and about to be installed. `npm test` runs
-`test:version` (`--sources-only`), which holds the seven source files together
+`test:version` (`--sources-only`), which holds the six source files together
 and says out loud that it skipped the plist.
 
 The split exists because the old arrangement blocked releases. The plist goes
@@ -111,10 +114,12 @@ gate naming a real disagreement that no web deploy could ever have caused.
   The build number restarts at 1 with the minor bump (Sean, 2026-08-21).
 
   Verify the bump rather than assuming it: a `sed` that matches nothing
-  reports success. `tools/check-version.mjs` compares all seven files AND the
-  generated `Info.plist`, including the build number — the field whose whole
-  job is telling two builds apart, and which nothing checked until it slipped
-  through once.
+  reports success. `tools/check-version.mjs` compares all six version files AND
+  the generated `Info.plist`, including the build number — the field whose
+  whole job is telling two builds apart, and which nothing checked until it
+  slipped through once. (`Cargo.lock` carries the crate version as a seventh
+  place and is NOT compared; `tools/sync-lock-versions.mjs`, which the lane
+  runs, is what keeps it in step.)
 
 ## Platforms
 
