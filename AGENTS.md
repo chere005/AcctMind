@@ -1,5 +1,9 @@
 # Working on AcctMind
 
+The baseline for all of Sean's repos lives in ~/GIT/AgentSuite/AGENTS.md
+and is imported here; this file holds only what is true of THIS repo.
+@../AgentSuite/AGENTS.md
+
 Sean's ledger. `README.md` is the map, `TESTING.md` is what the tests are
 worth. This file is how to work in here.
 
@@ -33,10 +37,8 @@ learned goes in the commit that learns it.
   a vector, watching it go red, then making it green. A behaviour change that
   touches no spec file is either not a behaviour change, or is not covered.
 
-- **Break it before you trust it.** Every check in here has been watched
-  failing on purpose, and `TESTING.md` lists how. Five green checks in
-  CalMind turned out to be worthless in a single session. A check that cannot
-  fail looks exactly like one that passes.
+- Every check in here has been watched failing on purpose, and `TESTING.md`
+  lists how.
 
 - **CalMind is the reference, not the source.** Grep it before inventing an
   approach — the Expo/Tauri/PHP seams are solved there. But nothing is copied
@@ -52,9 +54,6 @@ learned goes in the commit that learns it.
   production. Sean's call, 2026-08-20, and it holds until he says to switch
   to test-only — at which point the change is one line and the guards already
   cover it.
-
-- **`main` is the branch.** Stage explicit paths — never `git add -A`. Sean
-  makes his own commits unless he says otherwise.
 
 ## Versions and builds
 
@@ -93,14 +92,8 @@ gate naming a real disagreement that no web deploy could ever have caused.
 
 ## Shorthand
 
-- **`dtp` = deploy, tag, push; `tdtp` = TEST, deploy, tag, push.** Two lanes
-  since Sean's 2026-08-22 word, one gesture each: `npm run dtp` /
-  `npm run tdtp` (tools/dtp.sh, tools/tdtp.sh). The `t` in front is the full
-  test run, not the tag — the tag is mid-lane and has no letter of its own.
-  (This entry has been rewritten twice: first written down wrong as
-  test-deploy-tag-push under one name, then split into the two lanes. Which
-  is exactly the kind of thing this file exists to stop costing a third
-  round of asking.)
+- **One gesture each: `npm run dtp` / `npm run tdtp`** (tools/dtp.sh,
+  tools/tdtp.sh).
 
   1. **Test** — tdtp only: `npm test`, the whole of it, before anything is
      touched.
@@ -108,27 +101,14 @@ gate naming a real disagreement that no web deploy could ever have caused.
      tdtp. Both write the sandbox and then production and run their own
      gates on the way — the quick lane's gates are everything that costs
      seconds plus the spot test, so a dtp is never an unverified deploy.
-  3. **Tag** — an annotated BARE tag at the new version (AcctMind's tags
-     carry no v).
+  3. **Tag** — an annotated tag at the new version.
   4. **Push** — `git push --follow-tags`, then the desktop-windows dispatch.
 
-  A failed deploy stops the lane: nothing is tagged, nothing is pushed, and
-  a re-run reuses the still-untagged version rather than burning a number.
   The deploy's own gates include `npm run test:server`, so either lane is
   blocked whenever the server suite is red, and it should stay blocked: the
   gate failing is the gate working.
 
-  **A `dtp` bumps the MINOR version — and so does a `tdtp`.** Sean,
-  2026-08-21. Not a judgement call
-  each time about whether something was "big enough" — 0.9.2 goes to 0.10.0,
-  and so does the one after it. The build number restarts at 1 with it.
-
-  The reason to take the choice away: a `dtp` is what puts a build on his
-  phone, so every one of them is a thing he will later want to name. Deciding
-  patch-or-minor per release means the numbers encode my opinion of the work
-  rather than counting the times it shipped, and this session alone produced
-  0.8.1, 0.9.1 and 0.9.2 by that opinion. Counting is more useful than
-  grading.
+  The build number restarts at 1 with the minor bump (Sean, 2026-08-21).
 
   Verify the bump rather than assuming it: a `sed` that matches nothing
   reports success. `tools/check-version.mjs` compares all seven files AND the
@@ -471,3 +451,28 @@ The quick lane exists so a small fix is cheap to ship. It stays honest by
 keeping every gate that costs seconds and swapping only the ones that cost
 minutes for a spot check. A quick deploy that skips a gate to be quick is
 just a deploy with a gate missing.
+
+### Running one test
+
+`npm test` is the whole of it and takes minutes. While actually working on
+something, run the narrowest thing that can still fail:
+
+```sh
+npm -w @acctmind/core run test -- --run txn          # one core file, by path fragment
+npm -w @acctmind/core run test -- --run -t 'a tap'   # one core test, by name
+npx playwright test e2e/money.spec.ts                # one spec, both viewports
+npx playwright test e2e/money.spec.ts --project=chromium -g 'minus KEY'
+npx playwright test --ui                             # watchable
+```
+
+**The e2e suite refuses to run against a stale export** — `e2e/freshness.ts`
+compares `dist/build.json`'s digest against the source on disk and names the
+files that moved. So `npx playwright test` on its own is only valid until the
+next source edit; after one, it is `npm run export:web` first (or
+`npm run test:e2e`, which is the export plus the run). `test:e2e:fast` skips
+the export deliberately, for re-running against a dist you just built.
+
+There is no linter and no formatter. `npm run typecheck` is the only static
+check, and it is three projects rather than one — core, core's tests, and the
+app — because core's own tsconfig sets `"types": []` and that is what makes
+its platform-neutrality a checked property instead of a promise.

@@ -7,7 +7,7 @@
 #
 # What a run does, in order:
 #   0. refuse a tree with uncommitted TRACKED changes — the tag must name
-#      exactly what shipped
+#      exactly what shipped — and refuse core DRIFT (the gate below)
 #   1. (--full only) `npm test` — typecheck, core, peer, version, server,
 #      deploy guards, and the full gesture run, before anything is touched
 #   2. bump the MINOR version (x.y.0 → x.(y+1).0) in the six files
@@ -20,19 +20,45 @@
 #   3. deploy: ./deploy.sh --quick for dtp, ./deploy.sh (full) for tdtp.
 #      Both write the sandbox and then production, running their own gates.
 #      A failed deploy stops everything — never tag around one.
-#   4. tag x.y.0 (annotated, BARE — AcctMind's tags carry no v)
-#   5. git push --follow-tags
-#   6. dispatch the desktop-windows workflow (CI builds the pushed tree)
+#   4. the macOS bundle, from a clean export of what just shipped — BEFORE
+#      the tag, so a broken desktop build leaves the version untagged and a
+#      re-run reuses it, exactly as a failed deploy does
+#   5. tag x.y.0 (annotated, BARE — AcctMind's tags carry no v)
+#   6. git push --follow-tags
+#   7. dispatch the desktop-windows workflow (CI builds the pushed tree)
+#   8. the device builds — iOS on the phone, Android on an emulator — AFTER
+#      the push and reported rather than fatal, because the release has
+#      already happened and an unplugged phone must not read as a failed one
+#
+# THIS REPO SHIPS ITSELF. Steps 4 and 8 were CoreMind's alone until
+# 2026-08-23 (its bin/build-platforms.sh, the AcctMind row), and the hole
+# that left was invisible from inside either repo: a release could tag and
+# push with the Mac bundle still built from whatever was lying around —
+# ChefMind's did exactly that. Sean, 2026-08-23: "all apps should have a
+# deploy on their own mechanism inside their repo". So the machinery is
+# tools/build-platforms.sh, HERE, and this lane runs it.
+#
+# WHICH PLATFORMS: naming one selects only it, naming none means all of them —
+# tools/build-platforms.sh's own convention. `--web` is how you say "the
+# release and no platform builds".
 set -e
 cd "$(dirname "$0")/.."
 
-FULL=0
+FULL=0; PICKED=0; WANT_MAC=0; WANT_IOS=0; WANT_ANDROID=0
 for a in "$@"; do
   case "$a" in
-    --full) FULL=1 ;;
+    --full)    FULL=1 ;;
+    --mac)     WANT_MAC=1;     PICKED=1 ;;
+    --ios)     WANT_IOS=1;     PICKED=1 ;;
+    --android) WANT_ANDROID=1; PICKED=1 ;;
+    # The release on its own. Not the same as naming no flag at all, which
+    # means every platform — this is the way to say none.
+    --web)     PICKED=1 ;;
     *) echo "unknown flag: $a" >&2; exit 1 ;;
   esac
 done
+# --full is not a platform, so `tdtp` with no other flag still means all three.
+[ "$PICKED" = 1 ] || { WANT_MAC=1; WANT_IOS=1; WANT_ANDROID=1; }
 
 # ---------------------------------------------------------------- the branch
 # The push below names main explicitly, so a lane run from any other branch
@@ -42,6 +68,48 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$BRANCH" != "main" ]; then
   echo "refusing: this lane ships main, and HEAD is on '$BRANCH'" >&2
   exit 1
+fi
+
+# ----------------------------------------------------------- the core drift gate
+# Refuse to release a tree whose shared files have drifted from CoreMind's
+# canon. The gate REFUSES rather than repairs: auto-rewriting source mid-
+# release would ship bytes nobody reviewed, so the dependency is made loud
+# instead, with the one command that fixes it. Only `exact` rows fail the
+# check — `owed` and `fork` rows report and pass, which is check-drift.sh's
+# own contract. No CoreMind beside this repo is a warning, not a stop: the
+# release must not depend on a second checkout existing.
+DRIFTCHECK="${MIND_DIR:-$(cd .. && pwd)}/CoreMind/bin/check-drift.sh"
+if [ -f "$DRIFTCHECK" ]; then
+  if ! sh "$DRIFTCHECK" AcctMind; then
+    echo "" >&2
+    echo "refusing: shared files have drifted from CoreMind's canon (rows above)." >&2
+    echo "  Nothing has shipped. Bring the copies back in step, then re-run:" >&2
+    echo "    sh ../CoreMind/bin/deploy-core.sh --only AcctMind" >&2
+    exit 1
+  fi
+else
+  echo "   WARNING: no CoreMind checkout beside this repo — the drift gate did not run" >&2
+fi
+
+# ------------------------------------------------------------- the status page
+# A SINGLE-REPO RELEASE IS STILL A RELEASE. Sean, 2026-08-23: "i dont see the
+# tdtp from ChefMind on status". CoreMind's bin/dtp.sh had reported to
+# seancheren.com/status since the page existed; a repo shipping ITSELF did not,
+# so the page went quiet for exactly the runs nobody else knew were coming — and
+# the history graph recorded no purple for them at all.
+#
+# NEVER FATAL. report-status.sh exits 0 on every failure path by design, and the
+# `|| true` here covers the case where CoreMind is not checked out beside this
+# repo at all. A status page must never be the thing that stops a release.
+REPORTER="${MIND_DIR:-$(cd .. && pwd)}/CoreMind/bin/report-status.sh"
+RUN_ID=""
+REPORT_DONE=0
+if [ -f "$REPORTER" ]; then
+  KIND=dtp; [ "$FULL" = 1 ] && KIND=tdtp
+  RUN_ID=$(sh "$REPORTER" start "$KIND" AcctMind 2>/dev/null || true)
+  # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
+  # must not leave this repo purple on the page for ever.
+  trap 'if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
 fi
 
 # ------------------------------------------------------- the tree, then a pull
@@ -127,8 +195,8 @@ echo "==> proving the bump (check-version.mjs --sources-only)"
 node tools/check-version.mjs --sources-only \
   || { echo "the bump left the versions disagreeing — fix before shipping" >&2; exit 1; }
 if [ -d apps/app/ios ]; then
-  echo "    note: apps/app/ios now carries the OLD version — a device build needs"
-  echo "          \`expo prebuild\` first. This lane ships the web."
+  echo "    note: apps/app/ios now carries the OLD version — the device step"
+  echo "          (tools/build-platforms.sh) detects that and prebuilds fresh."
 fi
 [ "$(node -p "require('./package.json').version")" = "$NEW" ] \
   || { echo "guard: package.json does not carry $NEW" >&2; exit 1; }
@@ -162,6 +230,22 @@ else
   ./deploy.sh --quick
 fi
 
+# ------------------------------------------------------------------ the desktop
+# It makes its OWN clean export rather than trusting whatever is in
+# apps/app/dist by now — the deploy above exports per instance, so what is
+# lying there is the last instance's, not necessarily what the shell should
+# stage. BEFORE the tag, so a broken desktop build leaves the version
+# untagged and a re-run reuses it, exactly as a failed deploy does.
+if [ "$WANT_MAC" = 1 ]; then
+  if ! sh tools/build-platforms.sh --mac; then
+    echo "" >&2
+    echo "THE WEB SHIPPED, but the macOS bundle failed — so nothing was tagged." >&2
+    echo "  Fix it and re-run: the lane reuses ${NEW}, which is the version" >&2
+    echo "  already live." >&2
+    exit 1
+  fi
+fi
+
 # --------------------------------------------------------------- tag, push, CI
 git tag -a "$NEW" -m "AcctMind $NEW"
 # --atomic, because `git push --follow-tags` is per-ref: when origin/main has
@@ -184,6 +268,38 @@ if command -v gh >/dev/null 2>&1; then
   gh workflow run desktop-windows \
     && echo "==> desktop-windows dispatched (CI builds the pushed tree)" \
     || echo "   WARNING: desktop-windows dispatch failed — run it from the Actions tab" >&2
+fi
+
+# ------------------------------------------------------------- the device builds
+# After the push, and NOT fatal. The release is done by here — the web is
+# live, the tag is on the remote — so a phone that is not plugged in is a
+# thing to be told about, not a failed release to unpick.
+#
+# One at a time, never in parallel: two heavy build/device processes at once
+# has caused real failures on this machine twice.
+DEVICE_FAILED=""
+if [ "$WANT_IOS" = 1 ]; then
+  sh tools/build-platforms.sh --ios || DEVICE_FAILED="$DEVICE_FAILED --ios"
+fi
+if [ "$WANT_ANDROID" = 1 ]; then
+  sh tools/build-platforms.sh --android || DEVICE_FAILED="$DEVICE_FAILED --android"
+fi
+if [ -n "$DEVICE_FAILED" ]; then
+  echo "" >&2
+  echo "$NEW IS LIVE AND TAGGED. These device builds did not finish:$DEVICE_FAILED" >&2
+  echo "  Re-run just those, once the device is ready:" >&2
+  echo "    sh tools/build-platforms.sh$DEVICE_FAILED" >&2
+fi
+
+# The page is told how it ended, and with what severity: a live, tagged release
+# whose phone build did not run is not a failure, but it is not a clean 0 either.
+REPORT_DONE=1
+if [ -n "$RUN_ID" ]; then
+  if [ -n "$DEVICE_FAILED" ]; then
+    sh "$REPORTER" finish "$RUN_ID" ok 2 "$NEW live; device builds pending:$DEVICE_FAILED" >/dev/null 2>&1 || true
+  else
+    sh "$REPORTER" finish "$RUN_ID" ok 0 "$NEW live" >/dev/null 2>&1 || true
+  fi
 fi
 
 echo "==> dtp done: $NEW is live on test and prod"
