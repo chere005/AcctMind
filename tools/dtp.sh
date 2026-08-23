@@ -101,10 +101,16 @@ fi
 # NEVER FATAL. report-status.sh exits 0 on every failure path by design, and the
 # `|| true` here covers the case where CoreMind is not checked out beside this
 # repo at all. A status page must never be the thing that stops a release.
+# A BATCH OWNS ITS OWN CARD. When CoreMind's orchestrator runs this lane as
+# part of `dtp all`, it has already opened one run for the whole plan and
+# passes its id down — reporting again would draw a second card for a job that
+# is one job (Sean, 2026-08-23: "there should be one card per tdtp if multiple
+# jobs are triggered in one batch"). Run alone, MIND_RUN_ID is unset and this
+# lane opens and closes its own, exactly as before.
 REPORTER="${MIND_DIR:-$(cd .. && pwd)}/CoreMind/bin/report-status.sh"
 RUN_ID=""
 REPORT_DONE=0
-if [ -f "$REPORTER" ]; then
+if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   KIND=dtp; [ "$FULL" = 1 ] && KIND=tdtp
   RUN_ID=$(sh "$REPORTER" start "$KIND" AcctMind 2>/dev/null || true)
   # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
