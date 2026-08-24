@@ -308,4 +308,22 @@ if [ -n "$RUN_ID" ]; then
   fi
 fi
 
+# AND YET THE LANE ENDS NON-ZERO. Nothing above is undone by this: the release
+# is live, the tag is on the remote, and the status card was closed `ok`
+# severity 2 a few lines up on purpose. What changes is only the one summary a
+# caller reads without being told — a run that skipped a device build for want
+# of a phone handed back a clean 0, so "it all worked" could be read off an
+# exit status that had not checked. CoreMind's bin/dtp.sh has ended non-zero on
+# exactly this since it existed, and catches this one so a batch still ships
+# every repo after it; ChefMind carried it from 2026-08-23 and the other three
+# did not, which meant the SAME condition reported differently per repo.
+#
+# LAST IN THE FILE, deliberately. REPORT_DONE is already 1 and the `finish`
+# call above has run by the time control reaches here, so the exit cannot jump
+# the status report and the EXIT trap's failed-3 fallback stays suppressed.
+if [ -n "$DEVICE_FAILED" ]; then
+  echo "==> $NEW is live and tagged; the lane ends non-zero for the device builds above"
+  exit 1
+fi
+
 echo "==> dtp done: $NEW is live on test and prod"
