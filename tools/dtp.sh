@@ -115,7 +115,18 @@ if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   RUN_ID=$(sh "$REPORTER" start "$KIND" AcctMind 2>/dev/null || true)
   # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
   # must not leave this repo purple on the page for ever.
-  trap 'if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
+  BEAT_PID=""
+  beat_stop() { [ -n "$BEAT_PID" ] && { kill "$BEAT_PID" >/dev/null 2>&1; wait "$BEAT_PID" 2>/dev/null; }; BEAT_PID=""; return 0; }
+  trap 'beat_stop; if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
+  # A BEAT A MINUTE — Sean, 2026-09-07: "make sure during dtp that status is
+  # updated every minute at least". start/finish alone leave the card frozen at
+  # "running" through a multi-minute build; a beat every 60s keeps the page
+  # showing the run alive, and a hung run then shows as a stamp that stops
+  # moving. Only when this lane OWNS the run — under `dtp all` the parent beats.
+  if [ -n "$RUN_ID" ]; then
+    ( while :; do sleep 60; sh "$REPORTER" beat "$RUN_ID" "shipping — $KIND" >/dev/null 2>&1 || true; done ) &
+    BEAT_PID=$!
+  fi
 fi
 
 # ------------------------------------------------------- the tree, then a pull
@@ -299,6 +310,7 @@ fi
 
 # The page is told how it ended, and with what severity: a live, tagged release
 # whose phone build did not run is not a failure, but it is not a clean 0 either.
+[ -n "$RUN_ID" ] && beat_stop
 REPORT_DONE=1
 if [ -n "$RUN_ID" ]; then
   if [ -n "$DEVICE_FAILED" ]; then
