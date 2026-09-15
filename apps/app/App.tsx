@@ -475,6 +475,7 @@ export default function App() {
               collapsed={prefs.collapsed}
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
               onManage={() => setManaging('accounts')}
+              lines={live(phase.store.lines)}
               onImport={() => setImporting(true)}
             />
             )}

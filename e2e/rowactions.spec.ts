@@ -685,3 +685,34 @@ test('the − sits against the digits, not across a gap from them', async ({ pag
   // One space between two parts of one control, not a hole.
   expect(gap).toBeLessThan(12);
 });
+
+test('a row says what it is filed against, and long text is CLIPPED', async ({ page }) => {
+  // Sean, 2026-09-15: "add a category column on transactions in the middle..
+  // elide text from the transaction name/details."
+  //
+  // The elide assertion is about CLIPPING, not about the row's right edge.
+  // Measuring the edge was the obvious check and it was worthless: the amount
+  // and the date have fixed widths, so they never left the viewport and the
+  // check passed with `numberOfLines`, `minWidth` and `flexShrink` each
+  // removed in turn. `scrollWidth > clientWidth` is the DOM saying the text
+  // does not fit in the box it was given, which is exactly what eliding is.
+  // Its OWN viewport, phone-width, so the check means the same thing in both
+  // projects. At the desktop project's 1280 the bank's longest description
+  // still fits and nothing clips — the assertion would pass by having nothing
+  // to say, which is the failure mode this file keeps finding.
+  await page.setViewportSize({ width: 390, height: 800 });
+  await fresh(page);
+  await addTransaction(page, {
+    name: 'PURCHASE AUTHORIZED ON 09/10 PP*INSTACART 4029357733 CA S584829201 CARD 2523',
+    amount: '-15481',
+  });
+
+  const clipped = await page.getByTestId('txn-name').first()
+    .evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(clipped.client).toBeGreaterThan(0);
+  expect(clipped.scroll).toBeGreaterThan(clipped.client);
+
+  // The column exists and is empty for an unfiled row — after a CSV import
+  // the whole ledger is unfiled, and two thousand dashes is noise.
+  await expect(page.getByTestId('txn-category').first()).toHaveText('');
+});

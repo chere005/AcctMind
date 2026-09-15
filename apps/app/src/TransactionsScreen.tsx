@@ -10,7 +10,7 @@ import {
 import {
   amountDigits, amountInput, claimsSwipe, formatAmount, formatDay, rowTap, selectedTotal,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
-  type Account, type AmountMode, type SortMode, type Txn,
+  type Account, type AmountMode, type Line, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
@@ -62,13 +62,18 @@ type Props = {
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the account manager — the only place an account is made. */
   onManage: () => void;
+  /**
+   * The budget lines, for the category column. Names only — a transaction
+   * points at a LINE (v4), so this is what turns that id into a word.
+   */
+  lines: readonly Line[];
   /** Open the CSV import. Absent on a surface that cannot read a file. */
   onImport?: (() => void) | undefined;
 };
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, onImport, onInline, onDate,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onImport, onInline, onDate,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const sum = total(txns);
@@ -82,6 +87,18 @@ export function TransactionsScreen({
   }));
   const anyRows = sections.some((sec) => sec.rows.length > 0);
   const allShut = shown.length > 0 && shown.every((a) => collapsed.includes(a.id));
+
+  /*
+   * id -> the line's name, for the category column.
+   *
+   * A Map built once per render rather than a `find` per row: the ledger is
+   * nearly two thousand rows after a CSV import, and a linear scan per row
+   * per render is the shape that makes a list feel slow for no visible
+   * reason.
+   */
+  const lineNames = new Map(lines.map((l) => [l.id, l.name]));
+  const lineName = (id: string | null): string =>
+    id === null ? '' : lineNames.get(id) ?? '';
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
@@ -286,6 +303,7 @@ export function TransactionsScreen({
             setInline={setInline}
             onInline={onInline}
             onDate={onDate}
+            lineName={lineName}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
             onAction={onAction}
@@ -335,7 +353,8 @@ export function TransactionsScreen({
  */
 function Section({
   account, rows, shut, onToggle, onAdd, edit, onEdited, picked, onPick,
-  inline, setInline, onInline, onDate, swipedId, setSwipedId, onAction, onMove, onDragging,
+  inline, setInline, onInline, onDate, lineName, swipedId, setSwipedId, onAction, onMove,
+  onDragging,
 }: {
   account: Account;
   rows: readonly Txn[];
@@ -354,6 +373,7 @@ function Section({
   onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
   onDate?: ((txn: Txn) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
+  lineName: (id: string | null) => string;
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
@@ -433,6 +453,7 @@ function Section({
             grip={canMove ? drag.gripFor(i) : undefined}
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
+            lineName={lineName(t.category)}
             swiped={swipedId === t.id}
             parked={swipedId !== null}
             onDismiss={() => setSwipedId(null)}
@@ -447,7 +468,7 @@ function Section({
 
 function Row({
   txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate,
-  onAction, grip, lifted, dy, swiped, parked, onDismiss, onSwipe,
+  onAction, grip, lifted, dy, swiped, parked, lineName, onDismiss, onSwipe,
 }: {
   txn: Txn;
   /** Is the page in edit mode? Then this row shows its controls. */
@@ -481,6 +502,8 @@ function Row({
   swiped: boolean;
   /** Is ANY row's delete parked? Then every tap in here is a dismiss. */
   parked: boolean;
+  /** What this row is filed against, already resolved to a word. */
+  lineName: string;
   /** Put away a parked delete — a tap on any row does it. */
   onDismiss: () => void;
   /** A firm left swipe landed — park the delete. */
@@ -600,15 +623,41 @@ function Row({
             onPress={onTap(onInline === undefined ? undefined : () => onOpenInline('name'))}
             testID="txn-name-tap"
           >
-            <Text style={styles.name} numberOfLines={1} testID="txn-name">{txn.name}</Text>
+            <Text
+              style={styles.name}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+              testID="txn-name"
+            >
+              {txn.name}
+            </Text>
           </Pressable>
         )}
         {txn.description !== '' && (
-          <Text style={styles.desc} numberOfLines={1} testID="txn-description">
+          <Text
+            style={styles.desc}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+            testID="txn-description"
+          >
             {txn.description}
           </Text>
         )}
       </View>
+      {/*
+        What it is filed against — Sean, 2026-09-15, "a category column on
+        transactions in the middle".
+        
+        The LINE's name, because that is what a transaction points at since
+        v4; the category above it is one more hop and would not fit anyway.
+        Blank rather than a dash for an unfiled row: after a CSV import the
+        whole ledger is unfiled, and two thousand dashes is noise where
+        nothing is the honest answer.
+      */}
+      <Text style={styles.cat} numberOfLines={1} ellipsizeMode="tail" testID="txn-category">
+        {lineName}
+      </Text>
+
       {/* Money in is the only row that gets a colour. Everything else is an
           expense, and colouring those red would make the whole list red —
           which is the same as colouring nothing. */}
@@ -1128,7 +1177,21 @@ const styles = StyleSheet.create({
     backgroundColor: T.card, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
   },
   actionDanger: { backgroundColor: T.danger, borderColor: T.danger },
+  /*
+   * `flex: 1` already implies flexShrink, and `minWidth: 0` is what lets the
+   * block go narrower than its own text wants to be. Both were here before
+   * the import arrived and neither turned out to be the thing that elides —
+   * three mutations of this line all stayed green, which is why the comment
+   * that claimed `flexShrink` was load-bearing is gone rather than reworded.
+   * What actually clips is `numberOfLines` on the Text itself.
+   */
   rowMain: { flex: 1, gap: 1, minWidth: 0 },
+  // The category column: narrow, dim, and allowed to vanish before the
+  // numbers do — a name you cannot read is worse than a name you cannot see.
+  cat: {
+    color: T.dim, fontSize: 12, lineHeight: 16, width: 74, flexShrink: 1,
+    textAlign: 'right',
+  },
   name: { color: T.text, fontSize: 16, lineHeight: 20 },
   desc: { color: T.dim, fontSize: 13, lineHeight: 16 },
   amount: {
