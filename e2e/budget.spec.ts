@@ -405,3 +405,26 @@ test('a line is two lines, so the name and the numbers both fit', async ({ page 
     expect(cell.client, col).toBeGreaterThanOrEqual(cell.scroll);
   }
 });
+
+test('the snooze box heads the line, under the category name', async ({ page }) => {
+  // Sean, 2026-09-15: "put the snooze button under the category name." It sat
+  // at the right margin and read as an afterthought; at the head of the row
+  // it reads the way a checkbox does everywhere else — a thing you tick about
+  // the name beside it.
+  const line = await seed(page);
+  const box = await page.getByTestId(`line-snooze-${line}`).boundingBox();
+  const name = await page.getByTestId(`line-name-${line}`).boundingBox();
+  expect(box!.x).toBeLessThan(name!.x);
+
+  // Under the CATEGORY name, not out at the margin: within a grip's width of
+  // where the heading's own text starts.
+  const head = await page.getByTestId('category-head-' + (await catId(page))).boundingBox();
+  expect(box!.x).toBeGreaterThan(head!.x);
+  expect(box!.x - head!.x).toBeLessThan(60);
+});
+
+/** The one category `seed` made. */
+async function catId(page: Page): Promise<string> {
+  const s = await stored(page) as Stored;
+  return s.categories.filter((c) => c.deleted !== true).slice(-1)[0]?.id ?? '';
+}

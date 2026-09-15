@@ -490,6 +490,29 @@ function LineRow({
         <Text style={styles.gripText}>≡</Text>
       </View>
 
+
+      {/*
+        Snooze, FIRST on the line and under the category name above it —
+        Sean, 2026-09-15. It read as an afterthought parked at the right
+        margin; at the head of the row it reads the way a checkbox does
+        everywhere else, as a thing you tick about the name beside it.
+
+        A checkbox rather than a menu because it is a per-line yes/no flipped
+        often, and it is the one control here that changes nothing about the
+        money.
+      */}
+      <Pressable
+        onPress={() => onSnooze(!line.snoozed)}
+        style={styles.snoozeCol}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: line.snoozed }}
+        accessibilityLabel={line.snoozed ? `Wake ${line.name}` : `Snooze ${line.name}`}
+        testID={`line-snooze-${line.id}`}
+      >
+        <View style={[styles.box, line.snoozed && styles.boxOn]}>
+          {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
+        </View>
+      </Pressable>
       {naming ? (
         <NameField
           value={line.name}
@@ -512,24 +535,6 @@ function LineRow({
         </Pressable>
       )}
 
-      {/*
-        Snooze, to the LEFT of the column it quiets — Sean, 2026-09-15. A
-        checkbox rather than a menu because it is a per-line yes/no that gets
-        flipped often, and it is the one control here that changes nothing
-        about the money.
-      */}
-      <Pressable
-        onPress={() => onSnooze(!line.snoozed)}
-        style={styles.snoozeCol}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: line.snoozed }}
-        accessibilityLabel={line.snoozed ? `Wake ${line.name}` : `Snooze ${line.name}`}
-        testID={`line-snooze-${line.id}`}
-      >
-        <View style={[styles.box, line.snoozed && styles.boxOn]}>
-          {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
-        </View>
-      </Pressable>
 
       {edit && (
         <DoubleTap
