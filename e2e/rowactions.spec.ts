@@ -58,7 +58,7 @@ test('delete leaves a tombstone, not an absence', async ({ page }) => {
 
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
   await expect(page.getByTestId('empty-state')).toBeVisible();
-  await expect(page.getByTestId('total')).toHaveText('$0.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$0.00');
 
   // The record is still on the device, marked dead. Dropping it would work
   // here and be undone by the next merge, because every other device still
@@ -86,7 +86,7 @@ test('duplicate makes a second, separate transaction', async ({ page }) => {
   await page.getByTestId('row-duplicate').first().click();
 
   await expect(page.getByTestId('txn-row')).toHaveCount(2);
-  await expect(page.getByTestId('total')).toHaveText('$9.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$9.00');
 
   const store = await stored(page) as Stored;
   expect(store.txns).toHaveLength(2);
@@ -498,7 +498,7 @@ test('rows are picked out in edit mode, and the bar says what they come to', asy
 
   // Nothing selected: the running total, as before.
   // -4.50 + -12.50 + 24.00
-  await expect(page.getByTestId('total')).toHaveText('$7.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$7.00');
   await edit(page);
   await expect(page.getByTestId('picked-total')).toHaveCount(0);
 
@@ -526,7 +526,7 @@ test('leaving edit mode clears the selection', async ({ page }) => {
   await expect(page.getByTestId('picked-total')).toBeVisible();
 
   await page.getByTestId('edit-toggle').click();
-  await expect(page.getByTestId('total')).toBeVisible();
+  await expect(page.getByTestId(/^account-total-/)).toBeVisible();
   await edit(page);
   await expect(page.getByTestId('picked-total')).toHaveCount(0);
 });
@@ -536,7 +536,7 @@ test('a tap outside edit mode picks nothing', async ({ page }) => {
   await addTransaction(page, { name: 'a', amount: '-450' });
   await page.getByTestId('txn-row-body').first().click();
   await expect(page.getByTestId('picked-total')).toHaveCount(0);
-  await expect(page.getByTestId('total')).toHaveText('-$4.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$4.50');
 });
 
 test('a tap on the name edits it in place, and the row does not move', async ({ page }) => {
@@ -584,7 +584,7 @@ test('a tap on the amount edits it in place, under the same entry rules', async 
   await expect(page.getByTestId('txn-amount-input')).toHaveValue('1275');
   await page.getByTestId('txn-amount-input').press('Enter');
   await expect(page.getByTestId('txn-amount')).toHaveText('-$12.75');
-  await expect(page.getByTestId('total')).toHaveText('-$12.75');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$12.75');
 });
 
 test('an unreadable amount commits nothing rather than writing a zero', async ({ page }) => {
@@ -643,7 +643,7 @@ test('the inline amount has a − beside it, and pressing it does not commit', a
 
   await page.getByTestId('txn-amount-input').press('Enter');
   await expect(page.getByTestId('txn-amount')).toHaveText('$4.50');
-  await expect(page.getByTestId('total')).toHaveText('$4.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$4.50');
 });
 
 test('and flipping it back leaves the row where it started', async ({ page }) => {

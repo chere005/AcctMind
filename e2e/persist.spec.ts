@@ -25,7 +25,7 @@ test('a store written by an older run loads', async ({ page }) => {
     txns: [{ id: 'seed1', name: 'Rent', description: '', amount: -185050, date: '2026-08-01', created: 1 }],
   }));
   expect((await rows(page))[0]?.amount).toBe('-$1,850.50');
-  await expect(page.getByTestId('total')).toHaveText('-$1,850.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$1,850.50');
 });
 
 test.describe('a damaged store', () => {

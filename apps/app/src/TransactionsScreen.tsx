@@ -85,7 +85,6 @@ export function TransactionsScreen({
   onInline, onDate,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
-  const sum = total(txns);
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
 
@@ -224,27 +223,20 @@ export function TransactionsScreen({
         }
       />
 
-      {/* Under the divider: what the ledger comes to, and how it is ordered.
-          CalMind's bar is ONE row and this app has a running total to show,
-          so the total moved down here rather than growing the bar into
-          something that only nearly matches. */}
+      {/* Under the divider: what is picked, and how the list is ordered.
+          The running total used to sit at the left of this row; Sean moved
+          it onto each account's own heading (2026-09-15), beside the name,
+          so the bar keeps only the selection's sum and the list controls. */}
       <BarRow>
-        {/* The selection's sum REPLACES the running total while rows are
-            picked out — "what did this weekend cost" is the question being
-            asked, and two totals side by side is two numbers to tell apart
-            in a row that is already full. */}
+        {/* The selection's sum, while rows are picked out — "what did this
+            weekend cost" is the question being asked. Otherwise an empty
+            left side, so the tools keep their right-hand corner. */}
         {picked.length > 0 ? (
           <Text style={styles.picked} testID="picked-total">
             {picked.length} selected · {formatAmount(selectedTotal(txns, picked))}
           </Text>
         ) : (
-          <Text
-            style={[styles.total, sum > 0 && styles.totalUp]}
-            testID="total"
-            accessibilityLabel={`Total ${formatAmount(sum)}`}
-          >
-            {formatAmount(sum)}
-          </Text>
+          <View />
         )}
         {/*
           The LIST's controls, beside the sort that was already here.
@@ -448,13 +440,19 @@ function Section({
         </Pressable>
 
         {/*
-          What the account holds, and the hammer that reconciles it — both to
-          the RIGHT of the account name, Sean's placement, 2026-09-15.
+          What the account holds, IMMEDIATELY right of its name, and the
+          hammer that reconciles it right of that — Sean's placement,
+          2026-09-15, second pass: "move the green amount to the right of the
+          account name, the gray hammer button should be to the right of that
+          green amount, remove the gray amount". This is the green running
+          total the bar under the title used to carry, now per account and
+          beside the name it belongs to; the grey copy that sat at the right
+          margin is gone. Green when the account is in credit, dim otherwise,
+          the same rule the bar's total followed.
 
           Outside the folding Pressable on purpose: they are their own
           controls, and inside it a tap meant to reconcile would fold the
-          section instead. The number is still the section's own running
-          total; only where it sits and what can be done to it changed.
+          section instead.
         */}
         {reconciling === account.id ? (
           <ReconcileField
@@ -463,7 +461,11 @@ function Section({
             testID={`account-reconcile-input-${account.id}`}
           />
         ) : (
-          <Text style={styles.headSum} testID={`account-total-${account.id}`}>
+          <Text
+            style={[styles.headSum, total(rows) > 0 && styles.totalUp]}
+            testID={`account-total-${account.id}`}
+            accessibilityLabel={`Total ${formatAmount(total(rows))}`}
+          >
             {formatAmount(total(rows))}
           </Text>
         )}
@@ -476,6 +478,9 @@ function Section({
         >
           <HammerIcon />
         </Pressable>
+        {/* Whatever the row has left, so the + keeps the right-hand edge. */}
+        <View style={styles.headSpacer} />
+
         {/* Each account adds into ITSELF: the + is the only thing that tells
             the form which section it was opened from. */}
         <Pressable
@@ -1129,7 +1134,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     marginTop: SPACE.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
   },
-  headMain: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flex: 1, minHeight: TAP },
+  // No `flex: 1` any more: the name is followed by the total and the hammer,
+  // and a heading that grabbed the whole row pushed both to the far edge. It
+  // shrinks (the name truncates) rather than grows; headSpacer takes the rest.
+  headMain: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flexShrink: 1, minWidth: 0, minHeight: TAP },
   // A 20x20 box, not the glyph's own. Written with a width and no height the
   // box IS the chevron — 7pt tall against the 20 everything else gets — and
   // on the web, where hitSlop does nothing, that is the whole target.
@@ -1138,12 +1146,15 @@ const styles = StyleSheet.create({
   // GOLD, and the only gold on the screen. CalMind's `secName` exactly: a
   // section is not a row, and a grey heading over grey rows is a list with no
   // shape to it — which is what "looks terrible" was looking at.
-  headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flex: 1 },
-  headSum: { color: T.dim, fontSize: 14, fontVariant: ['tabular-nums'] },
-  reconcileField: { padding: 0, margin: 0, minWidth: 90, textAlign: 'right', color: T.text },
+  headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
+  // 15, the bar total's size — this IS that number, moved. Dim until the
+  // account is in credit, when `totalUp` turns it green.
+  headSum: { color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'], marginLeft: SPACE.xs },
+  reconcileField: { padding: 0, margin: 0, minWidth: 90, textAlign: 'left', color: T.text },
   headHammer: {
     width: 30, height: TAP, alignItems: 'center', justifyContent: 'center',
   },
+  headSpacer: { flex: 1 },
   headAdd: {
     width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center',
   },

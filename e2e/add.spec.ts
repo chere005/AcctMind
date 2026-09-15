@@ -7,7 +7,7 @@ test('a new device shows the empty state and no rows', async ({ page }) => {
   await fresh(page);
   await expect(page.getByTestId('empty-state')).toBeVisible();
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
-  await expect(page.getByTestId('total')).toHaveText('$0.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$0.00');
 });
 
 test('adding one puts it on screen and on the device', async ({ page }) => {
@@ -18,7 +18,7 @@ test('adding one puts it on screen and on the device', async ({ page }) => {
   expect(await rows(page)).toEqual([
     { name: 'Groceries', description: 'co-op', amount: '-$84.37', date: expect.any(String) },
   ]);
-  await expect(page.getByTestId('total')).toHaveText('-$84.37');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$84.37');
 
   // The screen agreeing is not the same as the device agreeing.
   const store = await stored(page) as { v: number; txns: { amount: number; name: string }[] };
@@ -89,7 +89,7 @@ test('a new transaction starts negative, with an EMPTY field', async ({ page }) 
   await expect(page.getByTestId('amount-preview')).toHaveText('-$4.50');
   await page.getByTestId('save-button').click();
   await expect(page.getByTestId('save-button')).toBeHidden();
-  await expect(page.getByTestId('total')).toHaveText('-$4.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$4.50');
 
   // And an EDIT is seeded from the record, not from the default — the sign
   // on the button, the digits in the field, and no minus drawn twice.
@@ -137,7 +137,7 @@ test('the list is newest first, whatever order they were entered', async ({ page
   await addTransaction(page, { name: 'newest', amount: '3.', day: '2026-08-01' });
 
   expect((await rows(page)).map((r) => r.name)).toEqual(['newest', 'middle', 'oldest']);
-  await expect(page.getByTestId('total')).toHaveText('$6.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$6.00');
 });
 
 test('a description is optional and its line is absent without one', async ({ page }) => {
@@ -158,7 +158,7 @@ test('Return saves the transaction, from either field', async ({ page }) => {
 
   await expect(page.getByTestId('save-button')).toBeHidden();
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
-  await expect(page.getByTestId('total')).toHaveText('-$4.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$4.50');
 
   // And from the NAME field, which is where a keyboard starts.
   await page.getByTestId('add-button').click();

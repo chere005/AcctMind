@@ -236,5 +236,5 @@ test('deleting a category leaves its transactions alone', async ({ page }) => {
 
   await page.getByTestId('tab-transactions').click();
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
-  await expect(page.getByTestId('total')).toHaveText('$12.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$12.50');
 });

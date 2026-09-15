@@ -36,7 +36,7 @@ test('the ledger still works without any of it', async ({ page }) => {
   // working app, not a broken one.
   await fresh(page);
   await addTransaction(page, { name: 'Rent', amount: '-1450.' });
-  await expect(page.getByTestId('total')).toHaveText('-$1,450.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('-$1,450.00');
 });
 
 test('the pairing code can be copied, not just retyped', async ({ page }) => {

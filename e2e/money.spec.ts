@@ -169,15 +169,15 @@ test('the total adds cents, not floats', async ({ page }) => {
   // 0.1 + 0.2 is the canonical float failure. In cents it is 10 + 20.
   await addTransaction(page, { name: 'a', amount: '0.10' });
   await addTransaction(page, { name: 'b', amount: '0.20' });
-  await expect(page.getByTestId('total')).toHaveText('$0.30');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$0.30');
 
   await addTransaction(page, { name: 'c', amount: '-0.30' });
-  await expect(page.getByTestId('total')).toHaveText('$0.00');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$0.00');
 });
 
 test('money in and money out land on the same running total', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'pay', amount: '2400.' });
   await addTransaction(page, { name: 'rent', amount: '-1850.50' });
-  await expect(page.getByTestId('total')).toHaveText('$549.50');
+  await expect(page.getByTestId(/^account-total-/)).toHaveText('$549.50');
 });
