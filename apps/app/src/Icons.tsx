@@ -166,52 +166,81 @@ export function HammerIcon({ color = T.dim, size = 14 }: { color?: string; size?
  * called, and each legible at 13 points where the words were not.
  * ------------------------------------------------------------------ */
 
-/** Needs — a target. What the line is aiming at. */
-export function TargetIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
+/**
+ * Needs — a FLAG. What the line is aiming at.
+ *
+ * A target (concentric circles) was the first pick and it was the wrong one:
+ * at 13 points the inner ring closes up and it reads as a filled dot, which
+ * is what the colour dots beside a category name already are. A flag has a
+ * diagonal nobody else here has, so it is told apart by silhouette rather
+ * than by detail — the only thing that survives at this size.
+ */
+export function FlagIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M5.5 21V3.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path
+        d="M5.5 4.5h13l-3 4 3 4h-13z"
+        fill={color} stroke={color} strokeWidth={1.5} strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Budgeted — an envelope, which is where the whole method comes from.
+ *
+ * Kept from the first pass: a wide rectangle with a V in it is unlike
+ * anything else in this row at any size.
+ */
+export function EnvelopeIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M3 6h18v12H3z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Path d="m3.5 6.5 8.5 6.5 8.5-6.5" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/**
+ * Spent — a RECEIPT. Money that has already gone, and the paper that says so.
+ *
+ * Third attempt. An up-arrow competed with the chevron on the category
+ * heading two lines above it; a shopping bag, blown up, read as a TRASH CAN —
+ * which is the worst possible confusion to put one column away from a delete
+ * button. A receipt's torn bottom edge is a shape nothing else here has.
+ */
+export function ReceiptIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M5.5 3h13v18l-2.2-1.6-2.2 1.6-2.1-1.6L9.9 21l-2.2-1.6L5.5 21z"
+        stroke={color} strokeWidth={2} strokeLinejoin="round"
+      />
+      <Path d="M9 8h6M9 12h6" stroke={color} strokeWidth={2} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+/**
+ * Available — a COIN. What is still there.
+ *
+ * Third attempt here too. A wallet was a rounded rectangle with a dot and so
+ * was indistinguishable from the envelope beside it; a stack of coins, blown
+ * up, was the standard DATABASE cylinder. A ring with a bar through it is
+ * round where its three neighbours are angular, which is the only thing that
+ * survives at 14 points — and it is the one shape here that is a coin whether
+ * or not you work out the bar is a dollar sign.
+ */
+export function CoinIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Circle cx={12} cy={12} r={8.5} stroke={color} strokeWidth={2} />
-      <Circle cx={12} cy={12} r={2.5} fill={color} />
-    </Svg>
-  );
-}
-
-/** Budgeted — an envelope, which is where the method comes from. */
-export function EnvelopeIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 7.5v9" stroke={color} strokeWidth={2} strokeLinecap="round" />
       <Path
-        d="M3 6.5h18v11H3z"
-        stroke={color} strokeWidth={2} strokeLinejoin="round"
+        d="M14.2 10a2.4 2.4 0 0 0-2.2-1.2c-1.4 0-2.4.8-2.4 1.9s1 1.6 2.4 1.6 2.4.5 2.4 1.6-1 1.9-2.4 1.9A2.4 2.4 0 0 1 9.8 14"
+        stroke={color} strokeWidth={1.7} strokeLinecap="round"
       />
-      <Path d="m3.5 7 8.5 6 8.5-6" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-/** Spent — an arrow leaving. Money that has already moved. */
-export function SpentIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 20V6" stroke={color} strokeWidth={2} strokeLinecap="round" />
-      <Path
-        d="M6.5 11.5 12 6l5.5 5.5"
-        stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-/** Available — a wallet. What is still in it. */
-export function WalletIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3.5 7.5h17v12h-17z"
-        stroke={color} strokeWidth={2} strokeLinejoin="round"
-      />
-      <Path d="M3.5 7.5 15 4v3.5" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-      <Circle cx={16.5} cy={13.5} r={1.6} fill={color} />
     </Svg>
   );
 }

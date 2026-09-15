@@ -28,9 +28,7 @@ import {
   type Category, type Line, type LineTone, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
-import {
-  EnvelopeIcon, PencilIcon, SpentIcon, TargetIcon, WalletIcon, XIcon,
-} from './Icons';
+import { CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, XIcon } from './Icons';
 import { useRowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
@@ -377,8 +375,6 @@ function CategorySection({
 
       {!shut && rows.length > 0 && (
         <View style={styles.colHead}>
-          <View style={[styles.colLabel, styles.colName]} />
-          <View style={styles.snoozeCol} />
           {/*
             MARKS, not words — see Icons.tsx. At 56 points a column
             `BUDGETED` and `AVAILABLE` broke mid-word on a phone and drew as
@@ -387,16 +383,16 @@ function CategorySection({
             envelope.
           */}
           <View style={styles.colLabel} accessibilityLabel="Needs" testID="col-needs">
-            <TargetIcon />
+            <FlagIcon />
           </View>
           <View style={styles.colLabel} accessibilityLabel="Budgeted" testID="col-budgeted">
             <EnvelopeIcon />
           </View>
           <View style={styles.colLabel} accessibilityLabel="Spent" testID="col-spent">
-            <SpentIcon />
+            <ReceiptIcon />
           </View>
           <View style={styles.colLabel} accessibilityLabel="Available" testID="col-available">
-            <WalletIcon />
+            <CoinIcon />
           </View>
         </View>
       )}
@@ -464,6 +460,21 @@ function LineRow({
       testID={`line-row-${line.id}`}
     >
       {/*
+        TWO LINES, always — Sean, 2026-09-15.
+        
+        One line could not hold them. Four money columns, the snooze box and
+        the grip left the NAME 52 points on a phone, which drew `New line` as
+        `New li…`; widening the name truncated the numbers instead, and a
+        truncated number is worse because it still looks like a number.
+        Neither is a trade worth making on the screen whose whole job is
+        showing what a thing is called and what it costs.
+        
+        Always, not below a breakpoint: a row that rearranges itself between
+        the Mac and the phone is two layouts to keep right, and the second one
+        is only ever seen when something has already gone wrong with it.
+      */}
+      <View style={styles.rowTop}>
+      {/*
         The grip, drawn faint and always occupying its space — hidden by
         OPACITY, not by being absent, so turning edit mode on does not slide
         every line name in the budget sideways. The Transactions tab learned
@@ -482,7 +493,7 @@ function LineRow({
       {naming ? (
         <NameField
           value={line.name}
-          style={[styles.rowName, styles.colName]}
+          style={[styles.rowName, styles.nameFill]}
           onDone={onNamed}
           testID={`line-name-input-${line.id}`}
         />
@@ -490,7 +501,7 @@ function LineRow({
         <Pressable
           onPress={edit ? onName : undefined}
           {...(edit ? KEEP_FOCUS : {})}
-          style={styles.colName}
+          style={styles.nameFill}
           accessibilityRole={edit ? 'button' : undefined}
           accessibilityLabel={edit ? `Rename ${line.name}` : undefined}
           testID={`line-name-${line.id}`}
@@ -520,6 +531,16 @@ function LineRow({
         </View>
       </Pressable>
 
+      {edit && (
+        <DoubleTap
+          onConfirm={onDelete}
+          label={`Delete ${line.name}`}
+          testID={`line-delete-${line.id}`}
+        />
+      )}
+      </View>
+
+      <View style={styles.rowNums}>
       {/* What the line is AIMING at. Editable like the other two. */}
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'needs', at)}
@@ -560,14 +581,7 @@ function LineRow({
           testID={`line-available-${line.id}`}
         />
       </AmountCell>
-
-      {edit && (
-        <DoubleTap
-          onConfirm={onDelete}
-          label={`Delete ${line.name}`}
-          testID={`line-delete-${line.id}`}
-        />
-      )}
+      </View>
     </Animated.View>
   );
 }
@@ -760,18 +774,14 @@ function Money({ cents, style, testID, tone = false }: {
  */
 const GRIP = 16;
 /*
- * A money column, MEASURED against the narrowest surface rather than chosen.
+ * A money column, now that the numbers have a LINE OF THEIR OWN.
  *
- * 390 points of phone, less the list's 16 either side, less the 47 a line is
- * indented, leaves 327. Into that go the grip (16), the name (52 at its
- * floor), the snooze box (22), six 4-point gaps (24) and FOUR of these. That
- * is 213 for the columns, so 52 each with a point to spare.
- *
- * At 56 — which is what three columns could afford — the row overflowed and
- * Spent drew as `$0....`, which is the screenshot Sean sent. A number that
- * has been truncated is worse than one that is small: it looks like a number.
+ * Four of these plus three gaps is 300 points, which fits the 327 a 390-point
+ * phone leaves after the list's margins and a line's indent — with the name
+ * no longer competing for any of it. It was 52 when all seven things shared
+ * one row, which is what made `$1,234.56` a risk and the name unreadable.
  */
-const COL = 52;
+const COL = 72;
 const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
 
 const styles = StyleSheet.create({
@@ -796,7 +806,8 @@ const styles = StyleSheet.create({
   headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
   colHead: {
     flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
-    paddingTop: SPACE.xs, paddingLeft: INDENT - GRIP + GRIP,
+    justifyContent: 'flex-end',
+    paddingTop: SPACE.xs, paddingRight: SPACE.xs, paddingLeft: INDENT,
   },
   // 56, not 68. A fourth money column arrived on 2026-09-15 and four at the
   // old width plus the snooze box leave a phone about seventy points for the
@@ -815,13 +826,23 @@ const styles = StyleSheet.create({
    * and impossible to hit — which is how it failed, as a click timing out on
    * an element that "resolved" fine. The numbers shrink first now.
    */
-  colName: { flex: 1, minWidth: 52, textAlign: 'left' },
+  colName: { flex: 1, minWidth: 0, textAlign: 'left' },
+  // The row is a COLUMN of two lines now, not a row of seven things.
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
-    paddingLeft: INDENT - GRIP,
-    paddingVertical: SPACE.sm, minHeight: 36, backgroundColor: T.bg,
+    paddingLeft: INDENT - GRIP, paddingRight: SPACE.xs,
+    paddingVertical: SPACE.sm, gap: 2, backgroundColor: T.bg,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
+  // Line one: the grip, the name, the snooze box and (in edit mode) delete.
+  rowTop: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs, minHeight: 26 },
+  // Line two: the four money columns, hard right so they line up with the
+  // icons above them and with every other row.
+  rowNums: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
+    justifyContent: 'flex-end', paddingLeft: GRIP,
+  },
+  // The name now has the whole of line one to itself.
+  nameFill: { flex: 1, minWidth: 0 },
   // A row riding the finger paints over its neighbours, so it has to be
   // opaque — `row` sets the background for exactly that reason.
   rowLifted: { opacity: 0.96 },
@@ -831,7 +852,7 @@ const styles = StyleSheet.create({
   rowName: { color: T.text, fontSize: 15, lineHeight: 20 },
   nameField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
   rowNum: {
-    color: T.text, fontSize: 12, lineHeight: 16, width: COL, flexShrink: 1,
+    color: T.text, fontSize: 13, lineHeight: 18, width: COL, flexShrink: 1,
     textAlign: 'right', fontVariant: ['tabular-nums'],
   },
   del: {

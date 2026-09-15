@@ -367,3 +367,41 @@ test('overspending is red, and beats being short', async ({ page }) => {
   await commit(page);
   expect(await colourOf(page, line)).toBe(TONE.over);
 });
+
+test('a line is two lines, so the name and the numbers both fit', async ({ page }) => {
+  // Sean, 2026-09-15: "always make this two lines". One row could not hold
+  // them — four money columns, the snooze box and the grip left the name 52
+  // points on a phone and drew `New line` as `New li…`, and widening the name
+  // truncated the numbers instead.
+  //
+  // Measured at PHONE width in both projects, because the desktop one is 1280
+  // and everything fits there whatever the layout does — the check would pass
+  // by having nothing to say.
+  await page.setViewportSize({ width: 390, height: 800 });
+  const line = await seed(page);
+
+  await page.getByTestId('budget-edit-toggle').click();
+  await expect(page.getByTestId(`line-delete-${line}`)).toBeVisible();
+  await page.getByTestId(`line-name-${line}`).click();
+  await page.getByTestId(`line-name-input-${line}`).fill('Groceries and household');
+  await page.getByTestId(`line-name-input-${line}`).press('Enter');
+  await page.getByTestId('budget-edit-toggle').click();
+
+  // The name is NOT clipped: scrollWidth is what it needs, clientWidth what
+  // it got, and on one line it got far less than it needed.
+  const name = await page.getByTestId(`line-name-${line}`)
+    .evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(name.client).toBeGreaterThanOrEqual(name.scroll);
+
+  // And the numbers sit BELOW it rather than beside it.
+  const nameBox = await page.getByTestId(`line-name-${line}`).boundingBox();
+  const num = await page.getByTestId(`line-budgeted-${line}`).boundingBox();
+  expect(num!.y).toBeGreaterThan(nameBox!.y + nameBox!.height - 2);
+
+  // Every column still readable rather than elided, with a wide amount in it.
+  for (const col of ['needs', 'budgeted', 'spent', 'available']) {
+    const cell = await page.getByTestId(`line-${col}-${line}`)
+      .evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+    expect(cell.client, col).toBeGreaterThanOrEqual(cell.scroll);
+  }
+});
