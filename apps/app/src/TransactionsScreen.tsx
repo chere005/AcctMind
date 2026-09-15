@@ -8,14 +8,17 @@ import {
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  amountDigits, amountInput, claimsSwipe, formatAmount, formatDay, rowTap, selectedTotal,
+  amountDigits, amountInput, claimsSwipe, formatAmount, formatDay, parseAmount, rowTap,
+  selectedTotal,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
   type Account, type AmountMode, type Line, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { SortPick } from './SortPick';
-import { ClipboardIcon, DuplicateIcon, ImportIcon, PencilIcon, XIcon } from './Icons';
+import {
+  ClipboardIcon, DuplicateIcon, HammerIcon, ImportIcon, PencilIcon, XIcon,
+} from './Icons';
 import { useRowDrag } from './rowdrag';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
@@ -67,13 +70,19 @@ type Props = {
    * points at a LINE (v4), so this is what turns that id into a word.
    */
   lines: readonly Line[];
+  /**
+   * A stated balance for an account. Core decides whether that is a
+   * difference worth a transaction; this only reports what was typed.
+   */
+  onReconcile: (account: string, stated: number) => void;
   /** Open the CSV import. Absent on a surface that cannot read a file. */
   onImport?: (() => void) | undefined;
 };
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onImport, onInline, onDate,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile, onImport,
+  onInline, onDate,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const sum = total(txns);
@@ -154,6 +163,13 @@ export function TransactionsScreen({
    * moved on is the state this app least wants.
    */
   const [swipedId, setSwipedId] = useState<string | null>(null);
+  /**
+   * The account whose total is open as a field, if any. One at a time, held
+   * here rather than in the section, so opening a second closes the first —
+   * two open reconciles is two half-stated balances and no way to tell which
+   * Return will land on.
+   */
+  const [reconciling, setReconciling] = useState<string | null>(null);
 
   // A row that stops existing — deleted here, or deleted on another device
   // mid-gesture — must not leave a parked delete behind attached to nothing.
@@ -304,6 +320,12 @@ export function TransactionsScreen({
             onInline={onInline}
             onDate={onDate}
             lineName={lineName}
+            reconciling={reconciling}
+            onReconcileOpen={setReconciling}
+            onReconcile={(id, stated) => {
+              setReconciling(null);
+              if (stated !== null) onReconcile(id, stated);
+            }}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
             onAction={onAction}
@@ -354,7 +376,7 @@ export function TransactionsScreen({
 function Section({
   account, rows, shut, onToggle, onAdd, edit, onEdited, picked, onPick,
   inline, setInline, onInline, onDate, lineName, swipedId, setSwipedId, onAction, onMove,
-  onDragging,
+  onDragging, reconciling, onReconcileOpen, onReconcile,
 }: {
   account: Account;
   rows: readonly Txn[];
@@ -374,6 +396,11 @@ function Section({
   onDate?: ((txn: Txn) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
   lineName: (id: string | null) => string;
+  /** The account whose total is open as a field, if any. */
+  reconciling: string | null;
+  onReconcileOpen: (account: string) => void;
+  /** The total as stated, or null for a field left unreadable. */
+  onReconcile: (account: string, stated: number | null) => void;
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
@@ -418,7 +445,36 @@ function Section({
           <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
           <Dot colors={[account.color]} size={11} />
           <Text style={styles.headName} numberOfLines={1}>{account.name}</Text>
-          <Text style={styles.headSum}>{formatAmount(total(rows))}</Text>
+        </Pressable>
+
+        {/*
+          What the account holds, and the hammer that reconciles it — both to
+          the RIGHT of the account name, Sean's placement, 2026-09-15.
+
+          Outside the folding Pressable on purpose: they are their own
+          controls, and inside it a tap meant to reconcile would fold the
+          section instead. The number is still the section's own running
+          total; only where it sits and what can be done to it changed.
+        */}
+        {reconciling === account.id ? (
+          <ReconcileField
+            value={total(rows)}
+            onDone={(stated) => onReconcile(account.id, stated)}
+            testID={`account-reconcile-input-${account.id}`}
+          />
+        ) : (
+          <Text style={styles.headSum} testID={`account-total-${account.id}`}>
+            {formatAmount(total(rows))}
+          </Text>
+        )}
+        <Pressable
+          onPress={parked ? dismiss : () => onReconcileOpen(account.id)}
+          style={styles.headHammer}
+          accessibilityRole="button"
+          accessibilityLabel={`Reconcile ${account.name}`}
+          testID={`account-reconcile-${account.id}`}
+        >
+          <HammerIcon />
         </Pressable>
         {/* Each account adds into ITSELF: the + is the only thing that tells
             the form which section it was opened from. */}
@@ -777,6 +833,51 @@ function ShareIcon() {
 }
 
 /**
+ * The account's total, swapped for a field in place.
+ *
+ * Seeded with the CANONICAL string rather than the formatted one — `1234.56`,
+ * not `$1,234.56` — because it is read back by `parseAmount`, the full
+ * parser, not by the till rule. A balance is a considered number read off a
+ * statement, where `1234` plainly means one thousand two hundred and
+ * thirty-four, and reading it as $12.34 would be the kind of silent
+ * hundred-fold error this ledger exists to refuse.
+ *
+ * Blur commits, like every other field here, and an unreadable one commits
+ * NOTHING rather than a zero: a balance nobody typed must never become an
+ * adjustment.
+ */
+function ReconcileField({ value, onDone, testID }: {
+  value: number;
+  onDone: (stated: number | null) => void;
+  testID: string;
+}) {
+  const [text, setText] = useState(() => amountInput(value));
+  const field = useRef<TextInput>(null);
+  // The same opening-blur guard the budget's rename needs: the tap that
+  // mounts this field finishes on the document and takes focus with it.
+  const opened = useRef(Date.now());
+  return (
+    <TextInput
+      ref={field}
+      value={text}
+      onChangeText={setText}
+      onBlur={() => {
+        if (Date.now() - opened.current < 250) { field.current?.focus(); return; }
+        onDone(parseAmount(text));
+      }}
+      onSubmitEditing={() => onDone(parseAmount(text))}
+      style={[styles.headSum, styles.reconcileField]}
+      autoFocus
+      selectTextOnFocus
+      keyboardType="numbers-and-punctuation"
+      inputMode="text"
+      returnKeyType="done"
+      testID={testID}
+    />
+  );
+}
+
+/**
  * A row's text, swapped for a field in place.
  *
  * The field wears the SAME type and no padding of its own, so swapping one
@@ -1039,6 +1140,10 @@ const styles = StyleSheet.create({
   // shape to it — which is what "looks terrible" was looking at.
   headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flex: 1 },
   headSum: { color: T.dim, fontSize: 14, fontVariant: ['tabular-nums'] },
+  reconcileField: { padding: 0, margin: 0, minWidth: 90, textAlign: 'right', color: T.text },
+  headHammer: {
+    width: 30, height: TAP, alignItems: 'center', justifyContent: 'center',
+  },
   headAdd: {
     width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center',
   },

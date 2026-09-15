@@ -25,7 +25,8 @@ import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
   live, makeTxn,
-  applyImport, ensureCategory, newId, nextColor, planImport, putAccount, putCategory, putLine, removeCategoryDeep, REORDER_GAP,
+  applyImport, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
+  reconcileAdjustment, total, putAccount, putCategory, putLine, removeCategoryDeep, REORDER_GAP,
   reorder, today, tombstone, touch,
   txnText, updateTxn,
   type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
@@ -476,6 +477,33 @@ export default function App() {
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
               onManage={() => setManaging('accounts')}
               lines={live(phase.store.lines)}
+              /*
+               * Reconcile: say what the account actually holds, and the
+               * difference becomes one transaction dated TODAY — Sean,
+               * 2026-09-15. The arithmetic and the name are core's; the only
+               * thing decided here is that a zero difference writes nothing,
+               * which is `reconcileAdjustment` returning 0 and this doing
+               * nothing with it.
+               */
+              onReconcile={(account, stated) => {
+                if (phase.k !== 'ready') return;
+                const held = total(live(phase.store.txns).filter((t) => t.account === account));
+                const diff = reconcileAdjustment(held, stated);
+                if (diff === 0) return;
+                const now = Date.now();
+                commit(phase, addTxn(phase.store, {
+                  id: `txn-${newId()}`,
+                  name: RECONCILE_NAME,
+                  description: '',
+                  amount: diff,
+                  date: today(),
+                  account,
+                  category: null,
+                  order: 0,
+                  created: now,
+                  updated: now,
+                }));
+              }}
               onImport={() => setImporting(true)}
             />
             )}

@@ -10,7 +10,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   addDays, addMonths, amountDigits, applyOp, availableOf, budgetFor, dayOf,
-  importKey, lineTone, parseDelimited, stillNeeded, usDate, wellsFargoName,
+  importKey, lineTone, parseDelimited, reconcileAdjustment, stillNeeded, usDate,
+  wellsFargoName,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
   parseAmount, signedCents, sortTxns,
 } from '../src/index';
@@ -242,7 +243,22 @@ describe('spec/budget.json — how a line reads', () => {
   const b = spec<{
     tone: [number, number, boolean, number, string][];
     stillNeeded: [number, number, boolean, number][];
+    reconcile: [number, number, number][];
   }>('budget');
+
+  it('works out what a reconcile has to write', () => {
+    for (const [ledger, stated, want] of b.reconcile) {
+      expect(reconcileAdjustment(ledger, stated), `${ledger} -> ${stated}`).toBe(want);
+    }
+  });
+
+  it('and agreeing with the ledger writes nothing', () => {
+    // The case that keeps the register clean: checking your balance and
+    // finding it right must not leave a 0.00 row behind every time.
+    for (const n of [0, 5000, -5000, 48463]) {
+      expect(reconcileAdjustment(n, n)).toBe(0);
+    }
+  });
 
   it('picks the colour, in the order the rule states', () => {
     for (const [budget, needs, snoozed, spent, want] of b.tone) {

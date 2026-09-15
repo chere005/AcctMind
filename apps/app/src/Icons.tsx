@@ -127,3 +127,91 @@ export function ImportIcon({ color = T.text, size = 15 }: { color?: string; size
     </Svg>
   );
 }
+
+/**
+ * Reconcile: a hammer. Sean's pick, 2026-09-15.
+ *
+ * Drawn as a head and a handle rather than a glyph, for the reason every icon
+ * in this file is: no single character renders as a hammer across a browser,
+ * a phone and a Mac, and the ones that come close fall back to a box on at
+ * least one of them.
+ */
+export function HammerIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      {/* The head, struck through at an angle so it reads at 14 points. */}
+      <Path
+        d="M3.5 9.5 9 4l3 3-5.5 5.5z"
+        stroke={color} strokeWidth={2} strokeLinejoin="round"
+      />
+      {/* The handle. */}
+      <Path
+        d="M10.5 10.5 20 20"
+        stroke={color} strokeWidth={2} strokeLinecap="round"
+      />
+    </Svg>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The Budget tab's four money columns.
+ *
+ * Words, until 2026-09-15. At 56 points a column — which is what four money
+ * columns plus a checkbox leave on a phone — `BUDGETED` and `AVAILABLE` broke
+ * mid-word and drew as `BUDGETE / D` and `AVAILABL / E`. A header that has to
+ * be deciphered is worse than no header, and shortening them to `BUD` and
+ * `AVL` trades one unreadable thing for another.
+ *
+ * So: four marks, each about what its column MEANS rather than what it is
+ * called, and each legible at 13 points where the words were not.
+ * ------------------------------------------------------------------ */
+
+/** Needs — a target. What the line is aiming at. */
+export function TargetIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Circle cx={12} cy={12} r={8.5} stroke={color} strokeWidth={2} />
+      <Circle cx={12} cy={12} r={2.5} fill={color} />
+    </Svg>
+  );
+}
+
+/** Budgeted — an envelope, which is where the method comes from. */
+export function EnvelopeIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 6.5h18v11H3z"
+        stroke={color} strokeWidth={2} strokeLinejoin="round"
+      />
+      <Path d="m3.5 7 8.5 6 8.5-6" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+/** Spent — an arrow leaving. Money that has already moved. */
+export function SpentIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 20V6" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path
+        d="M6.5 11.5 12 6l5.5 5.5"
+        stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/** Available — a wallet. What is still in it. */
+export function WalletIcon({ color = T.faint, size = 13 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3.5 7.5h17v12h-17z"
+        stroke={color} strokeWidth={2} strokeLinejoin="round"
+      />
+      <Path d="M3.5 7.5 15 4v3.5" stroke={color} strokeWidth={2} strokeLinejoin="round" />
+      <Circle cx={16.5} cy={13.5} r={1.6} fill={color} />
+    </Svg>
+  );
+}

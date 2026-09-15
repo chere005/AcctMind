@@ -138,3 +138,27 @@ export function stillNeeded(line: { budget: number; needs: number; snoozed: bool
   if (line.snoozed || line.needs <= 0) return 0;
   return Math.max(0, line.needs - line.budget);
 }
+
+/**
+ * The adjustment a reconcile writes.
+ *
+ * Sean, 2026-09-15: pressing the hammer turns the account's running total
+ * into a field, and "after entering, if there was a difference, the
+ * transaction gets made". This is that difference, and it is the whole rule —
+ * what the account SHOULD hold, minus what the ledger currently says it does.
+ *
+ * Sign follows from that and needs no special case: a real balance HIGHER
+ * than the ledger is money the ledger has not heard about, so the adjustment
+ * is positive; lower, and it is negative. The same arithmetic covers both,
+ * which is why there is no branch here to get backwards.
+ *
+ * Zero means no transaction. A reconcile that agrees with the ledger has
+ * nothing to record, and writing a 0.00 row for it would put a permanent
+ * mark in the register every time someone checked.
+ */
+export function reconcileAdjustment(ledgerTotal: number, statedTotal: number): number {
+  return statedTotal - ledgerTotal;
+}
+
+/** What a reconcile's transaction is called, everywhere it is made. */
+export const RECONCILE_NAME = 'Reconcile';

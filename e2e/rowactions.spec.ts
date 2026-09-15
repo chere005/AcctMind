@@ -716,3 +716,41 @@ test('a row says what it is filed against, and long text is CLIPPED', async ({ p
   // the whole ledger is unfiled, and two thousand dashes is noise.
   await expect(page.getByTestId('txn-category').first()).toHaveText('');
 });
+
+test('the hammer reconciles an account, dated today, and only when it differs', async ({ page }) => {
+  // Sean, 2026-09-15: the amount and the hammer sit right of the account name;
+  // pressing it turns the total into a field, "and after entering, if there
+  // was a difference, the transaction gets made".
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+
+  const s0 = await stored(page) as { accounts: { id: string }[] };
+  const acct = s0.accounts[0]!.id;
+  await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('-$4.50');
+
+  // Agreeing with the ledger writes NOTHING. Checking your balance and
+  // finding it right must not leave a 0.00 row behind every time.
+  await page.getByTestId(`account-reconcile-${acct}`).click();
+  await expect(page.getByTestId(`account-reconcile-input-${acct}`)).toBeVisible();
+  await page.getByTestId(`account-reconcile-input-${acct}`).press('Enter');
+  await expect(page.getByTestId('txn-row')).toHaveCount(1);
+
+  // A real difference does. The field takes a CONSIDERED number — 100 is
+  // $100.00, read by the full parser, not 100 cents by the till rule.
+  await page.getByTestId(`account-reconcile-${acct}`).click();
+  await page.getByTestId(`account-reconcile-input-${acct}`).fill('100');
+  await page.getByTestId(`account-reconcile-input-${acct}`).press('Enter');
+  await expect(page.getByTestId('txn-row')).toHaveCount(2);
+
+  const s = await stored(page) as {
+    txns: { name: string; amount: number; date: string; account: string; deleted?: true }[];
+  };
+  const made = s.txns.filter((t) => t.deleted !== true).find((t) => t.name === 'Reconcile');
+  // -450 held, 10000 stated: the adjustment is the difference and its sign
+  // falls out of the arithmetic rather than a branch.
+  expect(made?.amount).toBe(10450);
+  expect(made?.account).toBe(acct);
+  expect(made?.date).toBe(new Date().toISOString().slice(0, 10));
+  // And the account now reads what was stated.
+  await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('$100.00');
+});

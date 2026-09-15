@@ -28,7 +28,9 @@ import {
   type Category, type Line, type LineTone, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
-import { PencilIcon, XIcon } from './Icons';
+import {
+  EnvelopeIcon, PencilIcon, SpentIcon, TargetIcon, WalletIcon, XIcon,
+} from './Icons';
 import { useRowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
@@ -375,12 +377,27 @@ function CategorySection({
 
       {!shut && rows.length > 0 && (
         <View style={styles.colHead}>
-          <Text style={[styles.colLabel, styles.colName]} />
+          <View style={[styles.colLabel, styles.colName]} />
           <View style={styles.snoozeCol} />
-          <Text style={styles.colLabel}>Needs</Text>
-          <Text style={styles.colLabel}>Budgeted</Text>
-          <Text style={styles.colLabel}>Spent</Text>
-          <Text style={styles.colLabel}>Available</Text>
+          {/*
+            MARKS, not words — see Icons.tsx. At 56 points a column
+            `BUDGETED` and `AVAILABLE` broke mid-word on a phone and drew as
+            `BUDGETE / D`. The accessibility label carries the word, so a
+            screen reader still hears "Budgeted" where an eye sees an
+            envelope.
+          */}
+          <View style={styles.colLabel} accessibilityLabel="Needs" testID="col-needs">
+            <TargetIcon />
+          </View>
+          <View style={styles.colLabel} accessibilityLabel="Budgeted" testID="col-budgeted">
+            <EnvelopeIcon />
+          </View>
+          <View style={styles.colLabel} accessibilityLabel="Spent" testID="col-spent">
+            <SpentIcon />
+          </View>
+          <View style={styles.colLabel} accessibilityLabel="Available" testID="col-available">
+            <WalletIcon />
+          </View>
         </View>
       )}
 
@@ -742,6 +759,19 @@ function Money({ cents, style, testID, tone = false }: {
  * edit mode on moves nothing sideways.
  */
 const GRIP = 16;
+/*
+ * A money column, MEASURED against the narrowest surface rather than chosen.
+ *
+ * 390 points of phone, less the list's 16 either side, less the 47 a line is
+ * indented, leaves 327. Into that go the grip (16), the name (52 at its
+ * floor), the snooze box (22), six 4-point gaps (24) and FOUR of these. That
+ * is 213 for the columns, so 52 each with a point to spare.
+ *
+ * At 56 — which is what three columns could afford — the row overflowed and
+ * Spent drew as `$0....`, which is the screenshot Sean sent. A number that
+ * has been truncated is worse than one that is small: it looks like a number.
+ */
+const COL = 52;
 const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
 
 const styles = StyleSheet.create({
@@ -772,10 +802,10 @@ const styles = StyleSheet.create({
   // old width plus the snooze box leave a phone about seventy points for the
   // NAME — which is how `Groceries` became `Groc…` on the category heading
   // the first time this screen grew a column.
-  colLabel: {
-    color: T.faint, fontSize: 10, width: 56, flexShrink: 1, textAlign: 'right',
-    textTransform: 'uppercase', letterSpacing: 0.4,
-  },
+  // A box that holds an icon at the right of its column, matching the
+  // numbers below it. It was a Text with uppercase letter-spacing until the
+  // labels stopped fitting.
+  colLabel: { width: COL, flexShrink: 1, alignItems: 'flex-end', justifyContent: 'center' },
   /*
    * A FLOOR under the name, and columns that give way instead.
    *
@@ -785,7 +815,7 @@ const styles = StyleSheet.create({
    * and impossible to hit — which is how it failed, as a click timing out on
    * an element that "resolved" fine. The numbers shrink first now.
    */
-  colName: { flex: 1, minWidth: 64, textAlign: 'left' },
+  colName: { flex: 1, minWidth: 52, textAlign: 'left' },
   row: {
     flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
     paddingLeft: INDENT - GRIP,
@@ -801,7 +831,7 @@ const styles = StyleSheet.create({
   rowName: { color: T.text, fontSize: 15, lineHeight: 20 },
   nameField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
   rowNum: {
-    color: T.text, fontSize: 13, lineHeight: 18, width: 56, flexShrink: 1,
+    color: T.text, fontSize: 12, lineHeight: 16, width: COL, flexShrink: 1,
     textAlign: 'right', fontVariant: ['tabular-nums'],
   },
   del: {
