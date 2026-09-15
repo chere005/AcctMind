@@ -182,6 +182,9 @@ function migrateLines(rawCategories: unknown, categories: Category[], txns: Txn[
       name: c.name,
       category: c.id,
       budget: legacy.get(c.id) ?? 0,
+      // No target and not snoozed: a v3 store had nowhere to say either.
+      needs: 0,
+      snoozed: false,
       order: 0,
       created: c.created,
       // The category's own clock, not `now`: the line IS the category's money,
@@ -303,12 +306,31 @@ export function normalizeLine(row: unknown): Line | null {
   if (budget !== undefined && (typeof budget !== 'number' || !Number.isSafeInteger(budget))) {
     return null;
   }
+  /*
+   * `needs` and `snoozed` are ADDITIVE, and default rather than migrate.
+   *
+   * Nothing moves, so there is no v5: a line written before 2026-09-15 simply
+   * has no target and is not snoozed, which is exactly what absence means.
+   * Bumping STORE_VERSION would have been the heavier answer and the worse
+   * one — `parseStore` REFUSES a version newer than it reads, so a device on
+   * the old build would stop loading the whole ledger over two optional
+   * fields rather than ignoring them.
+   *
+   * The cost, stated: an old build that loads and re-saves a store DROPS
+   * both, because this function rebuilds the record from named fields. All
+   * five surfaces ship from this one repo and move together, so that window
+   * is a downgrade rather than an ordinary state.
+   */
+  const needs = r['needs'];
+  const snoozed = r['snoozed'];
   const order = r['order'];
   return {
     ...base,
     name,
     category,
     budget: budget ?? 0,
+    needs: typeof needs === 'number' && Number.isSafeInteger(needs) ? needs : 0,
+    snoozed: snoozed === true,
     order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
   };
 }

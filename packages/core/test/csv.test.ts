@@ -156,7 +156,7 @@ describe('the plan, and carrying it out', () => {
 describe('deleting a category takes its lines with it', () => {
   const cat = (id: string): Category => ({ id, name: id, color: '#fff', order: 0, created: 1, updated: 1 });
   const line = (id: string, category: string): Line =>
-    ({ id, name: id, category, budget: 500, order: 0, created: 1, updated: 1 });
+    ({ id, name: id, category, budget: 500, needs: 0, snoozed: false, order: 0, created: 1, updated: 1 });
 
   const seeded = (): Store => store(
     [

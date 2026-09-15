@@ -77,6 +77,23 @@ export type Line = Record_ & {
   category: string;
   /** Money set aside, in integer MINOR UNITS. Never a float, like every amount. */
   budget: number;
+  /**
+   * What this line NEEDS — the target, against which `budget` is the amount
+   * actually assigned. Sean, 2026-09-15.
+   *
+   * Zero means "no target set", which is why an unfunded line with no target
+   * is not shown as short of anything: most lines never get one, and a screen
+   * that painted every one of them yellow would be a screen nobody reads.
+   */
+  needs: number;
+  /**
+   * Snoozed: this line is not asking for money right now.
+   *
+   * A target you are deliberately not funding this month is different from
+   * one you have forgotten, and without somewhere to say so the only way to
+   * quiet a line is to delete the target and lose it.
+   */
+  snoozed: boolean;
   order: number;
 };
 

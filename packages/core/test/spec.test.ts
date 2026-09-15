@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   addDays, addMonths, amountDigits, applyOp, availableOf, budgetFor, dayOf,
-  importKey, parseDelimited, usDate, wellsFargoName,
+  importKey, lineTone, parseDelimited, stillNeeded, usDate, wellsFargoName,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
   parseAmount, signedCents, sortTxns,
 } from '../src/index';
@@ -234,6 +234,27 @@ describe('spec/budget.json', () => {
   it('the operator picker', () => {
     for (const [current, op, typed, want] of b.ops) {
       expect(applyOp(current, op, typed), `${current} ${op} ${typed}`).toBe(want);
+    }
+  });
+});
+
+describe('spec/budget.json — how a line reads', () => {
+  const b = spec<{
+    tone: [number, number, boolean, number, string][];
+    stillNeeded: [number, number, boolean, number][];
+  }>('budget');
+
+  it('picks the colour, in the order the rule states', () => {
+    for (const [budget, needs, snoozed, spent, want] of b.tone) {
+      expect(lineTone({ budget, needs, snoozed }, spent),
+        JSON.stringify([budget, needs, snoozed, spent])).toBe(want);
+    }
+  });
+
+  it('says what is still to assign, and never a negative', () => {
+    for (const [budget, needs, snoozed, want] of b.stillNeeded) {
+      expect(stillNeeded({ budget, needs, snoozed }),
+        JSON.stringify([budget, needs, snoozed])).toBe(want);
     }
   });
 });

@@ -264,3 +264,106 @@ test('the box is small, centred under what was tapped, and never off-screen', as
   // Genuinely clamped: pushed left of where a centred box would have gone.
   expect(onEnd!.x + onEnd!.width / 2).toBeLessThan(end!.x + end!.width / 2);
 });
+
+/*
+ * Needs, Snooze, and the four colours. Sean, 2026-09-15.
+ *
+ * The arithmetic is core's — `lineTone` and `stillNeeded`, replayed from
+ * spec/budget.json. What is only checkable here is that the screen ASKS it:
+ * that the fourth column is wired to `needs` rather than to budget, that the
+ * checkbox writes `snoozed`, and that each verdict reaches the right colour.
+ *
+ * These read the COMPUTED COLOUR, not visibility. Every one of these states
+ * has the same numbers on screen, laid out identically, all "visible" — the
+ * only difference is what colour they are painted, so that is what the
+ * assertion has to be about. The transparent-row bug taught this repo the
+ * same lesson from the other direction.
+ */
+const TONE = {
+  snoozed: 'rgb(72, 72, 74)',
+  over: 'rgb(255, 69, 58)',
+  short: 'rgb(240, 180, 41)',
+  funded: 'rgb(48, 209, 88)',
+};
+
+const colourOf = (page: Page, id: string) =>
+  page.getByTestId(`line-budgeted-${id}`).evaluate((el) => getComputedStyle(el).color);
+
+test('Needs is its own stored number, beside budgeted and not the same as it', async ({ page }) => {
+  const line = await seed(page);
+  await page.getByTestId(`line-needs-tap-${line}`).click();
+  await expect(page.getByTestId('pad-amount')).toBeVisible();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+
+  const s = await stored(page) as Stored & { lines: { id: string; needs: number }[] };
+  const row = s.lines.find((l) => l.id === line);
+  expect(row?.needs).toBe(40000);
+  // And it did NOT move what was budgeted. Two stored numbers, not one.
+  expect(row?.budget).toBe(25000);
+});
+
+test('a line short of its target is yellow, and funding it turns it green', async ({ page }) => {
+  const line = await seed(page);            // budgeted $250
+  expect(await colourOf(page, line)).toBe(TONE.funded);
+
+  // Ask for more than is assigned.
+  await page.getByTestId(`line-needs-tap-${line}`).click();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+  expect(await colourOf(page, line)).toBe(TONE.short);
+
+  // Assign the rest.
+  await tapAmount(page, line, 'budgeted');
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+  expect(await colourOf(page, line)).toBe(TONE.funded);
+});
+
+test('a target of zero is not "short" — most lines never set one', async ({ page }) => {
+  // The case that decides whether the colour means anything: if every line
+  // without a target painted yellow, the whole screen would be yellow.
+  const line = await seed(page);
+  const s = await stored(page) as Stored & { lines: { id: string; needs: number }[] };
+  expect(s.lines.find((l) => l.id === line)?.needs).toBe(0);
+  expect(await colourOf(page, line)).toBe(TONE.funded);
+});
+
+test('Snooze greys the line, and beats being short', async ({ page }) => {
+  const line = await seed(page);
+  await page.getByTestId(`line-needs-tap-${line}`).click();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+  expect(await colourOf(page, line)).toBe(TONE.short);
+
+  await page.getByTestId(`line-snooze-${line}`).click();
+  expect(await colourOf(page, line)).toBe(TONE.snoozed);
+  const s = await stored(page) as Stored & { lines: { id: string; snoozed: boolean }[] };
+  expect(s.lines.find((l) => l.id === line)?.snoozed).toBe(true);
+
+  // And pressing it again wakes it back to exactly what it was.
+  await page.getByTestId(`line-snooze-${line}`).click();
+  expect(await colourOf(page, line)).toBe(TONE.short);
+});
+
+test('overspending is red, and beats being short', async ({ page }) => {
+  // Money already spent that you do not have is worse than money not yet
+  // assigned — so when a line is both, red is what shows.
+  const line = await seed(page);
+  await page.getByTestId(`line-needs-tap-${line}`).click();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+
+  // Drive available below zero. The − OPERATOR, not a typed minus: the pad's
+  // field takes digits only since the sign moved onto its own control.
+  await tapAmount(page, line, 'available');
+  await page.getByTestId('pad-amount-op-sub').click();
+  await page.getByTestId('pad-amount').fill('400');
+  await commit(page);
+  expect(await colourOf(page, line)).toBe(TONE.over);
+});

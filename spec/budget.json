@@ -1,40 +1,289 @@
 {
   "_": "The budget contract: three numbers, two stored, and the operator picker.",
-
   "_available": "budgeted PLUS spent, because money out is negative. [budget, spent, available]",
   "available": [
-    [10000, 0, 10000],
-    [10000, -3000, 7000],
-    [10000, -10000, 0],
-    [10000, -12500, -2500],
-    [10000, 1000, 11000],
-    [0, -4500, -4500],
-    [0, 0, 0],
-    [-5000, -1000, -6000]
+    [
+      10000,
+      0,
+      10000
+    ],
+    [
+      10000,
+      -3000,
+      7000
+    ],
+    [
+      10000,
+      -10000,
+      0
+    ],
+    [
+      10000,
+      -12500,
+      -2500
+    ],
+    [
+      10000,
+      1000,
+      11000
+    ],
+    [
+      0,
+      -4500,
+      -4500
+    ],
+    [
+      0,
+      0,
+      0
+    ],
+    [
+      -5000,
+      -1000,
+      -6000
+    ]
   ],
-
   "_roundTrip": "budgetFor is the exact inverse of availableOf. [available, spent]",
   "roundTrip": [
-    [7000, -3000],
-    [0, -10000],
-    [-2500, -12500],
-    [11000, 1000],
-    [0, 0],
-    [123456789, -987654321]
+    [
+      7000,
+      -3000
+    ],
+    [
+      0,
+      -10000
+    ],
+    [
+      -2500,
+      -12500
+    ],
+    [
+      11000,
+      1000
+    ],
+    [
+      0,
+      0
+    ],
+    [
+      123456789,
+      -987654321
+    ]
   ],
-
   "_ops": "[current, op, typed, result] — null is a refusal, not a clamp.",
   "ops": [
-    [0, "=", 5000, 5000],
-    [5000, "=", 0, 0],
-    [5000, "=", -2500, -2500],
-    [5000, "+", 2000, 7000],
-    [5000, "-", 2000, 3000],
-    [2000, "-", 5000, -3000],
-    [0, "+", 0, 0],
-    [5000, "+", -2000, 3000],
-    [5000, "-", -2000, 7000],
-    [1000000000000, "+", 1, null],
-    [-1000000000000, "-", 1, null]
+    [
+      0,
+      "=",
+      5000,
+      5000
+    ],
+    [
+      5000,
+      "=",
+      0,
+      0
+    ],
+    [
+      5000,
+      "=",
+      -2500,
+      -2500
+    ],
+    [
+      5000,
+      "+",
+      2000,
+      7000
+    ],
+    [
+      5000,
+      "-",
+      2000,
+      3000
+    ],
+    [
+      2000,
+      "-",
+      5000,
+      -3000
+    ],
+    [
+      0,
+      "+",
+      0,
+      0
+    ],
+    [
+      5000,
+      "+",
+      -2000,
+      3000
+    ],
+    [
+      5000,
+      "-",
+      -2000,
+      7000
+    ],
+    [
+      1000000000000,
+      "+",
+      1,
+      null
+    ],
+    [
+      -1000000000000,
+      "-",
+      1,
+      null
+    ]
+  ],
+  "_tone": "How a line reads, as one word — the four colours the Budget screen paints. Sean, 2026-09-15: \"any column that needs more money is yellow, negative is red, positive is green\", and Snooze \"turns the column gray\". The ORDER of the tests is the rule: snoozed beats everything (a snoozed line is not asking), over beats short (money already spent that you do not have is worse than money not yet assigned), and short applies only when a target was actually set — 0 means no target, and painting every line without one yellow would make the colour mean nothing. Rows are [budget, needs, snoozed, spent, tone]. The [-5000, 0, false, 6000] row is the one that reaches the \"a target was set\" guard: money moved off the line, a refund landed, available is positive and no target exists. Without the guard `budget < needs` is -5000 < 0 and the line reads as short of nothing. Added 2026-09-15 after a mutation that removed the guard passed every other row.",
+  "tone": [
+    [
+      10000,
+      0,
+      false,
+      0,
+      "funded"
+    ],
+    [
+      10000,
+      0,
+      false,
+      -5000,
+      "funded"
+    ],
+    [
+      10000,
+      0,
+      false,
+      -10000,
+      "funded"
+    ],
+    [
+      10000,
+      0,
+      false,
+      -10001,
+      "over"
+    ],
+    [
+      10000,
+      10000,
+      false,
+      0,
+      "funded"
+    ],
+    [
+      5000,
+      10000,
+      false,
+      0,
+      "short"
+    ],
+    [
+      0,
+      10000,
+      false,
+      0,
+      "short"
+    ],
+    [
+      5000,
+      10000,
+      false,
+      -6000,
+      "over"
+    ],
+    [
+      5000,
+      10000,
+      true,
+      -6000,
+      "snoozed"
+    ],
+    [
+      5000,
+      10000,
+      true,
+      0,
+      "snoozed"
+    ],
+    [
+      10000,
+      10000,
+      true,
+      0,
+      "snoozed"
+    ],
+    [
+      0,
+      0,
+      false,
+      0,
+      "funded"
+    ],
+    [
+      0,
+      0,
+      false,
+      500,
+      "funded"
+    ],
+    [
+      15000,
+      10000,
+      false,
+      0,
+      "funded"
+    ],
+    [
+      -5000,
+      0,
+      false,
+      6000,
+      "funded"
+    ]
+  ],
+  "_stillNeeded": "What is left to assign before a line meets its target. Never negative — a line funded past its target does not need minus money, and a negative here would draw as a debt. Rows are [budget, needs, snoozed, expected].",
+  "stillNeeded": [
+    [
+      0,
+      10000,
+      false,
+      10000
+    ],
+    [
+      4000,
+      10000,
+      false,
+      6000
+    ],
+    [
+      10000,
+      10000,
+      false,
+      0
+    ],
+    [
+      15000,
+      10000,
+      false,
+      0
+    ],
+    [
+      0,
+      0,
+      false,
+      0
+    ],
+    [
+      0,
+      10000,
+      true,
+      0
+    ]
   ]
 }

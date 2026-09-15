@@ -24,8 +24,8 @@ import {
   Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  availableOf, formatAmount, total,
-  type Category, type Line, type Txn,
+  availableOf, formatAmount, lineTone, total,
+  type Category, type Line, type LineTone, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { PencilIcon, XIcon } from './Icons';
@@ -36,7 +36,7 @@ import { SPACE, T, TAP } from './theme';
 
 export type LinePick = { line: Line; spent: number };
 /** Which of a line's two editable numbers was tapped. */
-export type LineField = 'budget' | 'available';
+export type LineField = 'needs' | 'budget' | 'available';
 /** Where a tapped amount sits, in window coordinates. */
 export type Anchor = { x: number; y: number; w: number; h: number };
 
@@ -73,8 +73,8 @@ const KEEP_FOCUS = {
 
 export function BudgetScreen({
   txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine,
-  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onDeleteCategory,
-  onMoveLine,
+  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
+  onDeleteCategory, onMoveLine,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
@@ -98,6 +98,8 @@ export function BudgetScreen({
   onRenameCategory: (category: Category, name: string) => void;
   /** Edit mode only, and both are armed by a first press — see `DoubleTap`. */
   onDeleteLine: (line: Line) => void;
+  /** The checkbox beside a line: stop it asking for money, or start again. */
+  onSnoozeLine: (line: Line, next: boolean) => void;
   /** Tombstones the category AND its lines, and un-files its transactions. */
   onDeleteCategory: (category: Category) => void;
   /** A line dragged to a new place among its siblings. */
@@ -199,6 +201,7 @@ export function BudgetScreen({
             onRenameLine={onRenameLine}
             onRenameCategory={onRenameCategory}
             onDeleteLine={onDeleteLine}
+            onSnoozeLine={onSnoozeLine}
             onDeleteCategory={onDeleteCategory}
             onMoveLine={onMoveLine}
             onDragging={setDragging}
@@ -254,8 +257,8 @@ export function BudgetScreen({
  */
 function CategorySection({
   category, rows, shut, onToggle, onAdd, edit, naming, setNaming, spentOn,
-  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onDeleteCategory,
-  onMoveLine, onDragging,
+  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
+  onDeleteCategory, onMoveLine, onDragging,
 }: {
   category: Category;
   rows: readonly Line[];
@@ -270,6 +273,7 @@ function CategorySection({
   onRenameLine: (line: Line, name: string) => void;
   onRenameCategory: (category: Category, name: string) => void;
   onDeleteLine: (line: Line) => void;
+  onSnoozeLine: (line: Line, next: boolean) => void;
   onDeleteCategory: (category: Category) => void;
   onMoveLine: (line: Line, siblings: readonly Line[], to: number) => void;
   onDragging: (live: boolean) => void;
@@ -372,6 +376,8 @@ function CategorySection({
       {!shut && rows.length > 0 && (
         <View style={styles.colHead}>
           <Text style={[styles.colLabel, styles.colName]} />
+          <View style={styles.snoozeCol} />
+          <Text style={styles.colLabel}>Needs</Text>
           <Text style={styles.colLabel}>Budgeted</Text>
           <Text style={styles.colLabel}>Spent</Text>
           <Text style={styles.colLabel}>Available</Text>
@@ -396,6 +402,7 @@ function CategorySection({
             }}
             onEditAmount={onEditAmount}
             onDelete={() => onDeleteLine(l)}
+            onSnooze={(next) => onSnoozeLine(l, next)}
             grip={edit && rows.length > 1 ? drag.gripFor(i) : undefined}
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
@@ -410,7 +417,8 @@ function CategorySection({
 }
 
 function LineRow({
-  line, spent, edit, naming, onName, onNamed, onEditAmount, onDelete, grip, lifted, dy,
+  line, spent, edit, naming, onName, onNamed, onEditAmount, onDelete, onSnooze,
+  grip, lifted, dy,
 }: {
   line: Line;
   spent: number;
@@ -420,11 +428,15 @@ function LineRow({
   onNamed: (next: string) => void;
   onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
   onDelete: () => void;
+  onSnooze: (next: boolean) => void;
   grip: object | undefined;
   lifted: boolean;
   dy: number;
 }) {
   const pick = { line, spent };
+  // One word, from core. Four colours decided in a component is four chances
+  // for the Mac and the phone to disagree about what a yellow line means.
+  const tone = lineTone(line, spent);
   return (
     <Animated.View
       style={[
@@ -472,6 +484,38 @@ function LineRow({
         </Pressable>
       )}
 
+      {/*
+        Snooze, to the LEFT of the column it quiets — Sean, 2026-09-15. A
+        checkbox rather than a menu because it is a per-line yes/no that gets
+        flipped often, and it is the one control here that changes nothing
+        about the money.
+      */}
+      <Pressable
+        onPress={() => onSnooze(!line.snoozed)}
+        style={styles.snoozeCol}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: line.snoozed }}
+        accessibilityLabel={line.snoozed ? `Wake ${line.name}` : `Snooze ${line.name}`}
+        testID={`line-snooze-${line.id}`}
+      >
+        <View style={[styles.box, line.snoozed && styles.boxOn]}>
+          {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
+        </View>
+      </Pressable>
+
+      {/* What the line is AIMING at. Editable like the other two. */}
+      <AmountCell
+        onPress={(at) => onEditAmount(pick, 'needs', at)}
+        label={`Needs ${formatAmount(line.needs)}`}
+        testID={`line-needs-tap-${line.id}`}
+      >
+        <Money
+          style={[styles.rowNum, toneStyle(tone)]}
+          cents={line.needs}
+          testID={`line-needs-${line.id}`}
+        />
+      </AmountCell>
+
       {/* Each editable NUMBER opens the pad on this page. Not a screen:
           changing one number is a two-second thought, and a full editor for
           it hides the list you were reading to decide. */}
@@ -480,20 +524,23 @@ function LineRow({
         label={`Budgeted ${formatAmount(line.budget)}`}
         testID={`line-budgeted-tap-${line.id}`}
       >
-        <Money style={styles.rowNum} cents={line.budget} testID={`line-budgeted-${line.id}`} />
+        <Money
+          style={[styles.rowNum, toneStyle(tone)]}
+          cents={line.budget}
+          testID={`line-budgeted-${line.id}`}
+        />
       </AmountCell>
       {/* Spent is not tappable. It is what actually moved. */}
-      <Money style={styles.rowNum} cents={spent} testID={`line-spent-${line.id}`} />
+      <Money style={[styles.rowNum, toneStyle(tone)]} cents={spent} testID={`line-spent-${line.id}`} />
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'available', at)}
         label={`Available ${formatAmount(availableOf(line.budget, spent))}`}
         testID={`line-available-tap-${line.id}`}
       >
         <Money
-          style={styles.rowNum}
+          style={[styles.rowNum, toneStyle(tone)]}
           cents={availableOf(line.budget, spent)}
           testID={`line-available-${line.id}`}
-          tone
         />
       </AmountCell>
 
@@ -643,6 +690,21 @@ function AmountCell({ onPress, label, testID, children }: {
 }
 
 /**
+ * The colour a line's numbers carry, from core's one-word verdict.
+ *
+ * Gray for snoozed, red for overspent, yellow for short of its target, green
+ * for funded — Sean, 2026-09-15. The mapping lives here and the DECISION
+ * lives in core, which is the split that keeps two surfaces from disagreeing
+ * about what a colour means.
+ */
+function toneStyle(tone: LineTone): object {
+  return tone === 'snoozed' ? styles.toneSnoozed
+    : tone === 'over' ? styles.toneOver
+    : tone === 'short' ? styles.toneShort
+    : styles.toneFunded;
+}
+
+/**
  * A money column.
  *
  * `tone` colours it: an overspent line is the one thing on this screen that
@@ -703,16 +765,29 @@ const styles = StyleSheet.create({
   headAdd: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
   headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
   colHead: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
-    paddingTop: SPACE.xs, paddingLeft: INDENT,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
+    paddingTop: SPACE.xs, paddingLeft: INDENT - GRIP + GRIP,
   },
+  // 56, not 68. A fourth money column arrived on 2026-09-15 and four at the
+  // old width plus the snooze box leave a phone about seventy points for the
+  // NAME — which is how `Groceries` became `Groc…` on the category heading
+  // the first time this screen grew a column.
   colLabel: {
-    color: T.faint, fontSize: 10, width: 68, textAlign: 'right',
+    color: T.faint, fontSize: 10, width: 56, flexShrink: 1, textAlign: 'right',
     textTransform: 'uppercase', letterSpacing: 0.4,
   },
-  colName: { flex: 1, minWidth: 0, textAlign: 'left' },
+  /*
+   * A FLOOR under the name, and columns that give way instead.
+   *
+   * With `minWidth: 0` the name is the only flexible thing in the row, so the
+   * fourth money column (Needs, 2026-09-15) plus the snooze box took it to
+   * ZERO on a 375-point phone: the rename target was in the tree, laid out,
+   * and impossible to hit — which is how it failed, as a click timing out on
+   * an element that "resolved" fine. The numbers shrink first now.
+   */
+  colName: { flex: 1, minWidth: 64, textAlign: 'left' },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
     paddingLeft: INDENT - GRIP,
     paddingVertical: SPACE.sm, minHeight: 36, backgroundColor: T.bg,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
@@ -726,7 +801,7 @@ const styles = StyleSheet.create({
   rowName: { color: T.text, fontSize: 15, lineHeight: 20 },
   nameField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
   rowNum: {
-    color: T.text, fontSize: 13, lineHeight: 18, width: 68,
+    color: T.text, fontSize: 13, lineHeight: 18, width: 56, flexShrink: 1,
     textAlign: 'right', fontVariant: ['tabular-nums'],
   },
   del: {
@@ -736,10 +811,24 @@ const styles = StyleSheet.create({
   delArmed: { backgroundColor: T.danger, borderColor: T.danger },
   delText: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
   dropLine: { height: 2, backgroundColor: T.accent, marginLeft: INDENT },
-  // Overspent. The only red on this screen, because it is the only thing here
-  // that has to be seen without being read.
+  // The four states a line can be in — see core's `lineTone`. Gray reads as
+  // "not asking", which is exactly what a snoozed line is.
+  toneSnoozed: { color: T.faint },
+  toneOver: { color: T.danger },
+  toneShort: { color: T.gold },
+  toneFunded: { color: T.positive },
+  // Kept for the category heading, which has no target of its own to be
+  // short of and so only ever answers "is there any left".
   over: { color: T.danger },
   under: { color: T.positive },
+  snoozeCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  box: {
+    width: 15, height: 15, borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.dim,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  boxOn: { backgroundColor: T.dim, borderColor: T.dim },
+  boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
   sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: INDENT },
   empty: {
     flexGrow: 1, alignItems: 'center', justifyContent: 'center',

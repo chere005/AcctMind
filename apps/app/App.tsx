@@ -96,7 +96,11 @@ export default function App() {
   /** The row whose DATE is being picked, if any. A date is chosen, not typed. */
   const [dating, setDating] = useState<Txn | null>(null);
   const [pad, setPad] = useState<
-    { line: Line; spent: number; field: LineField; budget: number; at: Anchor } | null
+    {
+      line: Line; spent: number; field: LineField;
+      /** The value being typed, held as whichever number is STORED. */
+      budget: number; needs: number; at: Anchor;
+    } | null
   >(null);
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -384,13 +388,15 @@ export default function App() {
                     name: 'New line',
                     category,
                     budget: 0,
+                    needs: 0,
+                    snoozed: false,
                     order: siblings.reduce((n, l) => Math.max(n, l.order), 0) + REORDER_GAP,
                     created: now,
                     updated: now,
                   }));
                 }}
                 onEditAmount={({ line, spent }, field, at) =>
-                  setPad({ line, spent, field, budget: line.budget, at })}
+                  setPad({ line, spent, field, budget: line.budget, needs: line.needs, at })}
                 onRenameLine={(line, name) => {
                   if (phase.k !== 'ready') return;
                   commit(phase, putLine(phase.store, touch({ ...line, name }, Date.now())));
@@ -399,6 +405,12 @@ export default function App() {
                   if (phase.k !== 'ready') return;
                   commit(phase, putCategory(
                     phase.store, touch({ ...category, name }, Date.now()),
+                  ));
+                }}
+                onSnoozeLine={(line, next) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, putLine(
+                    phase.store, touch({ ...line, snoozed: next }, Date.now()),
                   ));
                 }}
                 onDeleteLine={(line) => {
@@ -583,16 +595,24 @@ export default function App() {
               anchor={pad?.at ?? null}
               value={pad === null
                 ? 0
-                : pad.field === 'available' ? availableOf(pad.budget, pad.spent) : pad.budget}
-              onValue={(next) => setPad((p) => (p === null ? p : {
-                ...p,
-                budget: p.field === 'available' ? budgetFor(next, p.spent) : next,
-              }))}
+                : pad.field === 'needs' ? pad.needs
+                : pad.field === 'available' ? availableOf(pad.budget, pad.spent)
+                : pad.budget}
+              onValue={(next) => setPad((p) => (p === null ? p : (
+                p.field === 'needs'
+                  ? { ...p, needs: next }
+                  : {
+                      ...p,
+                      budget: p.field === 'available' ? budgetFor(next, p.spent) : next,
+                    }
+              )))}
               onDone={() => {
                 if (phase.k !== 'ready' || pad === null) return;
+                // NEEDS is its own stored number; the other two are two ways
+                // of saying what BUDGET is — see core/budget.ts.
                 commit(phase, putLine(
                   phase.store,
-                  touch({ ...pad.line, budget: pad.budget }, Date.now()),
+                  touch({ ...pad.line, budget: pad.budget, needs: pad.needs }, Date.now()),
                 ));
                 setPad(null);
               }}

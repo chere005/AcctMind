@@ -91,3 +91,50 @@ export function applyOp(current: number, op: AmountOp, typed: number): number | 
   // through JSON, so a value can change identity by being saved and loaded.
   return next === 0 ? 0 : next;
 }
+
+/**
+ * How a budget line is READING right now, as one word.
+ *
+ * Sean, 2026-09-15: "any column that needs more money is yellow, negative is
+ * red, positive is green", and a snoozed line "turns the column gray". So the
+ * screen asks this rather than deciding for itself — four colours in a
+ * component is four chances for the Mac and the phone to disagree about what
+ * a yellow line means.
+ *
+ * The ORDER of the tests is the rule, not an implementation detail:
+ *
+ *   SNOOZED first, because it is a statement that this line is not asking for
+ *   anything. A snoozed line that still painted yellow would be a snooze that
+ *   does not snooze.
+ *
+ *   OVER next, and it beats short. Money already spent that you do not have
+ *   is worse than money you have not assigned yet, and if a line is both, the
+ *   overspend is the one to look at.
+ *
+ *   SHORT only when a target was actually SET. Zero means "no target", and
+ *   painting every line without one yellow would make the colour mean
+ *   nothing — most lines never get a target.
+ */
+export type LineTone = 'snoozed' | 'over' | 'short' | 'funded';
+
+export function lineTone(
+  line: { budget: number; needs: number; snoozed: boolean },
+  spent: number,
+): LineTone {
+  if (line.snoozed) return 'snoozed';
+  if (availableOf(line.budget, spent) < 0) return 'over';
+  if (line.needs > 0 && line.budget < line.needs) return 'short';
+  return 'funded';
+}
+
+/**
+ * What is still to assign before a line meets its target, or 0.
+ *
+ * Never negative: a line funded past its target does not need minus money,
+ * and returning a negative here would draw a "needs" figure that reads as a
+ * debt when it is the opposite.
+ */
+export function stillNeeded(line: { budget: number; needs: number; snoozed: boolean }): number {
+  if (line.snoozed || line.needs <= 0) return 0;
+  return Math.max(0, line.needs - line.budget);
+}
