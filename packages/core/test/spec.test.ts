@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   addDays, addMonths, amountDigits, applyOp, availableOf, budgetFor, dayOf,
+  importKey, parseDelimited, usDate, wellsFargoName,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
   parseAmount, signedCents, sortTxns,
 } from '../src/index';
@@ -233,6 +234,41 @@ describe('spec/budget.json', () => {
   it('the operator picker', () => {
     for (const [current, op, typed, want] of b.ops) {
       expect(applyOp(current, op, typed), `${current} ${op} ${typed}`).toBe(want);
+    }
+  });
+});
+
+describe('spec/csv.json', () => {
+  const c = spec<{
+    delimited: [string, string[][]][];
+    usDate: [string, string | null][];
+    name: [string, string][];
+    key: [[string, number, string], [string, number, string], boolean][];
+  }>('csv');
+
+  it('splits CSV text into rows of fields', () => {
+    for (const [input, want] of c.delimited) {
+      expect(parseDelimited(input), JSON.stringify(input)).toEqual(want);
+    }
+  });
+
+  it('reads the date without ever building a Date', () => {
+    for (const [input, want] of c.usDate) {
+      expect(usDate(input), JSON.stringify(input)).toBe(want);
+    }
+  });
+
+  it('names a row from what the bank called it', () => {
+    for (const [input, want] of c.name) {
+      expect(wellsFargoName(input), JSON.stringify(input)).toBe(want);
+    }
+  });
+
+  it('matches two lines on date, cents and raw text — never on the name', () => {
+    for (const [a, b, same] of c.key) {
+      const key = ([date, amount, description]: [string, number, string]) =>
+        importKey({ date, amount, description });
+      expect(key(a) === key(b), `${JSON.stringify(a)} vs ${JSON.stringify(b)}`).toBe(same);
     }
   });
 });

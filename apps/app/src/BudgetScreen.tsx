@@ -11,16 +11,27 @@
  *
  * The category's own row shows those three summed over its lines, so a
  * folded category still answers the question the tab exists for.
+ *
+ * EVERYTHING IS EDITED HERE. Sean, 2026-09-15: "get rid of the edit screen
+ * for budget, everything can be edited from the screen itself." There was a
+ * `LineEditor` modal that owned renaming and deleting a line; it is gone, and
+ * the pencil in the top bar is what this screen has instead — the same
+ * gesture the Transactions tab already uses, so the two tabs stop disagreeing
+ * about what a pencil means.
  */
-import { useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+} from 'react-native';
 import {
   availableOf, formatAmount, total,
   type Category, type Line, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
+import { PencilIcon, XIcon } from './Icons';
+import { useRowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
-import { BarRow, TopBar } from './TopBar';
+import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
 export type LinePick = { line: Line; spent: number };
@@ -29,21 +40,51 @@ export type LineField = 'budget' | 'available';
 /** Where a tapped amount sits, in window coordinates. */
 export type Anchor = { x: number; y: number; w: number; h: number };
 
+/**
+ * The id of the heading that is not a record.
+ *
+ * `category: null` transactions need somewhere to be seen, and core's note on
+ * `Txn.category` says why that somewhere must not be a real category: one
+ * would sync, get renamed, and be deletable out from under its own rows. So
+ * it is a heading this screen draws, with no +, no grip, no rename and no
+ * delete — Sean, 2026-09-15, and it is also where a deleted category's
+ * transactions land.
+ */
+// Built rather than written as an escape: a literal NUL in the source makes
+// git call this file binary, which costs every diff and every grep on it.
+const NONE = `${String.fromCharCode(31)}none`;
+
+/**
+ * Keep the tap from stealing focus off the field it just opened.
+ *
+ * Tapping a name mounts an autoFocus TextInput — and then the SAME click
+ * finishes on the body, focus leaves, `onBlur` commits, and the field closes
+ * in the tick it opened. On screen that reads as the rename doing nothing at
+ * all, which is what it did for the first pass of this screen and what the
+ * Transactions tab's inline amount editor hit before it.
+ *
+ * `preventDefault` on mousedown stops the browser moving focus in the first
+ * place. Web-only and harmless elsewhere: react-native-web forwards unknown
+ * props to the DOM node, and native never sees a mousedown.
+ */
+const KEEP_FOCUS = {
+  onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
+} as unknown as Record<string, unknown>;
+
 export function BudgetScreen({
-  txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine, onEditLine,
-  onEditAmount,
+  txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine,
+  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onDeleteCategory,
+  onMoveLine,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
   lines: readonly Line[];
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
-  /** Open the category manager — the only place a category is made. */
+  /** Open the category manager — where a category is MADE and coloured. */
   onManage: () => void;
   /** The + beside a category: a new line inside it. */
   onAddLine: (category: string) => void;
-  /** Tapping a line's NAME opens the full editor — rename, delete. */
-  onEditLine: (pick: LinePick) => void;
   /**
    * Tapping either AMOUNT opens the small pad over this page.
    *
@@ -52,9 +93,31 @@ export function BudgetScreen({
    * number it is changing.
    */
   onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
+  /** Edit mode only: a name typed in place, committed on blur or Return. */
+  onRenameLine: (line: Line, name: string) => void;
+  onRenameCategory: (category: Category, name: string) => void;
+  /** Edit mode only, and both are armed by a first press — see `DoubleTap`. */
+  onDeleteLine: (line: Line) => void;
+  /** Tombstones the category AND its lines, and un-files its transactions. */
+  onDeleteCategory: (category: Category) => void;
+  /** A line dragged to a new place among its siblings. */
+  onMoveLine: (line: Line, siblings: readonly Line[], to: number) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
+  /**
+   * Edit mode, and the same rule as the Transactions tab: the pencil turns it
+   * on, and every row shows its controls at once rather than one row at a
+   * time. Leaving it clears what edit mode was holding — a rename half-typed
+   * into a field nobody can see any more is not a change anyone asked for.
+   */
+  const [edit, setEdit] = useState(false);
+  /** The name being typed in place, if any. One at a time, held here. */
+  const [naming, setNaming] = useState<string | null>(null);
+  /** Is a row mid-drag anywhere? Only the ScrollView needs to know. */
+  const [dragging, setDragging] = useState(false);
+
+  const leaveEdit = () => { setEdit(false); setNaming(null); };
 
   const shown = view === null ? categories : categories.filter((c) => c.id === view);
   /** What has actually moved through a line. Negative for spending. */
@@ -66,6 +129,10 @@ export function BudgetScreen({
     (n, c) => n + linesIn(c.id).reduce((m, l) => m + l.budget, 0), 0,
   );
 
+  /** Money that belongs to no line at all. Drawn under its own heading. */
+  const loose = txns.filter((t) => t.category === null);
+  const showNone = view === null && loose.length > 0;
+
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
 
@@ -74,6 +141,16 @@ export function BudgetScreen({
       <TopBar
         title="Budget"
         titleTestID="budget-title"
+        controls={
+          <CircleBtn
+            on={edit}
+            onPress={() => (edit ? leaveEdit() : setEdit(true))}
+            label={edit ? 'Done editing' : 'Edit budget'}
+            testID="budget-edit-toggle"
+          >
+            <PencilIcon color={edit ? '#ffffff' : T.text} />
+          </CircleBtn>
+        }
         picker={
           <SectionPick
             label="Categories"
@@ -95,125 +172,439 @@ export function BudgetScreen({
         </Text>
       </BarRow>
 
-      <ScrollView contentContainerStyle={styles.list} scrollEnabled={shown.length > 0}>
-        {shown.length === 0 && (
+      <ScrollView
+        contentContainerStyle={styles.list}
+        scrollEnabled={shown.length > 0 && !dragging}
+      >
+        {shown.length === 0 && !showNone && (
           <View style={styles.empty} testID="budget-empty">
             <Text style={styles.emptyTitle}>No categories yet</Text>
             <Text style={styles.emptyBody}>Make one in Manage Categories.</Text>
           </View>
         )}
 
-        {shown.map((c) => {
-          const shut = collapsed.includes(c.id);
-          const rows = linesIn(c.id);
-          const budgeted = rows.reduce((n, l) => n + l.budget, 0);
-          const spent = rows.reduce((n, l) => n + spentOn(l.id), 0);
-          return (
-            <View key={c.id} testID="category-section" style={styles.section}>
-              <View style={styles.head}>
-                <Pressable
-                  onPress={() => toggle(c.id)}
-                  style={styles.headMain}
-                  accessibilityRole="button"
-                  accessibilityState={{ expanded: !shut }}
-                  testID={`category-head-${c.id}`}
-                >
-                  <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
-                  <Dot colors={[c.color]} size={11} />
-                  <Text style={styles.headName} numberOfLines={1}>{c.name}</Text>
-                  {/*
-                    ONE number on the heading, not three.
-                    
-                    It carried all three at first and the category's NAME was
-                    what gave: three 68-point columns plus the + leave about
-                    eighty points on a phone, so `Groceries` drew as `Groc…`.
-                    Available is the number a folded category has to answer —
-                    "is there any left" — and the other two are one tap away.
-                  */}
-                  <Money
-                    style={styles.headNum}
-                    cents={availableOf(budgeted, spent)}
-                    testID={`category-available-${c.id}`}
-                    tone
-                  />
-                </Pressable>
-                {/* Adds a LINE, not a transaction. */}
-                <Pressable
-                  onPress={() => onAddLine(c.id)}
-                  style={styles.headAdd}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Add a line to ${c.name}`}
-                  testID={`category-add-${c.id}`}
-                >
-                  <Text style={styles.headAddText}>+</Text>
-                </Pressable>
-              </View>
+        {shown.map((c) => (
+          <CategorySection
+            key={c.id}
+            category={c}
+            rows={linesIn(c.id)}
+            shut={collapsed.includes(c.id)}
+            onToggle={() => toggle(c.id)}
+            onAdd={() => onAddLine(c.id)}
+            edit={edit}
+            naming={naming}
+            setNaming={setNaming}
+            spentOn={spentOn}
+            onEditAmount={onEditAmount}
+            onRenameLine={onRenameLine}
+            onRenameCategory={onRenameCategory}
+            onDeleteLine={onDeleteLine}
+            onDeleteCategory={onDeleteCategory}
+            onMoveLine={onMoveLine}
+            onDragging={setDragging}
+          />
+        ))}
 
-              {!shut && rows.length === 0 && (
-                <Text style={styles.sectionEmpty} testID="category-empty">
-                  Nothing budgeted here yet — tap + to add a line
-                </Text>
-              )}
+        {/*
+          The one heading that is not a record.
 
-              {!shut && rows.length > 0 && (
-                <View style={styles.colHead}>
-                  <Text style={[styles.colLabel, styles.colName]} />
-                  <Text style={styles.colLabel}>Budgeted</Text>
-                  <Text style={styles.colLabel}>Spent</Text>
-                  <Text style={styles.colLabel}>Available</Text>
-                </View>
-              )}
-
-              {!shut && rows.map((l) => {
-                const spentHere = spentOn(l.id);
-                const pick = { line: l, spent: spentHere };
-                return (
-                  <View key={l.id} style={styles.row} testID={`line-row-${l.id}`}>
-                    {/* The NAME opens the whole line — rename, delete. */}
-                    <Pressable
-                      onPress={() => onEditLine(pick)}
-                      style={styles.colName}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${l.name}, rename or delete`}
-                      testID={`line-name-${l.id}`}
-                    >
-                      <Text style={styles.rowName} numberOfLines={1}>
-                        {l.name === '' ? 'Untitled' : l.name}
-                      </Text>
-                    </Pressable>
-                    {/* Each editable NUMBER opens the pad on this page. Not a
-                        screen: changing one number is a two-second thought,
-                        and a full editor for it hides the list you were
-                        reading to decide. */}
-                    <AmountCell
-                      onPress={(at) => onEditAmount(pick, 'budget', at)}
-                      label={`Budgeted ${formatAmount(l.budget)}`}
-                      testID={`line-budgeted-tap-${l.id}`}
-                    >
-                      <Money style={styles.rowNum} cents={l.budget} testID={`line-budgeted-${l.id}`} />
-                    </AmountCell>
-                    {/* Spent is not tappable. It is what actually moved. */}
-                    <Money style={styles.rowNum} cents={spentHere} testID={`line-spent-${l.id}`} />
-                    <AmountCell
-                      onPress={(at) => onEditAmount(pick, 'available', at)}
-                      label={`Available ${formatAmount(availableOf(l.budget, spentHere))}`}
-                      testID={`line-available-tap-${l.id}`}
-                    >
-                      <Money
-                        style={styles.rowNum}
-                        cents={availableOf(l.budget, spentHere)}
-                        testID={`line-available-${l.id}`}
-                        tone
-                      />
-                    </AmountCell>
-                  </View>
-                );
-              })}
+          Drawn last, because it is where things END UP rather than somewhere
+          anyone files to on purpose: a transaction with no category yet, or
+          one whose category was deleted out from under it. It carries the
+          SPENT total and nothing else — there is no budgeted figure for money
+          nobody has assigned, and an `available` computed from a budget of
+          zero would just restate the same number a second time.
+        */}
+        {showNone && (
+          <View testID="category-section-none" style={styles.section}>
+            <View style={styles.head}>
+              <Pressable
+                onPress={() => toggle(NONE)}
+                style={styles.headMain}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: !collapsed.includes(NONE) }}
+                testID="category-head-none"
+              >
+                <Text style={[styles.chev, collapsed.includes(NONE) && styles.chevShut]}>⌄</Text>
+                <Dot colors={[T.faint]} size={11} />
+                <Text style={styles.headName} numberOfLines={1}>No category</Text>
+                <Money style={styles.headNum} cents={total(loose)} testID="category-none-total" tone />
+              </Pressable>
             </View>
-          );
-        })}
+            {!collapsed.includes(NONE) && (
+              <Text style={styles.sectionEmpty} testID="category-none-count">
+                {loose.length} transaction{loose.length === 1 ? '' : 's'} not filed against a line
+              </Text>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
+  );
+}
+
+/**
+ * One category, its lines, and the drag that reorders them.
+ *
+ * A component rather than a loop body because it OWNS a hook: each category
+ * has its own `useRowDrag`, since a line only ever moves within the category
+ * it belongs to. Rendering the hook inside `map` would call a different
+ * number of hooks whenever a category is added — the same shape the
+ * Transactions tab uses, for the same reason.
+ */
+function CategorySection({
+  category, rows, shut, onToggle, onAdd, edit, naming, setNaming, spentOn,
+  onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onDeleteCategory,
+  onMoveLine, onDragging,
+}: {
+  category: Category;
+  rows: readonly Line[];
+  shut: boolean;
+  onToggle: () => void;
+  onAdd: () => void;
+  edit: boolean;
+  naming: string | null;
+  setNaming: (id: string | null) => void;
+  spentOn: (id: string) => number;
+  onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
+  onRenameLine: (line: Line, name: string) => void;
+  onRenameCategory: (category: Category, name: string) => void;
+  onDeleteLine: (line: Line) => void;
+  onDeleteCategory: (category: Category) => void;
+  onMoveLine: (line: Line, siblings: readonly Line[], to: number) => void;
+  onDragging: (live: boolean) => void;
+}) {
+  const drag = useRowDrag(rows.length, (from, to) => {
+    const moved = rows[from];
+    if (moved !== undefined) onMoveLine(moved, rows, to);
+  });
+
+  // Reported up so the ScrollView can hold still. In an effect rather than
+  // during render: telling a PARENT to set state while rendering a child is
+  // the render-phase update this repo has already been bitten by once.
+  useEffect(() => { onDragging(drag.dragIdx !== null); }, [drag.dragIdx, onDragging]);
+
+  const budgeted = rows.reduce((n, l) => n + l.budget, 0);
+  const spent = rows.reduce((n, l) => n + spentOn(l.id), 0);
+
+  return (
+    <View testID="category-section" style={styles.section}>
+      <View style={styles.head}>
+        {/*
+          In edit mode the heading is a FIELD, not a button. Sean,
+          2026-09-15: "in edit mode tapping on a section name allows renaming
+          in place." Outside edit mode it folds, exactly as before — one
+          gesture, two meanings, and the mode is the only thing that decides
+          which, so nobody has to remember a second gesture.
+        */}
+        {edit && naming === category.id ? (
+          <View style={styles.headMain}>
+            <Text style={styles.chev}>⌄</Text>
+            <Dot colors={[category.color]} size={11} />
+            <NameField
+              value={category.name}
+              style={styles.headName}
+              onDone={(next) => {
+                setNaming(null);
+                if (next !== category.name && next !== '') onRenameCategory(category, next);
+              }}
+              testID={`category-name-input-${category.id}`}
+            />
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => (edit ? setNaming(category.id) : onToggle())}
+            {...(edit ? KEEP_FOCUS : {})}
+            style={styles.headMain}
+            accessibilityRole="button"
+            accessibilityState={edit ? undefined : { expanded: !shut }}
+            testID={`category-head-${category.id}`}
+          >
+            <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
+            <Dot colors={[category.color]} size={11} />
+            <Text style={styles.headName} numberOfLines={1}>
+              {category.name === '' ? 'Untitled' : category.name}
+            </Text>
+            {/*
+              ONE number on the heading, not three.
+
+              It carried all three at first and the category's NAME was what
+              gave: three 68-point columns plus the + leave about eighty
+              points on a phone, so `Groceries` drew as `Groc…`. Available is
+              the number a folded category has to answer — "is there any
+              left" — and the other two are one tap away.
+            */}
+            <Money
+              style={styles.headNum}
+              cents={availableOf(budgeted, spent)}
+              testID={`category-available-${category.id}`}
+              tone
+            />
+          </Pressable>
+        )}
+
+        {edit ? (
+          <DoubleTap
+            onConfirm={() => onDeleteCategory(category)}
+            label={`Delete ${category.name} and un-file its transactions`}
+            testID={`category-delete-${category.id}`}
+          />
+        ) : (
+          /* Adds a LINE, not a transaction. */
+          <Pressable
+            onPress={onAdd}
+            style={styles.headAdd}
+            accessibilityRole="button"
+            accessibilityLabel={`Add a line to ${category.name}`}
+            testID={`category-add-${category.id}`}
+          >
+            <Text style={styles.headAddText}>+</Text>
+          </Pressable>
+        )}
+      </View>
+
+      {!shut && rows.length === 0 && (
+        <Text style={styles.sectionEmpty} testID="category-empty">
+          Nothing budgeted here yet — tap + to add a line
+        </Text>
+      )}
+
+      {!shut && rows.length > 0 && (
+        <View style={styles.colHead}>
+          <Text style={[styles.colLabel, styles.colName]} />
+          <Text style={styles.colLabel}>Budgeted</Text>
+          <Text style={styles.colLabel}>Spent</Text>
+          <Text style={styles.colLabel}>Available</Text>
+        </View>
+      )}
+
+      {!shut && rows.map((l, i) => (
+        <View key={l.id} ref={drag.registerRow(i)} collapsable={false}>
+          {/* One line, at the boundary the row would land on. Nothing else
+              moves while a drag is live — a list that rearranges under a
+              moving finger is a list you cannot aim at. */}
+          {drag.slot === i && <View style={styles.dropLine} testID="budget-drop-line" />}
+          <LineRow
+            line={l}
+            spent={spentOn(l.id)}
+            edit={edit}
+            naming={naming === l.id}
+            onName={() => setNaming(l.id)}
+            onNamed={(next) => {
+              setNaming(null);
+              if (next !== l.name && next !== '') onRenameLine(l, next);
+            }}
+            onEditAmount={onEditAmount}
+            onDelete={() => onDeleteLine(l)}
+            grip={edit && rows.length > 1 ? drag.gripFor(i) : undefined}
+            lifted={drag.dragIdx === i}
+            dy={drag.dragIdx === i ? drag.dragDy : 0}
+          />
+        </View>
+      ))}
+      {!shut && drag.slot === rows.length && (
+        <View style={styles.dropLine} testID="budget-drop-line" />
+      )}
+    </View>
+  );
+}
+
+function LineRow({
+  line, spent, edit, naming, onName, onNamed, onEditAmount, onDelete, grip, lifted, dy,
+}: {
+  line: Line;
+  spent: number;
+  edit: boolean;
+  naming: boolean;
+  onName: () => void;
+  onNamed: (next: string) => void;
+  onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
+  onDelete: () => void;
+  grip: object | undefined;
+  lifted: boolean;
+  dy: number;
+}) {
+  const pick = { line, spent };
+  return (
+    <Animated.View
+      style={[
+        styles.row,
+        lifted && styles.rowLifted,
+        { transform: [{ translateY: dy }], zIndex: lifted ? 2 : 0 },
+      ]}
+      testID={`line-row-${line.id}`}
+    >
+      {/*
+        The grip, drawn faint and always occupying its space — hidden by
+        OPACITY, not by being absent, so turning edit mode on does not slide
+        every line name in the budget sideways. The Transactions tab learned
+        this the same way.
+      */}
+      <View
+        style={[styles.grip, grip === undefined && styles.gripOff]}
+        pointerEvents={grip === undefined ? 'none' : 'auto'}
+        accessibilityLabel="Drag to reorder"
+        testID={`line-grip-${line.id}`}
+        {...(grip ?? {})}
+      >
+        <Text style={styles.gripText}>≡</Text>
+      </View>
+
+      {naming ? (
+        <NameField
+          value={line.name}
+          style={[styles.rowName, styles.colName]}
+          onDone={onNamed}
+          testID={`line-name-input-${line.id}`}
+        />
+      ) : (
+        <Pressable
+          onPress={edit ? onName : undefined}
+          {...(edit ? KEEP_FOCUS : {})}
+          style={styles.colName}
+          accessibilityRole={edit ? 'button' : undefined}
+          accessibilityLabel={edit ? `Rename ${line.name}` : undefined}
+          testID={`line-name-${line.id}`}
+        >
+          <Text style={styles.rowName} numberOfLines={1}>
+            {line.name === '' ? 'Untitled' : line.name}
+          </Text>
+        </Pressable>
+      )}
+
+      {/* Each editable NUMBER opens the pad on this page. Not a screen:
+          changing one number is a two-second thought, and a full editor for
+          it hides the list you were reading to decide. */}
+      <AmountCell
+        onPress={(at) => onEditAmount(pick, 'budget', at)}
+        label={`Budgeted ${formatAmount(line.budget)}`}
+        testID={`line-budgeted-tap-${line.id}`}
+      >
+        <Money style={styles.rowNum} cents={line.budget} testID={`line-budgeted-${line.id}`} />
+      </AmountCell>
+      {/* Spent is not tappable. It is what actually moved. */}
+      <Money style={styles.rowNum} cents={spent} testID={`line-spent-${line.id}`} />
+      <AmountCell
+        onPress={(at) => onEditAmount(pick, 'available', at)}
+        label={`Available ${formatAmount(availableOf(line.budget, spent))}`}
+        testID={`line-available-tap-${line.id}`}
+      >
+        <Money
+          style={styles.rowNum}
+          cents={availableOf(line.budget, spent)}
+          testID={`line-available-${line.id}`}
+          tone
+        />
+      </AmountCell>
+
+      {edit && (
+        <DoubleTap
+          onConfirm={onDelete}
+          label={`Delete ${line.name}`}
+          testID={`line-delete-${line.id}`}
+        />
+      )}
+    </Animated.View>
+  );
+}
+
+/**
+ * A delete that needs two presses, the second one meaning it.
+ *
+ * Sean, 2026-09-15: "a delete button appears which needs the double press to
+ * confirm." Not a modal, because a modal for every line is four taps to
+ * remove four lines and a dialog that gets dismissed without being read. The
+ * button ARMS instead — it turns red and says so — and disarms itself after a
+ * few seconds, so a press left lying around under a thumb that moved on does
+ * not stay dangerous.
+ *
+ * The timer is cleared on unmount. Without that, a row deleted by its own
+ * confirm leaves a timeout holding a setState on a component that is gone.
+ */
+function DoubleTap({ onConfirm, label, testID }: {
+  onConfirm: () => void;
+  label: string;
+  testID: string;
+}) {
+  const [armed, setArmed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
+
+  return (
+    <Pressable
+      onPress={() => {
+        if (armed) {
+          if (timer.current !== null) clearTimeout(timer.current);
+          setArmed(false);
+          onConfirm();
+          return;
+        }
+        setArmed(true);
+        timer.current = setTimeout(() => setArmed(false), 4000);
+      }}
+      style={[styles.del, armed && styles.delArmed]}
+      accessibilityRole="button"
+      accessibilityLabel={armed ? `${label} — press again to confirm` : label}
+      accessibilityState={{ selected: armed }}
+      testID={testID}
+    >
+      {armed
+        ? <Text style={styles.delText} testID={`${testID}-armed`}>Sure?</Text>
+        : <XIcon color={T.dim} />}
+    </Pressable>
+  );
+}
+
+/**
+ * A name, edited in place.
+ *
+ * The field wears the SAME type and no padding of its own, so swapping one
+ * for the other changes no measurement — the row does not nudge as you touch
+ * it. Blur commits and so does Return; there is no cancel, because the change
+ * is one field, it is visible the moment it lands, and typing it back is how
+ * it is undone. The same bargain the Transactions tab's inline editor makes.
+ */
+function NameField({ value, style, onDone, testID }: {
+  value: string;
+  style: object;
+  onDone: (next: string) => void;
+  testID: string;
+}) {
+  const [text, setText] = useState(value);
+  const field = useRef<TextInput>(null);
+  /*
+   * The blur that arrives with the tap that OPENED this field is not a person
+   * leaving it.
+   *
+   * Mount, autofocus, and then the same click finishes on the document and
+   * takes focus away again — so `onBlur` committed and closed the editor in
+   * the tick it opened, and a rename looked like a button that did nothing.
+   * `preventDefault` on the opening mousedown was tried first and does not
+   * stop it.
+   *
+   * So the first blur inside this window hands focus BACK instead of
+   * committing. After it, blur means what it says. Measured at 250ms because
+   * the spurious one lands in the same frame; a person cannot tap, aim
+   * elsewhere and land it inside a quarter of a second.
+   */
+  const opened = useRef(Date.now());
+  return (
+    <TextInput
+      ref={field}
+      value={text}
+      onChangeText={setText}
+      onBlur={() => {
+        if (Date.now() - opened.current < 250) { field.current?.focus(); return; }
+        onDone(text.trim());
+      }}
+      onSubmitEditing={() => onDone(text.trim())}
+      style={[style, styles.nameField]}
+      autoFocus
+      selectTextOnFocus
+      returnKeyType="done"
+      testID={testID}
+    />
   );
 }
 
@@ -284,7 +675,11 @@ function Money({ cents, style, testID, tone = false }: {
  *
  * DERIVED from the four values the head lays out rather than typed as 47, so
  * resizing the dot or the gap moves both together instead of silently parting.
+ *
+ * The GRIP is drawn inside that indent rather than added to it, so turning
+ * edit mode on moves nothing sideways.
  */
+const GRIP = 16;
 const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
 
 const styles = StyleSheet.create({
@@ -307,28 +702,49 @@ const styles = StyleSheet.create({
   },
   headAdd: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
   headAddText: { color: T.accent, fontSize: 22, lineHeight: 24, fontWeight: '400' },
-  colHead: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingTop: SPACE.xs, paddingLeft: INDENT },
+  colHead: {
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
+    paddingTop: SPACE.xs, paddingLeft: INDENT,
+  },
   colLabel: {
     color: T.faint, fontSize: 10, width: 68, textAlign: 'right',
     textTransform: 'uppercase', letterSpacing: 0.4,
   },
   colName: { flex: 1, minWidth: 0, textAlign: 'left' },
   row: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, paddingLeft: INDENT,
-    paddingVertical: SPACE.sm, minHeight: 36,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
+    paddingLeft: INDENT - GRIP,
+    paddingVertical: SPACE.sm, minHeight: 36, backgroundColor: T.bg,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
+  // A row riding the finger paints over its neighbours, so it has to be
+  // opaque — `row` sets the background for exactly that reason.
+  rowLifted: { opacity: 0.96 },
+  grip: { width: GRIP, alignItems: 'center', justifyContent: 'center' },
+  gripOff: { opacity: 0 },
+  gripText: { color: T.faint, fontSize: 15, lineHeight: 18 },
   rowName: { color: T.text, fontSize: 15, lineHeight: 20 },
+  nameField: { padding: 0, margin: 0, backgroundColor: 'transparent' },
   rowNum: {
     color: T.text, fontSize: 13, lineHeight: 18, width: 68,
     textAlign: 'right', fontVariant: ['tabular-nums'],
   },
+  del: {
+    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
+  delArmed: { backgroundColor: T.danger, borderColor: T.danger },
+  delText: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
+  dropLine: { height: 2, backgroundColor: T.accent, marginLeft: INDENT },
   // Overspent. The only red on this screen, because it is the only thing here
   // that has to be seen without being read.
   over: { color: T.danger },
   under: { color: T.positive },
   sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: INDENT },
-  empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: SPACE.xs, padding: SPACE.xl },
+  empty: {
+    flexGrow: 1, alignItems: 'center', justifyContent: 'center',
+    gap: SPACE.xs, padding: SPACE.xl,
+  },
   emptyTitle: { color: T.text, fontSize: 17 },
   emptyBody: { color: T.dim, fontSize: 15 },
 });

@@ -110,3 +110,20 @@ export function XIcon({ color = '#ffffff', size = 15 }: { color?: string; size?:
     </Svg>
   );
 }
+
+/**
+ * Import: an arrow going INTO a tray.
+ *
+ * Deliberately the mirror of `ShareIcon`'s arrow-leaving-a-box, because the
+ * two sit in the same bar and the direction is the only thing telling them
+ * apart at 15 points.
+ */
+export function ImportIcon({ color = T.text, size = 15 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 3v11" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M7.5 9.5 12 14l4.5-4.5" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M4 17v2.5h16V17" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}

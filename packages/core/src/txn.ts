@@ -1,6 +1,6 @@
 /** Making, checking and ordering transactions. The product's actual rules. */
 
-import type { Draft, DraftErrors, Txn } from './types';
+import type { Draft, DraftErrors, Record_, Txn } from './types';
 import { isDay } from './day';
 import { amountInput, formatAmount, parseAmount } from './money';
 import { touch } from './merge';
@@ -294,8 +294,16 @@ export function sortTxns(txns: readonly Txn[], mode: SortMode = 'date'): Txn[] {
  * `null` for an end of the list. Returns the midpoint, or a clear step beyond
  * the edge — never an average with a missing side, which is how a dragged row
  * ends up at zero and jumps somewhere nobody asked for.
+ *
+ * Takes anything that HAS an order, not a Txn: budget lines are dragged by
+ * the same gesture and were the second caller. Typed to Txn it would have
+ * meant a second copy of the arithmetic, which is exactly the duplication the
+ * standing rule is about.
  */
-export function orderBetween(above: Txn | null, below: Txn | null): number {
+export function orderBetween(
+  above: { order: number } | null,
+  below: { order: number } | null,
+): number {
   if (above === null && below === null) return 0;
   if (above === null) return (below?.order ?? 0) + REORDER_GAP;
   if (below === null) return above.order - REORDER_GAP;
@@ -311,8 +319,16 @@ export function orderBetween(above: Txn | null, below: Txn | null): number {
  *
  * Returns only the row that changed, or null when nothing needs to move —
  * so a drag that ends where it started costs no merge clock and no sync.
+ *
+ * Generic over the record, for the same reason `orderBetween` is: the Budget
+ * tab drags lines with this exact function.
  */
-export function reorder(shown: readonly Txn[], id: string, index: number, now: number): Txn | null {
+export function reorder<R extends Record_ & { order: number }>(
+  shown: readonly R[],
+  id: string,
+  index: number,
+  now: number,
+): R | null {
   const from = shown.findIndex((t) => t.id === id);
   if (from < 0) return null;
   const to = Math.max(0, Math.min(shown.length - 1, index));
@@ -320,7 +336,7 @@ export function reorder(shown: readonly Txn[], id: string, index: number, now: n
   const without = shown.filter((t) => t.id !== id);
   const above = without[to - 1] ?? null;
   const below = without[to] ?? null;
-  const moved = shown[from];
+  const moved: R | undefined = shown[from];
   if (moved === undefined) return null;
   const order = orderBetween(above, below);
   if (order === moved.order) return null;

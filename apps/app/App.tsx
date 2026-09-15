@@ -25,11 +25,13 @@ import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
   live, makeTxn,
-  newId, nextColor, putAccount, putCategory, putLine, reorder, today, tombstone, touch,
+  applyImport, ensureCategory, newId, nextColor, planImport, putAccount, putCategory, putLine, removeCategoryDeep, REORDER_GAP,
+  reorder, today, tombstone, touch,
   txnText, updateTxn,
-  type Category, type Draft, type Line, type Store, type Txn,
+  type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
+import { Import } from './src/Import';
 import * as peer from './src/peer';
 import * as sync from './src/sync';
 import { AddTransaction } from './src/AddTransaction';
@@ -37,7 +39,6 @@ import { Devices } from './src/Devices';
 import { BudgetScreen, type Anchor, type LineField } from './src/BudgetScreen';
 import { AmountPad } from './src/AmountPad';
 import { DayPicker } from './src/DayPicker';
-import { LineEditor } from './src/LineEditor';
 import { Manage } from './src/Manage';
 import { Tabs, type Tab } from './src/Tabs';
 import { TransactionsScreen, type RowAction } from './src/TransactionsScreen';
@@ -46,11 +47,6 @@ import { DEFAULTS, loadPrefs, savePrefs, type Prefs } from './src/prefs';
 import { SPACE, T, TAP } from './src/theme';
 
 /** What the line editor's bar says: the category the line lives in. */
-function categoryName(categories: readonly Category[], id: string | undefined): string {
-  if (id === undefined) return 'Line';
-  return categories.find((c) => c.id === id)?.name || 'Line';
-}
-
 type Phase =
   | { k: 'loading' }
   | { k: 'ready'; store: Store; dropped: number }
@@ -81,6 +77,7 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('budget');
   /** Which manager is open, if either. */
   const [managing, setManaging] = useState<'accounts' | 'categories' | null>(null);
+  const [importing, setImporting] = useState(false);
   /**
    * The budget line being added or edited, if any.
    *
@@ -88,9 +85,6 @@ export default function App() {
    * is the add, and the category is carried either way because a line cannot
    * exist outside one.
    */
-  const [lineEdit, setLineEdit] = useState<
-    { category: string; line: Line | null; spent: number } | null
-  >(null);
   /**
    * The amount being changed on the Budget page, if any.
    *
@@ -176,9 +170,19 @@ export default function App() {
        * blocked store nothing is written at all, which is the whole reason
        * that branch returns above.
        */
-      const withAccount = ensureAccount(r.store, `acct-${newId()}`, Date.now());
-      if (withAccount !== r.store) save(withAccount).catch(() => {});
-      r = { ...r, store: withAccount };
+      const now = Date.now();
+      // And ALWAYS at least one category, for the same reason: the Budget
+      // tab's only way to make a line is the + beside a category, so a store
+      // with none shows an empty state whose instruction is to go elsewhere.
+      // Sean, 2026-09-15. Both are writes, so both happen only after a
+      // successful read — a damaged store is never written to.
+      const seeded = ensureCategory(
+        ensureAccount(r.store, `acct-${newId()}`, now),
+        `cat-${newId()}`,
+        now,
+      );
+      if (seeded !== r.store) save(seeded).catch(() => {});
+      r = { ...r, store: seeded };
       storeRef.current = r.store;
 
       // Show the device's own ledger FIRST, then reconcile. iCloud is
@@ -363,12 +367,60 @@ export default function App() {
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
-                /* The + adds a LINE, not a transaction — Sean, 2026-08-21. */
-                onAddLine={(category) => setLineEdit({ category, line: null, spent: 0 })}
-                onEditLine={({ line, spent }) =>
-                  setLineEdit({ category: line.category, line, spent })}
+                /*
+                 * The + adds a LINE, not a transaction — Sean, 2026-08-21 —
+                 * and since 2026-09-15 it adds one OUTRIGHT rather than
+                 * opening an editor to ask what it should be called. The row
+                 * appears named `New line` with nothing budgeted, and edit
+                 * mode renames it in place. One tap to have the thing, one
+                 * tap to name it, and no modal between them.
+                 */
+                onAddLine={(category) => {
+                  if (phase.k !== 'ready') return;
+                  const now = Date.now();
+                  const siblings = live(phase.store.lines).filter((l) => l.category === category);
+                  commit(phase, putLine(phase.store, {
+                    id: `line-${newId()}`,
+                    name: 'New line',
+                    category,
+                    budget: 0,
+                    order: siblings.reduce((n, l) => Math.max(n, l.order), 0) + REORDER_GAP,
+                    created: now,
+                    updated: now,
+                  }));
+                }}
                 onEditAmount={({ line, spent }, field, at) =>
                   setPad({ line, spent, field, budget: line.budget, at })}
+                onRenameLine={(line, name) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, putLine(phase.store, touch({ ...line, name }, Date.now())));
+                }}
+                onRenameCategory={(category, name) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, putCategory(
+                    phase.store, touch({ ...category, name }, Date.now()),
+                  ));
+                }}
+                onDeleteLine={(line) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, putLine(phase.store, tombstone(line, Date.now())));
+                }}
+                /*
+                 * Three records deep, in core — the category, its lines, and
+                 * the transactions filed against those lines, which go back
+                 * to no category rather than pointing at something deleted.
+                 */
+                onDeleteCategory={(category) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, removeCategoryDeep(phase.store, category.id, Date.now()));
+                }}
+                onMoveLine={(line, siblings, to) => {
+                  if (phase.k !== 'ready') return;
+                  // One row changes, or none — see reorder. A drag that ends
+                  // where it started costs no merge clock and no sync.
+                  const moved = reorder(siblings, line.id, to, Date.now());
+                  if (moved !== null) commit(phase, putLine(phase.store, moved));
+                }}
               />
             )}
 
@@ -411,8 +463,35 @@ export default function App() {
               collapsed={prefs.collapsed}
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
               onManage={() => setManaging('accounts')}
+              onImport={() => setImporting(true)}
             />
             )}
+
+            {/*
+              The CSV import. Sean, 2026-09-15.
+              
+              `applyImport` takes the PLAN rather than the rows, so what gets
+              written is the same object the screen showed a count for — there
+              is no second chance for the two to disagree about how many rows
+              are about to move.
+            */}
+            <Import
+              visible={importing}
+              store={phase.store}
+              accounts={live(phase.store.accounts)}
+              onClose={() => setImporting(false)}
+              onImport={(account: string, rows: readonly CsvRow[], mode: ImportMode) => {
+                if (phase.k !== 'ready') return;
+                const now = Date.now();
+                commit(phase, applyImport(
+                  phase.store,
+                  account,
+                  planImport(phase.store, account, rows, mode),
+                  now,
+                  () => `txn-${newId()}`,
+                ));
+              }}
+            />
             <Manage
               visible={managing !== null}
               label={managing === 'categories' ? 'Categories' : 'Accounts'}
@@ -516,39 +595,6 @@ export default function App() {
                   touch({ ...pad.line, budget: pad.budget }, Date.now()),
                 ));
                 setPad(null);
-              }}
-            />
-            <LineEditor
-              visible={lineEdit !== null}
-              title={
-                categoryName(phase.k === 'ready' ? phase.store.categories : [], lineEdit?.category)
-              }
-              name={lineEdit?.line?.name ?? ''}
-              budget={lineEdit?.line?.budget ?? 0}
-              spent={lineEdit?.spent ?? 0}
-              onCancel={() => setLineEdit(null)}
-              onSave={({ name, budget }) => {
-                if (phase.k !== 'ready' || lineEdit === null) return;
-                const now = Date.now();
-                const existing = lineEdit.line;
-                commit(phase, putLine(phase.store, existing === null
-                  ? {
-                      id: `line-${newId()}`,
-                      name,
-                      category: lineEdit.category,
-                      budget,
-                      order: live(phase.store.lines)
-                        .filter((l) => l.category === lineEdit.category).length,
-                      created: now,
-                      updated: now,
-                    }
-                  : touch({ ...existing, name, budget }, now)));
-                setLineEdit(null);
-              }}
-              onDelete={lineEdit?.line === null || lineEdit === null ? undefined : () => {
-                if (phase.k !== 'ready' || lineEdit.line === null) return;
-                commit(phase, putLine(phase.store, tombstone(lineEdit.line, Date.now())));
-                setLineEdit(null);
               }}
             />
             {/* LAST in the tree, so it is last on the screen. Restyling it

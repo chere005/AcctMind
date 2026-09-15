@@ -27,21 +27,46 @@ async function seed(page: Page): Promise<string> {
   await page.getByTestId('section-manage').click();
   await page.getByTestId('manage-add').click();
   const s = await stored(page) as Stored;
-  const cat = s.categories.filter((c) => c.deleted !== true)[0]?.id ?? '';
+  const cat = s.categories.filter((c) => c.deleted !== true).slice(-1)[0]?.id ?? '';
   await page.getByTestId(`manage-name-${cat}`).fill('Groceries');
   await page.getByTestId('manage-done').click();
+  return makeLine(page, cat, 'Produce', '250');
+}
 
-  await page.getByTestId(`category-add-${cat}`).click();
-  await expect(page.getByTestId('line-save')).toBeVisible();
-  // CLICK before fill — under the mobile project a fill on a Modal's input
-  // silently does nothing otherwise. See sections.spec.ts for the full note.
-  await page.getByTestId('line-name').click();
-  await page.getByTestId('line-name').fill('Produce');
-  await page.getByTestId('line-budget').click();
-  await page.getByTestId('line-budget').fill('250');
-  await page.getByTestId('line-save').click();
-  await expect(page.getByTestId('line-save')).toBeHidden();
-  return liveLines(await stored(page) as Stored)[0]?.id ?? '';
+/**
+ * Make a line inside a category, name it, and budget it.
+ *
+ * The + creates the line OUTRIGHT now — Sean, 2026-09-15, "get rid of the
+ * edit screen for budget, everything can be edited from the screen itself" —
+ * so this is three in-place steps where it used to be one modal: add, rename
+ * under the pencil, then set the amount with the pad.
+ */
+async function makeLine(
+  page: Page, category: string, name: string, budget: string,
+): Promise<string> {
+  await page.getByTestId(`category-add-${category}`).click();
+  const made = liveLines(await stored(page) as Stored)
+    .filter((l) => l.category === category).pop();
+  const id = made?.id ?? '';
+
+  await page.getByTestId('budget-edit-toggle').click();
+  // WAIT for edit mode to be on screen before tapping the name. Clicking
+  // straight after the toggle lands on a Pressable React has not re-rendered
+  // yet — its onPress is still undefined, the click does nothing, and the
+  // failure reads as "the rename field never opened".
+  await expect(page.getByTestId(`line-delete-${id}`)).toBeVisible();
+  await page.getByTestId(`line-name-${id}`).click();
+  await page.getByTestId(`line-name-input-${id}`).fill(name);
+  await page.getByTestId(`line-name-input-${id}`).press('Enter');
+  await page.getByTestId('budget-edit-toggle').click();
+
+  await page.getByTestId(`line-budgeted-tap-${id}`).click();
+  await expect(page.getByTestId('pad-amount')).toBeVisible();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill(budget);
+  await page.getByTestId('pad-amount').press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  return id;
 }
 
 /** Tap one of a line's editable numbers. Opens the box. */
@@ -71,7 +96,6 @@ test('the pad opens over the list, and the page is still READABLE behind it', as
   await tapAmount(page, line, 'budgeted');
 
   await expect(page.getByTestId(`line-row-${line}`)).toBeVisible();
-  await expect(page.getByTestId('line-save')).toBeHidden();
 
   const wash = await page.getByTestId('pad-backdrop')
     .evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -216,7 +240,14 @@ test('the box is small, centred under what was tapped, and never off-screen', as
   // Under half the screen. It has been asked to be smaller three times;
   // the number here moves with it so the claim stays worth checking.
   expect(onMid!.width).toBeLessThan(view.width * 0.5);
-  expect(onMid!.y).toBeGreaterThan(mid!.y);
+  // BESIDE the cell, not necessarily below it. "Directly underneath" is the
+  // preference and the pad takes it when there is room; against the bottom of
+  // the window it flips above rather than hanging off the screen, which is
+  // the clamp doing its job. Asserting `y >` broke the day a default category
+  // pushed the row far enough down to trigger the flip — a true statement
+  // about the old layout, not about the rule. What the rule actually promises
+  // is that the box stays WITH its cell.
+  expect(Math.abs(onMid!.y - mid!.y)).toBeLessThan(220);
   expect(Math.abs((onMid!.x + onMid!.width / 2) - (mid!.x + mid!.width / 2))).toBeLessThan(12);
 
   await commit(page);

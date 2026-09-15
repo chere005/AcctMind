@@ -129,29 +129,29 @@ test('the + beside a category adds a LINE, not a transaction', async ({ page }) 
   await page.getByTestId('section-manage').click();
   await page.getByTestId('manage-add').click();
   const store = await stored(page) as Stored;
-  const cat = store.categories.filter((c) => c.deleted !== true)[0];
+  // slice(-1): a default category now exists on first run, so the one just
+  // made in Manage is the LAST, not the first.
+  const cat = store.categories.filter((c) => c.deleted !== true).slice(-1)[0];
   await page.getByTestId(`manage-name-${cat?.id}`).fill('Groceries');
   await page.getByTestId('manage-done').click();
 
   await page.getByTestId(`category-add-${cat?.id}`).click();
-  // The LINE editor, not the transaction form.
-  await expect(page.getByTestId('line-save')).toBeVisible();
+  // A LINE, not a transaction — and no modal of any kind. The + used to open
+  // a line editor; since 2026-09-15 it just makes the row, and the
+  // transaction form must still not be what appears.
   await expect(page.getByTestId('save-button')).toBeHidden();
 
-  await page.getByTestId('line-name').click();
-  await page.getByTestId('line-name').fill('Produce');
-  await page.getByTestId('line-budget').click();
-  await page.getByTestId('line-budget').fill('120');
-  await page.getByTestId('line-save').click();
-  await expect(page.getByTestId('line-save')).toBeHidden();
-
   const after = await stored(page) as Stored;
-  const line = after.lines.filter((l) => l.deleted !== true)[0];
-  expect(line?.name).toBe('Produce');
+  const line = after.lines.filter((l) => l.deleted !== true).slice(-1)[0];
+  expect(line?.name).toBe('New line');
+  expect(line?.category).toBe(cat?.id);
   // Filed under the category whose + was pressed — the only thing that press
   // knows, and the only thing it must not get wrong.
   expect(line?.category).toBe(cat?.id);
-  expect(line?.budget).toBe(12000);
+  // A new line starts at nothing budgeted. The + used to open an editor that
+  // asked for a name and an amount before the row existed; since 2026-09-15
+  // it makes the row first and both are set in place afterwards.
+  expect(line?.budget).toBe(0);
   // And no transaction was made.
   expect(after.txns).toHaveLength(0);
 });

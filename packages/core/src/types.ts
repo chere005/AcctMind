@@ -153,6 +153,20 @@ export type Store = {
 export const DEFAULT_ACCOUNT_NAME = 'Account';
 
 /**
+ * The one category a store starts with. Sean, 2026-09-15.
+ *
+ * A budget with no categories at all has nowhere to put the first line, so
+ * the Budget tab opens on an empty state and the + that would help is inside
+ * a category that does not exist yet. One default breaks that circle.
+ *
+ * It is a real, ordinary record: renameable, deletable, and it syncs like any
+ * other. That is deliberately NOT true of the "no category" heading beside it
+ * on that screen, which is a view of `category: null` rows and not a record —
+ * see the note on `Txn.category` above for why inventing one would be worse.
+ */
+export const DEFAULT_CATEGORY_NAME = 'Available funds';
+
+/**
  * Older stores are READ and upgraded rather than refused: refusing one would
  * strand the ledger already sitting on a device. See `parseStore`.
  *

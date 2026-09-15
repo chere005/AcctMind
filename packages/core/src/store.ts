@@ -11,11 +11,12 @@
  */
 
 import {
-  DEFAULT_ACCOUNT_NAME, STORE_VERSION,
+  DEFAULT_ACCOUNT_NAME, DEFAULT_CATEGORY_NAME, STORE_VERSION,
   type Account, type Category, type Line, type Record_, type Store, type Txn,
 } from './types';
 import { isDay } from './day';
 import { PALETTE } from './palette';
+import { tombstone, touch } from './merge';
 
 /** A load either produced a store, or failed and must not be written over. */
 export type LoadResult =
@@ -416,6 +417,30 @@ export function ensureAccount(store: Store, id: string, now: number): Store {
   };
 }
 
+/**
+ * A store with no categories gets one, the way it gets an account.
+ *
+ * Same shape and same reason as `ensureAccount`: the Budget tab's only way to
+ * make a line is the + beside a category, so a store with none shows an empty
+ * state whose instruction is to go somewhere else. Called once, after a
+ * successful read — never on a store that failed to load, because that is a
+ * write and a damaged store must not be written to.
+ */
+export function ensureCategory(store: Store, id: string, now: number): Store {
+  if (store.categories.some((c) => c.deleted !== true)) return store;
+  return {
+    ...store,
+    categories: [...store.categories, {
+      id,
+      name: DEFAULT_CATEGORY_NAME,
+      color: PALETTE[1] ?? PALETTE[0],
+      order: 0,
+      created: now,
+      updated: now,
+    }],
+  };
+}
+
 /** Add, replace and remove for the other two record kinds. */
 export function putAccount(store: Store, account: Account): Store {
   const has = store.accounts.some((a) => a.id === account.id);
@@ -442,5 +467,44 @@ export function putCategory(store: Store, category: Category): Store {
     categories: has
       ? store.categories.map((c) => (c.id === category.id ? category : c))
       : [...store.categories, category],
+  };
+}
+
+/**
+ * Delete a category, and everything that only existed because of it.
+ *
+ * Three records deep, and the depth is the whole point. A transaction does
+ * not name its category — since v4 it names a LINE, and the line names the
+ * category. So removing a category by itself leaves its lines pointing at
+ * nothing and its transactions filed against lines that no longer exist:
+ * money that is neither in a category nor visibly uncategorised, which is the
+ * worst of the three states to be in.
+ *
+ * So: the category is tombstoned, every line in it is tombstoned, and every
+ * transaction filed against one of those lines goes back to `category: null`
+ * — Sean, 2026-09-15, "all transactions from a section would by default go to
+ * the no category category". The money is never touched. Losing a
+ * transaction because a bookkeeping label went would be the wrong trade, and
+ * `categories.spec.ts` has held that door shut since v4.
+ *
+ * Tombstones rather than deletions, like every removal here: a row that
+ * merely vanishes from this device comes straight back on the next merge.
+ */
+export function removeCategoryDeep(store: Store, categoryId: string, now: number): Store {
+  const doomed = new Set(
+    store.lines.filter((l) => l.category === categoryId).map((l) => l.id),
+  );
+  return {
+    ...store,
+    categories: store.categories.map((c) => (c.id === categoryId ? tombstone(c, now) : c)),
+    lines: store.lines.map((l) => (doomed.has(l.id) ? tombstone(l, now) : l)),
+    // touch(), not a bare field write: re-filing a transaction is an edit, and
+    // an edit that does not move the merge clock is an edit another device
+    // will overwrite with its own stale copy.
+    txns: store.txns.map((t) => (
+      t.category !== null && doomed.has(t.category)
+        ? touch({ ...t, category: null }, now)
+        : t
+    )),
   };
 }

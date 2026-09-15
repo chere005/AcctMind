@@ -15,7 +15,7 @@ import {
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { SortPick } from './SortPick';
-import { ClipboardIcon, DuplicateIcon, PencilIcon, XIcon } from './Icons';
+import { ClipboardIcon, DuplicateIcon, ImportIcon, PencilIcon, XIcon } from './Icons';
 import { useRowDrag } from './rowdrag';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
@@ -62,11 +62,13 @@ type Props = {
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the account manager — the only place an account is made. */
   onManage: () => void;
+  /** Open the CSV import. Absent on a surface that cannot read a file. */
+  onImport?: (() => void) | undefined;
 };
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, onInline, onDate,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, onImport, onInline, onDate,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const sum = total(txns);
@@ -157,6 +159,11 @@ export function TransactionsScreen({
                 testID="edit-toggle"
               >
                 <PencilIcon color={edit ? '#ffffff' : T.text} />
+              </CircleBtn>
+            )}
+            {onImport !== undefined && (
+              <CircleBtn onPress={onImport} label="Import a CSV" testID="import-button">
+                <ImportIcon />
               </CircleBtn>
             )}
             {onDevices !== undefined && (

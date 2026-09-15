@@ -67,22 +67,48 @@ async function makeCategory(page: Page, name: string): Promise<string> {
  * budget. Manage must already be CLOSED — the + is on the Budget screen.
  */
 async function makeLine(page: Page, category: string, name: string, budget: string): Promise<string> {
+  // The + creates the line OUTRIGHT since 2026-09-15; there is no editor to
+  // fill in. Rename happens under the pencil, the amount through the pad.
   await page.getByTestId(`category-add-${category}`).click();
-  await expect(page.getByTestId('line-save')).toBeVisible();
-  await page.getByTestId('line-name').click();
-  await page.getByTestId('line-name').fill(name);
-  await page.getByTestId('line-budget').click();
-  await page.getByTestId('line-budget').fill(budget);
-  await page.getByTestId('line-save').click();
-  await expect(page.getByTestId('line-save')).toBeHidden();
-  const s = await stored(page) as Stored;
-  return liveLines(s).find((l) => l.name === name)?.id ?? '';
+  const made = liveLines(await stored(page) as Stored)
+    .filter((l) => l.category === category).pop();
+  const id = made?.id ?? '';
+
+  await page.getByTestId('budget-edit-toggle').click();
+  // WAIT for edit mode to be on screen before tapping the name. Clicking
+  // straight after the toggle lands on a Pressable React has not re-rendered
+  // yet — its onPress is still undefined, the click does nothing, and the
+  // failure reads as "the rename field never opened".
+  await expect(page.getByTestId(`line-delete-${id}`)).toBeVisible();
+  await page.getByTestId(`line-name-${id}`).click();
+  await page.getByTestId(`line-name-input-${id}`).fill(name);
+  await page.getByTestId(`line-name-input-${id}`).press('Enter');
+  await page.getByTestId('budget-edit-toggle').click();
+
+  await page.getByTestId(`line-budgeted-tap-${id}`).click();
+  await expect(page.getByTestId('pad-amount')).toBeVisible();
+  await page.getByTestId('pad-amount-op-set').click();
+  await page.getByTestId('pad-amount').fill(budget);
+  await page.getByTestId('pad-amount').press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  return id;
 }
 
-test('the Budget tab starts empty and points at Manage', async ({ page }) => {
+test('the Budget tab opens on a default category rather than an empty state', async ({ page }) => {
+  // Sean, 2026-09-15: "there should be a no category as well as an available
+  // funds category by default." A budget with nothing in it has nowhere to
+  // put the first line — the only + that makes one is INSIDE a category — so
+  // the empty state used to point at a screen somewhere else. One default
+  // breaks that circle, and `ensureCategory` seeds it on first read.
   await page.goto('./');
-  await expect(page.getByTestId('budget-empty')).toBeVisible();
-  await expect(page.getByTestId('budget-empty')).toContainText('Manage Categories');
+  await expect(page.getByTestId('budget-title')).toBeVisible();
+  await expect(page.getByTestId('budget-empty')).toHaveCount(0);
+  await expect(page.getByTestId('category-section')).toHaveCount(1);
+
+  const s = await stored(page) as Stored;
+  const live = s.categories.filter((c) => c.deleted !== true);
+  expect(live).toHaveLength(1);
+  expect(live[0]?.name).toBe('Available funds');
 });
 
 test('a category is a heading, and the money is on the line inside it', async ({ page }) => {
