@@ -12,10 +12,12 @@
     "windows": [
       {
         "title": "AcctMind",
-        "width": 900,
+        "width": 480,
         "height": 760,
-        "minWidth": 380,
-        "minHeight": 520,
+        "minWidth": 480,
+        "maxWidth": 480,
+        "minHeight": 480,
+        "resizable": true,
         "backgroundColor": "#111111",
         "url": "/AcctMind/index.html"
       }
