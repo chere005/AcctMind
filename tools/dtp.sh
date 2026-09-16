@@ -116,7 +116,22 @@ if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
   # must not leave this repo purple on the page for ever.
   BEAT_PID=""
-  beat_stop() { [ -n "$BEAT_PID" ] && { kill "$BEAT_PID" >/dev/null 2>&1; wait "$BEAT_PID" 2>/dev/null; }; BEAT_PID=""; return 0; }
+  # ERREXIT-PROOF, and it was not. The first shape — `[ -n "$BEAT_PID" ] &&
+  # { kill …; wait …; }` — puts the brace group LAST in an AND list, which is
+  # the one place `set -e` still applies; `wait` on a process just killed
+  # returns 143, the lane died right there, AFTER the push and BEFORE the
+  # status finish, and the EXIT trap re-entered this function and died the
+  # same way — so every standalone lane since the beat arrived (2026-09-06)
+  # ended 1 with its card stuck purple at "running". Found by TestAcctMind's
+  # first qdtp, 2026-09-15; `|| true` on both, and `if` instead of the list.
+  beat_stop() {
+    if [ -n "$BEAT_PID" ]; then
+      kill "$BEAT_PID" >/dev/null 2>&1 || true
+      wait "$BEAT_PID" 2>/dev/null || true
+      BEAT_PID=""
+    fi
+    return 0
+  }
   trap 'beat_stop; if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
   # A BEAT A MINUTE — Sean, 2026-09-07: "make sure during dtp that status is
   # updated every minute at least". start/finish alone leave the card frozen at
@@ -310,7 +325,7 @@ fi
 
 # The page is told how it ended, and with what severity: a live, tagged release
 # whose phone build did not run is not a failure, but it is not a clean 0 either.
-[ -n "$RUN_ID" ] && beat_stop
+beat_stop
 REPORT_DONE=1
 if [ -n "$RUN_ID" ]; then
   if [ -n "$DEVICE_FAILED" ]; then
