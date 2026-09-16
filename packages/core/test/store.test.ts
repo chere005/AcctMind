@@ -349,3 +349,26 @@ describe('v4 — the money moves off the category and onto a line', () => {
     expect(r.store.txns[0]?.category).toBeNull();
   });
 });
+
+describe('the cleared flag on a stored transaction', () => {
+  it('keeps the literal true and drops anything else', () => {
+    const row = { id: 'a', name: 'x', amount: 1, date: '2026-08-20' };
+    expect(normalizeTxn({ ...row, cleared: true })?.cleared).toBe(true);
+    for (const junk of [false, 'true', 1, null]) {
+      const t = normalizeTxn({ ...row, cleared: junk });
+      expect(t, `row with cleared=${String(junk)} still parses`).not.toBeNull();
+      expect('cleared' in t!, `cleared=${String(junk)} is not stored`).toBe(false);
+    }
+  });
+
+  it('survives a round trip through serialize', () => {
+    const base = emptyStore();
+    const store = addTxn(
+      { ...base, accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }] },
+      txn({ cleared: true }),
+    );
+    const back = parseStore(serialize(store));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.store.txns[0]?.cleared).toBe(true);
+  });
+});

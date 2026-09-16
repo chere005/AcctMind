@@ -28,7 +28,7 @@ import {
   applyImport, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putCategory, putLine, removeCategoryDeep, REORDER_GAP,
   reorder, today, tombstone, touch,
-  txnText, updateTxn,
+  txnText, updateTxn, setCleared,
   type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
@@ -466,6 +466,12 @@ export default function App() {
                 commit(phase, updateTxn(phase.store, touch(next, Date.now())));
               }}
               onDate={(txn) => setDating(txn)}
+              /* The cleared box: core says what the row becomes, `touch` included,
+                 so the tick travels to the other devices like any edit. */
+              onCleared={(txn, cleared) => {
+                if (phase.k !== 'ready') return;
+                commit(phase, updateTxn(phase.store, setCleared(txn, cleared, Date.now())));
+              }}
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
               amountMode={prefs.amountMode}

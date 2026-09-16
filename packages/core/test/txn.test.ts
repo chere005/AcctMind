@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  reorder, respace, rowTap, selectedTotal, sortTxns, swipeArms, toggleSelected, total,
+  reorder, respace, rowTap, selectedTotal, setCleared, sortTxns, swipeArms, toggleSelected, total,
   txnText, validateDraft,
 } from '../src/index';
 
@@ -451,5 +451,33 @@ describe('selecting several rows', () => {
 
   it('counts a row once however many times its id appears', () => {
     expect(selectedTotal(rows, ['a', 'a'])).toBe(-450);
+  });
+});
+
+describe('setCleared', () => {
+  // Sean, 2026-09-15: the cleared box at the far right of a transaction.
+  const base: Txn = {
+    id: 'a', name: 'Coffee', description: '', amount: -450, date: '2026-08-20',
+    account: 'a1', category: null, order: 0, created: 1000, updated: 1000,
+  };
+
+  it('writes the literal true and moves the merge clock', () => {
+    const on = setCleared(base, true, 5000);
+    expect(on.cleared).toBe(true);
+    expect(on.updated).toBe(5000);
+  });
+
+  it('clearing it REMOVES the key rather than writing false', () => {
+    // An uncleared row must be byte-identical to one written before the
+    // field existed: `false` would be a new shape for every old store.
+    const off = setCleared(setCleared(base, true, 5000), false, 6000);
+    expect('cleared' in off).toBe(false);
+    expect(off.updated).toBe(6000);
+    expect(JSON.stringify(off)).toBe(JSON.stringify({ ...base, updated: 6000 }));
+  });
+
+  it('a duplicate has not been on any statement', () => {
+    const dup = duplicateTxn(setCleared(base, true, 5000), 'b', 7000);
+    expect('cleared' in dup).toBe(false);
   });
 });

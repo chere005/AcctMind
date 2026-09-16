@@ -449,3 +449,19 @@ export function rowTap(parked: boolean, edit: boolean): RowTap {
   if (parked) return 'dismiss';
   return edit ? 'pick' : 'inline';
 }
+
+/**
+ * Mark a transaction cleared — on the statement — or not.
+ *
+ * Sean, 2026-09-15: "add a cleared check box as the far right column in
+ * transactions." The flag is stored only as the literal `true` (see
+ * Txn.cleared), so clearing it REMOVES the key rather than writing `false`:
+ * an uncleared row is byte-identical to one written before the field
+ * existed. `touch` moves the merge clock, so the tick travels to the other
+ * devices like any edit; a duplicate never inherits it (duplicateTxn builds
+ * its row field by field, and a second coffee has not been on any statement).
+ */
+export function setCleared(txn: Txn, cleared: boolean, now: number): Txn {
+  const { cleared: _was, ...rest } = txn;
+  return touch(cleared ? { ...rest, cleared: true } : rest, now);
+}

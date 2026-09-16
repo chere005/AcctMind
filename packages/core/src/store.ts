@@ -395,6 +395,9 @@ export function normalizeTxn(row: unknown): Txn | null {
     updated: updatedN,
     // Only the literal `true` is a tombstone; anything else is a live record.
     ...(r['deleted'] === true ? { deleted: true as const } : {}),
+    // And only the literal `true` is cleared — see Txn.cleared. Anything
+    // else (a stray string, `false`, an old store with no key) reads as not.
+    ...(r['cleared'] === true ? { cleared: true as const } : {}),
   };
 }
 

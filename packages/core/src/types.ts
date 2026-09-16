@@ -132,6 +132,17 @@ export type Txn = Record_ & {
    * that then syncs, gets renamed, and can be deleted out from under its rows.
    */
   category: string | null;
+  /**
+   * CLEARED — it has shown up on the bank's statement. Sean, 2026-09-15: "add
+   * a cleared check box as the far right column in transactions."
+   *
+   * Only the literal `true` is ever stored, the way `deleted` is: a row that
+   * is not cleared carries NO key at all, so every store written before this
+   * field existed is unchanged byte for byte and reads back identical, and a
+   * merge between a device that knows the field and one that does not has
+   * nothing to disagree about. Flipped by `setCleared`, never by hand.
+   */
+  cleared?: true;
 };
 
 /** What the add form holds while it is being typed — all strings, all raw. */

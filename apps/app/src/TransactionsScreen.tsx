@@ -37,6 +37,8 @@ type Props = {
   onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
   /** The date on a row was tapped — the caller opens the day grid. */
   onDate?: ((txn: Txn) => void) | undefined;
+  /** The cleared box on a row was flipped. Absent where the ledger is read-only. */
+  onCleared?: ((txn: Txn, cleared: boolean) => void) | undefined;
   /**
    * Open the pairing screen. Absent on the surfaces that cannot sync over a
    * local network — the web and Android — so the control is missing rather
@@ -82,7 +84,7 @@ type Props = {
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
   sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile, onImport,
-  onInline, onDate,
+  onInline, onDate, onCleared,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const [picking, setPicking] = useState(false);
@@ -311,6 +313,7 @@ export function TransactionsScreen({
             setInline={setInline}
             onInline={onInline}
             onDate={onDate}
+            onCleared={onCleared}
             lineName={lineName}
             reconciling={reconciling}
             onReconcileOpen={setReconciling}
@@ -367,7 +370,7 @@ export function TransactionsScreen({
  */
 function Section({
   account, rows, shut, onToggle, onAdd, edit, onEdited, picked, onPick,
-  inline, setInline, onInline, onDate, lineName, swipedId, setSwipedId, onAction, onMove,
+  inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction, onMove,
   onDragging, reconciling, onReconcileOpen, onReconcile,
 }: {
   account: Account;
@@ -386,6 +389,8 @@ function Section({
   setInline: (next: { id: string; field: 'name' | 'amount' } | null) => void;
   onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
   onDate?: ((txn: Txn) => void) | undefined;
+  /** The cleared box on a row was flipped. Absent where the ledger is read-only. */
+  onCleared?: ((txn: Txn, cleared: boolean) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
   lineName: (id: string | null) => string;
   /** The account whose total is open as a field, if any. */
@@ -510,6 +515,7 @@ function Section({
             onCloseInline={() => setInline(null)}
             onInline={onInline === undefined ? undefined : (patch) => onInline(t, patch)}
             onDate={onDate === undefined ? undefined : () => onDate(t)}
+            onCleared={onCleared === undefined ? undefined : (c) => onCleared(t, c)}
             onAction={(a) => { setSwipedId(null); onEdited(); onAction?.(a, t); }}
             grip={canMove ? drag.gripFor(i) : undefined}
             lifted={drag.dragIdx === i}
@@ -528,7 +534,7 @@ function Section({
 }
 
 function Row({
-  txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate,
+  txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate, onCleared,
   onAction, grip, lifted, dy, swiped, parked, lineName, onDismiss, onSwipe,
 }: {
   txn: Txn;
@@ -546,6 +552,8 @@ function Row({
   onInline?: ((patch: { name?: string; amount?: number }) => void) | undefined;
   /** The date was tapped. */
   onDate?: (() => void) | undefined;
+  /** The cleared box was tapped; `cleared` is what it now says. */
+  onCleared?: ((cleared: boolean) => void) | undefined;
   onAction: (action: RowAction) => void;
   /**
    * Pan handlers for the grip, or nothing when this row cannot be moved.
@@ -750,6 +758,27 @@ function Row({
         testID="txn-date-tap"
       >
         <Text style={styles.date} testID="txn-date">{formatDay(txn.date)}</Text>
+      </Pressable>
+      {/*
+        CLEARED — the far-right column (Sean, 2026-09-15): has this row shown
+        up on the statement? A checkbox because it is a per-row yes/no flipped
+        often, the same box the budget's snooze wears. Its 22 points are
+        reserved whether or not the ledger can be edited, so the dates stay in
+        one column and nothing slides when a read-only view is drawn. Under
+        `rowTap` like every other part of the row: in edit mode a tap picks,
+        with a delete parked it dismisses, otherwise it flips the flag.
+      */}
+      <Pressable
+        onPress={onTap(onCleared === undefined ? undefined : () => onCleared(txn.cleared !== true))}
+        style={styles.clearedCol}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: txn.cleared === true }}
+        accessibilityLabel={txn.cleared ? `${txn.name} cleared` : `${txn.name} not cleared`}
+        testID={`txn-cleared-${txn.id}`}
+      >
+        <View style={[styles.box, txn.cleared && styles.boxOn]}>
+          {txn.cleared && <Text style={styles.boxTick}>✓</Text>}
+        </View>
       </Pressable>
       </Pressable>
       </Animated.View>
@@ -1318,6 +1347,16 @@ const styles = StyleSheet.create({
   // A fixed width so the dates line up in a column of their own rather than
   // starting wherever the amount before them happened to end.
   date: { color: T.dim, fontSize: 12, lineHeight: 16, width: 46, textAlign: 'right' },
+  // The cleared column and its box — BudgetScreen's snooze box, byte for
+  // byte, so the two checkboxes in this app read as one control.
+  clearedCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  box: {
+    width: 15, height: 15, borderRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.dim,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  boxOn: { backgroundColor: T.dim, borderColor: T.dim },
+  boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },

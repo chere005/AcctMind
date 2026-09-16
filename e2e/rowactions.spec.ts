@@ -750,7 +750,11 @@ test('the hammer reconciles an account, dated today, and only when it differs', 
   // falls out of the arithmetic rather than a branch.
   expect(made?.amount).toBe(10450);
   expect(made?.account).toBe(acct);
-  expect(made?.date).toBe(new Date().toISOString().slice(0, 10));
+  // LOCAL today, as the app writes it — toISOString() is UTC, which after
+  // 7pm in Chicago is already tomorrow (caught 2026-09-15 at 19:10).
+  const d = new Date();
+  const localToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  expect(made?.date).toBe(localToday);
   // And the account now reads what was stated.
   await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('$100.00');
 });
