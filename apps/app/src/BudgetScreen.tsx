@@ -130,6 +130,13 @@ export function BudgetScreen({
   const assigned = shown.reduce(
     (n, c) => n + linesIn(c.id).reduce((m, l) => m + l.budget, 0), 0,
   );
+  // …and what is LEFT of it across the same lines, beside it in the bar
+  // (Sean, 2026-09-15: "show available next to assigned on the budget
+  // page"). The same arithmetic each line and each category heading draws,
+  // summed once more — never a fourth number computed a fourth way.
+  const available = shown.reduce(
+    (n, c) => n + linesIn(c.id).reduce((m, l) => m + availableOf(l.budget, spentOn(l.id)), 0), 0,
+  );
 
   /** Money that belongs to no line at all. Drawn under its own heading. */
   const loose = txns.filter((t) => t.category === null);
@@ -169,9 +176,16 @@ export function BudgetScreen({
       />
 
       <BarRow>
-        <Text style={styles.total} testID="budget-assigned">
-          {formatAmount(assigned)} assigned
-        </Text>
+        <View style={styles.totals}>
+          <Text style={styles.total} testID="budget-assigned">
+            {formatAmount(assigned)} assigned
+          </Text>
+          {/* Toned like every other available figure: green with money left,
+              red when the lines have overspent what was put in. */}
+          <Text style={styles.total} testID="budget-available-line">
+            <Money style={styles.total} cents={available} testID="budget-available" tone /> available
+          </Text>
+        </View>
       </BarRow>
 
       <ScrollView
@@ -792,6 +806,7 @@ const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
+  totals: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap' },
   list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
   section: { gap: SPACE.xs },
   head: {
