@@ -31,7 +31,7 @@ import {
 } from 'react-native';
 import {
   ALL_TIME, LONG_PRESS_MS, assignedBefore, availableOf, budgetIn, foldLevel, formatAmount,
-  lineTone, monthOf, monthSet, total, viewSet, viewsOf,
+  lineTone, monthOf, monthSet, total, unfiledSince, viewSet, viewsOf,
   type BudgetAmount, type Category, type Line, type LineTone, type Txn,
   type View as BudgetView,
 } from '@acctmind/core';
@@ -310,8 +310,28 @@ export function BudgetScreen({
   const available = held - assigned;
 
   /** Money that belongs to no line at all. Drawn under its own heading. */
-  const loose = inScope.filter((t) => t.category === null);
+  /**
+   * The rows still WAITING for a category — unfiled, and after the line the
+   * account's latest reconcile draws (core's `unfiledSince`; Sean,
+   * 2026-09-18: after a reconcile he is "starting budgeting and tracking
+   * transactions that need to be assigned after the reconcile"). Within the
+   * set being looked at, like every other spend on this screen.
+   */
+  const waiting = useMemo(() => new Set(unfiledSince(txns).map((t) => t.id)), [txns]);
+  const loose = inScope.filter((t) => waiting.has(t.id));
   const showNone = view === null && loose.length > 0;
+  /**
+   * The one line under the heading that is not a record — Sean, same day:
+   * "no category should have a line titled No Category which can't be
+   * deleted." It is drawn with the same row every real line uses, holding
+   * nothing but what has been spent, so the four columns read the same way
+   * here as everywhere else; it just cannot be renamed, dated, snoozed,
+   * dragged or deleted, because there is no record to do any of that to.
+   */
+  const noneLine: Line = {
+    id: 'none', name: 'No Category', category: NONE, budget: 0, needs: 0, snoozed: false,
+    order: 0, created: 0, updated: 0,
+  };
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
@@ -482,9 +502,36 @@ export function BudgetScreen({
               </Pressable>
             </View>
             {!collapsed.includes(NONE) && (
-              <Text style={styles.sectionEmpty} testID="category-none-count">
-                {loose.length} transaction{loose.length === 1 ? '' : 's'} not filed against a line
-              </Text>
+              <>
+                <View style={styles.colHead}>
+                  <Tip style={styles.colLabel} text="Needs"><FlagIcon /></Tip>
+                  <Tip style={styles.colLabel} text="Assigned"><EnvelopeIcon /></Tip>
+                  <Tip style={styles.colLabel} text="Spent"><ReceiptIcon /></Tip>
+                  <Tip style={styles.colLabel} text="Available"><CoinIcon /></Tip>
+                </View>
+                {/* Never in edit mode, whatever the page is doing: that is
+                    what "can't be deleted" means in this row's terms — no
+                    grip, no ×, no rename field ever appears on it. The
+                    amounts open no pad either; there is nothing to write. */}
+                <LineRow
+                  line={noneLine}
+                  spent={total(loose)}
+                  budgeted={0}
+                  carry={0}
+                  set={set}
+                  edit={false}
+                  naming={false}
+                  onName={() => {}}
+                  onNamed={() => {}}
+                  onEditAmount={() => {}}
+                  onDelete={() => {}}
+                  onSnooze={() => {}}
+                  grip={undefined}
+                  lifted={false}
+                  dy={0}
+                  fixed
+                />
+              </>
             )}
           </View>
         )}
@@ -708,7 +755,7 @@ function CategorySection({
 
 function LineRow({
   line, spent, budgeted, carry, set, edit, naming, onName, onNamed, onEditAmount,
-  onDelete, onSnooze, grip, lifted, dy,
+  onDelete, onSnooze, grip, lifted, dy, fixed = false,
 }: {
   line: Line;
   spent: number;
@@ -739,6 +786,13 @@ function LineRow({
   grip: object | undefined;
   lifted: boolean;
   dy: number;
+  /**
+   * A row with NO RECORD behind it — the No Category line. It draws the
+   * same four columns, but a snooze box that snoozes nothing and amounts
+   * that open a pad with nothing to write into are controls that lie, so
+   * neither is drawn; the box's width stays, so the columns line up.
+   */
+  fixed?: boolean;
 }) {
   const pick = { line, spent, budgeted, carry, set };
   // One word, from core. Four colours decided in a component is four chances
@@ -837,6 +891,7 @@ function LineRow({
         often, and it is the one control here that changes nothing about the
         money.
       */}
+      {fixed ? <View style={styles.snoozeCol} /> : (
       <Pressable
         onPress={() => onSnooze(!line.snoozed)}
         style={styles.snoozeCol}
@@ -849,10 +904,12 @@ function LineRow({
           {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
         </View>
       </Pressable>
+      )}
 
       {/* What the line is AIMING at. Editable like the other two. */}
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'needs', at)}
+        fixed={fixed}
         label={`Needs ${formatAmount(line.needs)}`}
         tip="Needs"
         testID={`line-needs-tap-${line.id}`}
@@ -869,6 +926,7 @@ function LineRow({
           it hides the list you were reading to decide. */}
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'budget', at)}
+        fixed={fixed}
         label={`Assigned ${formatAmount(budgeted)}`}
         tip="Assigned"
         testID={`line-budgeted-tap-${line.id}`}
@@ -892,6 +950,7 @@ function LineRow({
       </Tip>
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'available', at)}
+        fixed={fixed}
         label={`Available ${formatAmount(availableOf(budgeted, spent, carry))}`}
         tip="Available"
         testID={`line-available-tap-${line.id}`}
@@ -1015,9 +1074,11 @@ function NameField({ value, style, onDone, testID }: {
  * whichever parent asked, and the pad is placed against the window. Measuring
  * at press time also means a scrolled list gives the right answer.
  */
-function AmountCell({ onPress, label, tip, testID, children }: {
+function AmountCell({ onPress, label, tip, testID, children, fixed = false }: {
   onPress: (at: Anchor) => void;
   label: string;
+  /** Not a control: draw the number and nothing else. */
+  fixed?: boolean;
   /**
    * Which column this is, for the tip — Sean, 2026-09-18: "tooltip should
    * appear over numbers as well."
@@ -1033,6 +1094,7 @@ function AmountCell({ onPress, label, tip, testID, children }: {
 }) {
   const box = useRef<View>(null);
   const t = useTip();
+  if (fixed) return <View accessibilityLabel={label}>{children}</View>;
   return (
     <Pressable
       ref={box}

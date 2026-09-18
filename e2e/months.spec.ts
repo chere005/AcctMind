@@ -152,3 +152,48 @@ test('the bar does not narrow with the category picker', async ({ page }) => {
   await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
   await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
 });
+
+/** Tomorrow, as `YYYY-MM-DD` on the local calendar. */
+function tomorrowDay(): string {
+  const d = new Date(); d.setDate(d.getDate() + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+test('No Category is a line that cannot be deleted, and a reconcile draws its starting line', async ({ page }) => {
+  // Sean, 2026-09-18: "no category should have a line titled No Category
+  // which can't be deleted.. after doing a reconcile i am cleaning things and
+  // assuming that i'm starting budgeting and tracking transactions that need
+  // to be assigned after the reconcile." Two claims, one row.
+  await fresh(page);
+  await addTransaction(page, { name: 'Old', amount: '-5000', day: lastMonthDay() });
+  await addTransaction(page, { name: 'Later', amount: '-2000', day: tomorrowDay() });
+
+  await page.getByTestId('tab-budget').click();
+  const row = page.getByTestId('line-row-none');
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('No Category');
+  // Nothing assigned to it, both rows waiting, and the available is the hole.
+  await expect(page.getByTestId('line-spent-none')).toHaveText('-$70.00');
+  await expect(page.getByTestId('line-available-none')).toHaveText('-$70.00');
+
+  // Edit mode gives it none of the controls a real line gets.
+  await page.getByTestId('budget-edit-toggle').click();
+  await expect(page.getByTestId('line-delete-none')).toHaveCount(0);
+  await expect(page.getByTestId('line-name-input-none')).toHaveCount(0);
+  await page.getByTestId('budget-edit-toggle').click();
+
+  // Reconcile today. Everything dated up to today is history the statement
+  // has accounted for; only the row dated after it still needs a category.
+  await page.getByTestId('tab-transactions').click();
+  const s0 = await stored(page) as { accounts: { id: string }[] };
+  const acct = s0.accounts[0]!.id;
+  await page.getByTestId(`account-reconcile-${acct}`).click();
+  await page.getByTestId(`account-reconcile-input-${acct}`).fill('100');
+  await page.getByTestId(`account-reconcile-input-${acct}`).press('Enter');
+  await expect(page.getByTestId('txn-row')).toHaveCount(3);
+
+  await page.getByTestId('tab-budget').click();
+  await expect(page.getByTestId('line-spent-none')).toHaveText('-$20.00');
+  // The Reconcile row is an adjustment, not a purchase: it never counts.
+  await expect(page.getByTestId('line-available-none')).toHaveText('-$20.00');
+});

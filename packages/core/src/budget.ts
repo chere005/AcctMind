@@ -32,6 +32,7 @@
  * money.ts for why that is not negotiable.
  */
 import { MAX_CENTS } from './money';
+import type { Txn } from './types';
 
 /**
  * What is left on a line: what was budgeted, PLUS what has moved.
@@ -186,3 +187,39 @@ export function reconcileAdjustment(ledgerTotal: number, statedTotal: number): n
 
 /** What a reconcile's transaction is called, everywhere it is made. */
 export const RECONCILE_NAME = 'Reconcile';
+
+/**
+ * The rows that still NEED a category: unfiled, and after the line a
+ * reconcile draws.
+ *
+ * Sean, 2026-09-18: "after doing a reconcile i am cleaning things and
+ * assuming that i'm starting budgeting and tracking transactions that need
+ * to be assigned after the reconcile." A reconcile states what the account
+ * holds and writes the difference as one row; everything before it is
+ * history the statement has already accounted for, and nagging for a
+ * category on eighteen months of it is the wrong kind of true. So the latest
+ * Reconcile in each account is the starting line for that account, and only
+ * unfiled rows dated AFTER it count.
+ *
+ * The Reconcile row itself never counts, in any account, whatever its date:
+ * it is an adjustment, not a purchase, and there is nothing to file it under.
+ *
+ * ON THE DAY, not after it — a row dated the same day as the reconcile is
+ * taken as settled by it. The alternative reads `created`, and a row
+ * imported tomorrow but dated last week would then count while a row typed
+ * an hour after the reconcile would not, which is backwards from how a
+ * person reads a ledger.
+ */
+export function unfiledSince(txns: readonly Txn[]): Txn[] {
+  const start = new Map<string, string>();
+  for (const t of txns) {
+    if (t.deleted === true || t.name !== RECONCILE_NAME) continue;
+    const at = start.get(t.account);
+    if (at === undefined || t.date > at) start.set(t.account, t.date);
+  }
+  return txns.filter((t) => {
+    if (t.deleted === true || t.category !== null || t.name === RECONCILE_NAME) return false;
+    const at = start.get(t.account);
+    return at === undefined || t.date > at;
+  });
+}
