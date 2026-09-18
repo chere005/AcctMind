@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  reorder, respace, rowTap, selectedTotal, setCleared, sortTxns, swipeArms, toggleSelected, total,
+  clearedTotal, reorder, respace, rowTap, selectedTotal, setCleared, sortTxns, swipeArms,
+  toggleSelected, total,
   txnText, validateDraft,
 } from '../src/index';
 
@@ -116,6 +117,21 @@ describe('total', () => {
     const tenth = Array.from({ length: 10 }, (_, i) => t(10, String(i)));
     expect(total(tenth)).toBe(100);
     expect(total(Array.from({ length: 3 }, (_, i) => t(1, String(i))))).toBe(3);
+  });
+
+  it('counts only what the bank has confirmed, for the cleared total', () => {
+    const rows = [
+      { ...t(1000, 'a'), cleared: true as const },
+      t(-450, 'b'),
+      { ...t(-100, 'c'), cleared: true as const },
+    ];
+    expect(clearedTotal(rows)).toBe(900);
+    expect(total(rows)).toBe(450);
+    expect(clearedTotal([])).toBe(0);
+    // Nothing ticked is zero, not the total — the two figures are beside each
+    // other on the account head and must never be able to read the same by
+    // accident.
+    expect(clearedTotal([t(1000, 'a')])).toBe(0);
   });
 });
 

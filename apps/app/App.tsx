@@ -26,7 +26,8 @@ import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
   live, makeTxn,
   applyImport, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
-  reconcileAdjustment, total, putAccount, putCategory, putLine, removeCategoryDeep, REORDER_GAP,
+  reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
+  REORDER_GAP, ALL_TIME,
   reorder, today, tombstone, touch,
   txnText, updateTxn, setCleared,
   type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
@@ -99,8 +100,18 @@ export default function App() {
   const [pad, setPad] = useState<
     {
       line: Line; spent: number; field: LineField;
+      /**
+       * Assigned to this line in earlier months — 0 outside Month.
+       *
+       * Carried so an `available` edit can take it off again: typing $200
+       * into a line holding $150 from last month means assigning $50 now,
+       * and a pad that forgot the $150 would quietly assign it twice.
+       */
+      carry: number;
       /** The value being typed, held as whichever number is STORED. */
       budget: number; needs: number; at: Anchor;
+      /** Which budget set the change lands in — see core/views.ts. */
+      set: string;
     } | null
   >(null);
   /** A write that did not land. Shown, never swallowed. */
@@ -369,6 +380,25 @@ export default function App() {
                 txns={live(phase.store.txns)}
                 categories={live(phase.store.categories)}
                 lines={live(phase.store.lines)}
+                views={live(phase.store.views)}
+                budgets={phase.store.budgets}
+                budgetView={prefs.budgetView}
+                budgetMonth={prefs.budgetMonth}
+                onBudgetView={(id) => setPref('budgetView', id)}
+                onBudgetMonth={(m) => setPref('budgetMonth', m)}
+                /* A new view is a record, and picking it is a device choice —
+                   so it both syncs and lands in front of you. */
+                onNewView={(name) => {
+                  if (phase.k !== 'ready') return;
+                  const now = Date.now();
+                  const id = newId();
+                  const order = phase.store.views.reduce((n, v) => Math.max(n, v.order), 0) + REORDER_GAP;
+                  commit(phase, {
+                    ...phase.store,
+                    views: [...phase.store.views, { id, name, order, created: now, updated: now }],
+                  });
+                  setPref('budgetView', id);
+                }}
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
@@ -396,8 +426,10 @@ export default function App() {
                     updated: now,
                   }));
                 }}
-                onEditAmount={({ line, spent }, field, at) =>
-                  setPad({ line, spent, field, budget: line.budget, needs: line.needs, at })}
+                onEditAmount={({ line, spent, budgeted, carry, set }, field, at) =>
+                  // `budgeted`, not `line.budget`: the pad opens showing what
+                  // the ACTIVE SET holds, which is what is on screen.
+                  setPad({ line, spent, carry, field, budget: budgeted, needs: line.needs, at, set })}
                 onRenameLine={(line, name) => {
                   if (phase.k !== 'ready') return;
                   commit(phase, putLine(phase.store, touch({ ...line, name }, Date.now())));
@@ -631,24 +663,35 @@ export default function App() {
               value={pad === null
                 ? 0
                 : pad.field === 'needs' ? pad.needs
-                : pad.field === 'available' ? availableOf(pad.budget, pad.spent)
+                : pad.field === 'available' ? availableOf(pad.budget, pad.spent, pad.carry)
                 : pad.budget}
               onValue={(next) => setPad((p) => (p === null ? p : (
                 p.field === 'needs'
                   ? { ...p, needs: next }
                   : {
                       ...p,
-                      budget: p.field === 'available' ? budgetFor(next, p.spent) : next,
+                      budget: p.field === 'available' ? budgetFor(next, p.spent, p.carry) : next,
                     }
               )))}
               onDone={() => {
                 if (phase.k !== 'ready' || pad === null) return;
                 // NEEDS is its own stored number; the other two are two ways
                 // of saying what BUDGET is — see core/budget.ts.
-                commit(phase, putLine(
-                  phase.store,
-                  touch({ ...pad.line, budget: pad.budget, needs: pad.needs }, Date.now()),
-                ));
+                //
+                // WHERE the budget lands depends on the set. All Time is the
+                // line's own amount, as it always was; a month or a named view
+                // keeps its own record and leaves the line untouched, which is
+                // the whole promise of "budget changes are unique to that view
+                // only". `needs` is NOT per set — a target is what the line is
+                // for, and it does not change because you are looking at
+                // October — so it is written on the line either way.
+                const now = Date.now();
+                commit(phase, pad.set === ALL_TIME
+                  ? putLine(phase.store, touch({ ...pad.line, budget: pad.budget, needs: pad.needs }, now))
+                  : {
+                    ...putLine(phase.store, touch({ ...pad.line, needs: pad.needs }, now)),
+                    budgets: putBudget(phase.store, pad.set, pad.line.id, pad.budget, now),
+                  });
                 setPad(null);
               }}
             />

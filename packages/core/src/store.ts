@@ -12,7 +12,8 @@
 
 import {
   DEFAULT_ACCOUNT_NAME, DEFAULT_CATEGORY_NAME, STORE_VERSION,
-  type Account, type Category, type Line, type Record_, type Store, type Txn,
+  type Account, type BudgetAmount, type Category, type Line, type Record_, type Store, type Txn,
+  type View,
 } from './types';
 import { isDay } from './day';
 import { PALETTE } from './palette';
@@ -27,7 +28,7 @@ export type LoadResult =
 export const READABLE_VERSIONS = [1, 2, 3, STORE_VERSION] as const;
 
 export function emptyStore(): Store {
-  return { v: STORE_VERSION, txns: [], accounts: [], categories: [], lines: [] };
+  return { v: STORE_VERSION, txns: [], accounts: [], categories: [], lines: [], views: [], budgets: [] };
 }
 
 /** Serialize for the device. Compact — nothing reads this by eye but us. */
@@ -98,6 +99,10 @@ export function parseStore(raw: string | null | undefined): LoadResult {
   const accounts = readAll(obj['accounts'], normalizeAccount);
   const categories = readAll(obj['categories'], normalizeCategory);
   const lines = readAll(obj['lines'], normalizeLine);
+  // Additive: a store written before views has neither key, and readAll
+  // answers [] for anything that is not an array.
+  const views = readAll(obj['views'], normalizeView);
+  const budgets = readAll(obj['budgets'], normalizeBudgetAmount);
   const txns = readAll(obj['txns'], normalizeTxn);
 
   /*
@@ -141,7 +146,7 @@ export function parseStore(raw: string | null | undefined): LoadResult {
 
   return {
     ok: true,
-    store: { v: STORE_VERSION, txns, accounts, categories, lines },
+    store: { v: STORE_VERSION, txns, accounts, categories, lines, views, budgets },
     dropped,
     migrated,
   };
@@ -291,6 +296,44 @@ export function normalizeCategory(row: unknown): Category | null {
 }
 
 /** Coerce one unknown row into a budget line, or reject it. */
+/** A named view: a name and a place in the dropdown, nothing else. */
+export function normalizeView(row: unknown): View | null {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+  const r = row as Record<string, unknown>;
+  const base = normalizeRecord(r);
+  if (base === null) return null;
+  const name = r['name'];
+  if (typeof name !== 'string') return null;
+  const order = r['order'];
+  return {
+    ...base,
+    name,
+    order: typeof order === 'number' && Number.isFinite(order) ? order : 0,
+  };
+}
+
+/**
+ * One amount in one set.
+ *
+ * `set` and `line` are structural — an amount that does not say which set or
+ * which line it belongs to is not an amount, it is damage — and the amount
+ * itself is an integer like every other, so a float is dropped rather than
+ * rounded into somebody's budget.
+ */
+export function normalizeBudgetAmount(row: unknown): BudgetAmount | null {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+  const r = row as Record<string, unknown>;
+  const base = normalizeRecord(r);
+  if (base === null) return null;
+  const set = r['set'];
+  if (typeof set !== 'string' || set === '') return null;
+  const line = r['line'];
+  if (typeof line !== 'string' || line === '') return null;
+  const amount = r['amount'];
+  if (typeof amount !== 'number' || !Number.isSafeInteger(amount)) return null;
+  return { ...base, set, line, amount };
+}
+
 export function normalizeLine(row: unknown): Line | null {
   if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
   const r = row as Record<string, unknown>;

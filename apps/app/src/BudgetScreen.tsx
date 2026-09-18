@@ -1,6 +1,12 @@
 /**
  * The Budget tab: categories, the lines inside them, and three numbers each.
  *
+ * MONTH IS THE UNIT. Sean, 2026-09-18: "the assigned amount should be
+ * assigned by month... assignments that aren't spent by the end of the month
+ * carry over." So in Month view a line shows what THIS month assigned, and an
+ * available that is the running total of every month up to this one. See
+ * core/views.ts for the storage and core/budget.ts for the arithmetic.
+ *
  * A category is a HEADING and budgets nothing of its own — Sean, 2026-08-21,
  * and the + beside its name adds a line rather than a transaction. The money
  * lives on the lines, and each one shows:
@@ -19,22 +25,42 @@
  * gesture the Transactions tab already uses, so the two tabs stop disagreeing
  * about what a pencil means.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  availableOf, formatAmount, lineTone, total,
-  type Category, type Line, type LineTone, type Txn,
+  ALL_TIME, LONG_PRESS_MS, assignedBefore, availableOf, budgetIn, foldLevel, formatAmount,
+  lineTone, monthOf, monthSet, total, viewSet, viewsOf,
+  type BudgetAmount, type Category, type Line, type LineTone, type Txn,
+  type View as BudgetView,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, XIcon } from './Icons';
 import { useRowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
+import { Tip, TipBubble, useTip } from './Tip';
+import { ALL_VIEW, MONTH_VIEW, ViewPick } from './ViewPick';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
-export type LinePick = { line: Line; spent: number };
+export type LinePick = {
+  line: Line;
+  spent: number;
+  /** The amount as the ACTIVE SET holds it — what the pad opens showing. */
+  budgeted: number;
+  /**
+   * What the line brought in from earlier months, 0 outside Month.
+   *
+   * The pad needs it for the same reason the row does: `available` is the sum
+   * of all three, so typing into it has to take all three off again or the
+   * carried money gets assigned a second time.
+   */
+  carry: number;
+  /** Which set a change belongs to. 'all' writes the line itself; anything
+   *  else writes that set's own record. See core/views.ts. */
+  set: string;
+};
 /** Which of a line's two editable numbers was tapped. */
 export type LineField = 'needs' | 'budget' | 'available';
 /** Where a tapped amount sits, in window coordinates. */
@@ -67,18 +93,54 @@ const NONE = `${String.fromCharCode(31)}none`;
  * place. Web-only and harmless elsewhere: react-native-web forwards unknown
  * props to the DOM node, and native never sees a mousedown.
  */
+/**
+ * A month either side, on the string — no `Date` anywhere near it.
+ *
+ * The same rule day.ts keeps: `new Date('2026-09')` is parsed in the runtime's
+ * own zone and stepping it by a month then lands wherever that zone put it.
+ * Twelve months in a year is arithmetic, and this is the arithmetic.
+ */
+function stepMonth(month: string, by: number): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7)) - 1 + by;
+  const year = y + Math.floor(m / 12);
+  const mon = ((m % 12) + 12) % 12;
+  return `${year}-${String(mon + 1).padStart(2, '0')}`;
+}
+
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** "September 2026". Built from the parts, for the reason above. */
+function monthName(month: string): string {
+  const mon = MONTHS[Number(month.slice(5, 7)) - 1] ?? month;
+  return `${mon} ${month.slice(0, 4)}`;
+}
+
 const KEEP_FOCUS = {
   onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
 } as unknown as Record<string, unknown>;
 
 export function BudgetScreen({
-  txns, categories, lines, collapsed, onCollapsed, onManage, onAddLine,
+  txns, categories, lines, views, budgets, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
   onDeleteCategory, onMoveLine,
+  budgetView, budgetMonth, onBudgetView, onBudgetMonth, onNewView,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
   lines: readonly Line[];
+  views: readonly BudgetView[];
+  budgets: readonly BudgetAmount[];
+  /** 'all', 'month', or a view's id — see ViewPick. A device choice. */
+  budgetView: string;
+  /** `YYYY-MM`, the month the stepper is on. */
+  budgetMonth: string;
+  onBudgetView: (id: string) => void;
+  onBudgetMonth: (month: string) => void;
+  onNewView: (name: string) => void;
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the category manager — where a category is MADE and coloured. */
@@ -121,29 +183,149 @@ export function BudgetScreen({
 
   const leaveEdit = () => { setEdit(false); setNaming(null); };
 
+  /**
+   * WHICH SET, and which transactions.
+   *
+   * All Time reads the lines' own amounts and the whole ledger. Month reads
+   * that month's set and only the transactions that landed in it (Sean,
+   * 2026-09-16: "narrowing to a month limits the budget to that month and all
+   * transactions that land in that month are the ones included"). A named
+   * view reads its own set and keeps the stepper, so it is a what-if budget
+   * you can walk through the year with.
+   *
+   * A view chosen and then deleted falls back to All Time — the pref holds an
+   * id and only this screen knows which ids still exist.
+   */
+  const knownViews = useMemo(() => viewsOf({ views }), [views]);
+  const picked =
+    budgetView === ALL_VIEW || budgetView === MONTH_VIEW
+      || knownViews.some((v) => v.id === budgetView)
+      ? budgetView
+      : ALL_VIEW;
+  const hasMonth = picked !== ALL_VIEW;
+  const set =
+    picked === ALL_VIEW ? ALL_TIME
+      : picked === MONTH_VIEW ? monthSet(budgetMonth)
+        : viewSet(picked);
+  const inScope = useMemo(
+    () => (hasMonth ? txns.filter((t) => monthOf(t.date) === budgetMonth) : txns),
+    [txns, hasMonth, budgetMonth],
+  );
+  /** What this line is budgeted IN THIS SET — never `line.budget` directly. */
+  const budgetOf = (l: Line) => budgetIn({ budgets }, set, l);
+
+  /**
+   * WHAT EACH LINE CARRIES IN — assigned in an earlier month and still there.
+   *
+   * Sean, 2026-09-18: "assignments that aren't spent by the end of the month
+   * carry over." A line's available in September is therefore everything
+   * assigned to it in September and before, plus everything it has ever
+   * spent; this map is that history, and `availableOf` adds the month itself.
+   *
+   * MONTH ONLY. All Time has no months to carry between, and a named view is
+   * one what-if budget with no calendar under it — carrying into either would
+   * be inventing a timeline neither has.
+   *
+   * A MAP rather than a filter per line: the spending half has to look at
+   * every transaction older than this month, and doing that once per line
+   * turns the whole ledger into an N×M scan on every keystroke of a rename.
+   */
+  const carried = useMemo(() => {
+    const by = new Map<string, number>();
+    if (picked !== MONTH_VIEW) return by;
+    for (const t of txns) {
+      if (t.category === null || monthOf(t.date) >= budgetMonth) continue;
+      by.set(t.category, (by.get(t.category) ?? 0) + t.amount);
+    }
+    for (const l of lines) {
+      const before = assignedBefore({ budgets }, budgetMonth, l.id);
+      if (before !== 0) by.set(l.id, (by.get(l.id) ?? 0) + before);
+    }
+    return by;
+  }, [picked, txns, lines, budgets, budgetMonth]);
+  const carryOf = (l: Line) => carried.get(l.id) ?? 0;
+
   const shown = view === null ? categories : categories.filter((c) => c.id === view);
   /** What has actually moved through a line. Negative for spending. */
-  const spentOn = (id: string) => total(txns.filter((t) => t.category === id));
+  const spentOn = (id: string) => total(inScope.filter((t) => t.category === id));
   const linesIn = (id: string) =>
     lines.filter((l) => l.category === id).slice().sort((a, b) => a.order - b.order);
 
-  const assigned = shown.reduce(
-    (n, c) => n + linesIn(c.id).reduce((m, l) => m + l.budget, 0), 0,
+  /**
+   * ASSIGNED — every live line's amount in this set, over the WHOLE budget.
+   *
+   * It narrowed with the category picker until 2026-09-18 and must not any
+   * more: Funds Available is now this figure taken off the month's money, and
+   * a pair where one half narrows and the other does not is a subtraction
+   * that stops being true the moment somebody filters. Neither header figure
+   * answers a question about the filter — that is what the category headings
+   * below are for.
+   */
+  const assigned = categories.reduce(
+    (n, c) => n + linesIn(c.id).reduce((m, l) => m + budgetOf(l), 0), 0,
   );
-  // …and what is LEFT of it across the same lines, beside it in the bar
-  // (Sean, 2026-09-15: "show available next to assigned on the budget
-  // page"). The same arithmetic each line and each category heading draws,
-  // summed once more — never a fourth number computed a fourth way.
-  const available = shown.reduce(
-    (n, c) => n + linesIn(c.id).reduce((m, l) => m + availableOf(l.budget, spentOn(l.id)), 0), 0,
+  /**
+   * WHAT THE ACCOUNTS HOLD at the end of the month being looked at.
+   *
+   * Every transaction dated up to and including it — not the ones that landed
+   * IN it. Sean, 2026-09-18: "funds available should read as how much is in
+   * the account in the current month", and his September had $484.63 in it
+   * against a month that had moved -$1,682.76. The month's own movement is
+   * what a month SPENT, which is a different question and one the columns
+   * below already answer; what is in the account is everything that ever
+   * happened to it, which is the balance.
+   *
+   * Stepping back a month therefore shows what was in the account THEN, which
+   * is the only reading of "how much is in the account" a past month has.
+   */
+  const held = useMemo(
+    () => (hasMonth ? total(txns.filter((t) => monthOf(t.date) <= budgetMonth)) : total(txns)),
+    [txns, hasMonth, budgetMonth],
   );
+  /**
+   * FUNDS AVAILABLE — what the accounts hold, less what this month assigned.
+   *
+   * Sean, 2026-09-18: "the current month is how much is available with the
+   * amount assigned for the current month."
+   *
+   * A QUIET MONTH READS ZERO — his rule, asked for twice: "previous months
+   * will be 0 because the month is over and no money was assigned", and then
+   * exactly, "0 if there was no activity". A month that nothing was paid
+   * into, nothing was paid out of and nothing was assigned in has nothing to
+   * say, and saying the balance anyway would draw the same figure across a
+   * run of empty months as though each one were news.
+   *
+   * It does NOT take off what earlier months carried into the LINES
+   * (`carried` above), and that was Sean's call between the two readings:
+   * this bar answers what the accounts hold against this month's plan, and
+   * the lines underneath answer what is still in the envelopes.
+   *
+   * `shown` is deliberately not consulted, and `txns` is every live
+   * transaction — not `spentOn`, which files by LINE (see `Txn.category`,
+   * whose name predates lines carrying the money). Filtering the budget to
+   * Groceries cannot change how much money you have.
+   */
+  const quiet = inScope.length === 0 && assigned === 0;
+  const available = quiet ? 0 : held - assigned;
 
   /** Money that belongs to no line at all. Drawn under its own heading. */
-  const loose = txns.filter((t) => t.category === null);
+  const loose = inScope.filter((t) => t.category === null);
   const showNone = view === null && loose.length > 0;
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
+  /**
+   * Hold a category's caret, fold or unfold EVERY category — the gesture that
+   * replaced the collapse-all button across the test suite (Sean,
+   * 2026-09-16). `wasOpen` is the state of the caret that was HELD: hold an
+   * open one and the budget closes, hold a closed one and it opens.
+   *
+   * `shown`, not every category, plus the No-category heading when it is
+   * drawn: folding a heading that is filtered out of view would leave a
+   * surprise waiting behind the next pick.
+   */
+  const foldAllCategories = (wasOpen: boolean) =>
+    onCollapsed(foldLevel([...shown.map((c) => c.id), ...(showNone ? [NONE] : [])], wasOpen));
 
   return (
     <View style={styles.fill}>
@@ -175,18 +357,63 @@ export function BudgetScreen({
         }
       />
 
+      {/* `View:` UNDER THE TITLE (Sean, 2026-09-16), above the numbers it
+          decides — you read which budget you are looking at before you read
+          the budget. */}
+      <BarRow>
+        <ViewPick picked={picked} views={knownViews} onPick={onBudgetView} onNew={onNewView} />
+      </BarRow>
+
       <BarRow>
         <View style={styles.totals}>
+          {/* FUNDS AVAILABLE, and FIRST (Sean, 2026-09-16) — what is in the
+              accounts, which is the number you open this screen holding a
+              decision about. `assigned` beside it is what has been promised
+              out of it, and it keeps the same amount-then-label shape so the
+              two read as one pair.
+
+              The two are deliberately NOT a subtraction of each other: one is
+              the ledger, the other is the plan, and the gap between them is
+              the thing worth seeing. */}
+          <Text style={styles.total} testID="budget-available-line">
+            <Money style={styles.total} cents={available} testID="budget-available" tone /> Funds Available
+          </Text>
           <Text style={styles.total} testID="budget-assigned">
             {formatAmount(assigned)} assigned
           </Text>
-          {/* Toned like every other available figure: green with money left,
-              red when the lines have overspent what was put in. */}
-          <Text style={styles.total} testID="budget-available-line">
-            <Money style={styles.total} cents={available} testID="budget-available" tone /> available
-          </Text>
         </View>
       </BarRow>
+
+      {/* The stepper, UNDER the totals it moves — and absent entirely on All
+          Time, where there is no month to be on. Arrows either side of the
+          month rather than a picker: stepping to the one before or after is
+          almost always what is wanted, and a picker makes that two taps and a
+          decision. */}
+      {hasMonth && (
+        <BarRow>
+          <View style={styles.monthRow}>
+            <Pressable
+              onPress={() => onBudgetMonth(stepMonth(budgetMonth, -1))}
+              style={styles.monthArrow}
+              accessibilityRole="button"
+              accessibilityLabel="Previous month"
+              testID="budget-month-prev"
+            >
+              <Text style={styles.monthArrowText}>‹</Text>
+            </Pressable>
+            <Text style={styles.monthName} testID="budget-month">{monthName(budgetMonth)}</Text>
+            <Pressable
+              onPress={() => onBudgetMonth(stepMonth(budgetMonth, 1))}
+              style={styles.monthArrow}
+              accessibilityRole="button"
+              accessibilityLabel="Next month"
+              testID="budget-month-next"
+            >
+              <Text style={styles.monthArrowText}>›</Text>
+            </Pressable>
+          </View>
+        </BarRow>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.list}
@@ -206,11 +433,15 @@ export function BudgetScreen({
             rows={linesIn(c.id)}
             shut={collapsed.includes(c.id)}
             onToggle={() => toggle(c.id)}
+            onFoldAll={foldAllCategories}
             onAdd={() => onAddLine(c.id)}
             edit={edit}
             naming={naming}
             setNaming={setNaming}
             spentOn={spentOn}
+            budgetOf={budgetOf}
+            carryOf={carryOf}
+            set={set}
             onEditAmount={onEditAmount}
             onRenameLine={onRenameLine}
             onRenameCategory={onRenameCategory}
@@ -237,9 +468,12 @@ export function BudgetScreen({
             <View style={styles.head}>
               <Pressable
                 onPress={() => toggle(NONE)}
+                onLongPress={() => foldAllCategories(!collapsed.includes(NONE))}
+                delayLongPress={LONG_PRESS_MS}
                 style={styles.headMain}
                 accessibilityRole="button"
                 accessibilityState={{ expanded: !collapsed.includes(NONE) }}
+                accessibilityHint="Hold to fold or unfold every category"
                 testID="category-head-none"
               >
                 <Text style={[styles.chev, collapsed.includes(NONE) && styles.chevShut]}>⌄</Text>
@@ -270,7 +504,8 @@ export function BudgetScreen({
  * Transactions tab uses, for the same reason.
  */
 function CategorySection({
-  category, rows, shut, onToggle, onAdd, edit, naming, setNaming, spentOn,
+  category, rows, shut, onToggle, onFoldAll, onAdd, edit, naming, setNaming,
+  spentOn, budgetOf, carryOf, set,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
   onDeleteCategory, onMoveLine, onDragging,
 }: {
@@ -278,11 +513,19 @@ function CategorySection({
   rows: readonly Line[];
   shut: boolean;
   onToggle: () => void;
+  /** Fold or unfold every category; the argument is this caret's own state. */
+  onFoldAll: (wasOpen: boolean) => void;
   onAdd: () => void;
   edit: boolean;
   naming: string | null;
   setNaming: (id: string | null) => void;
   spentOn: (id: string) => number;
+  /** This line's amount IN THE ACTIVE SET — never `line.budget` directly. */
+  budgetOf: (line: Line) => number;
+  /** What this line carried in from earlier months. 0 outside Month. */
+  carryOf: (line: Line) => number;
+  /** Which set an amount edit lands in. Passed through to the pad. */
+  set: string;
   onEditAmount: (pick: LinePick, field: LineField, at: Anchor) => void;
   onRenameLine: (line: Line, name: string) => void;
   onRenameCategory: (category: Category, name: string) => void;
@@ -302,8 +545,11 @@ function CategorySection({
   // the render-phase update this repo has already been bitten by once.
   useEffect(() => { onDragging(drag.dragIdx !== null); }, [drag.dragIdx, onDragging]);
 
-  const budgeted = rows.reduce((n, l) => n + l.budget, 0);
+  const budgeted = rows.reduce((n, l) => n + budgetOf(l), 0);
   const spent = rows.reduce((n, l) => n + spentOn(l.id), 0);
+  // Summed the same way the rows are, so a folded category and its open one
+  // cannot disagree about what is left in it.
+  const carried = rows.reduce((n, l) => n + carryOf(l), 0);
 
   return (
     <View testID="category-section" style={styles.section}>
@@ -332,10 +578,16 @@ function CategorySection({
         ) : (
           <Pressable
             onPress={() => (edit ? setNaming(category.id) : onToggle())}
+            // Only outside edit mode, where a press means fold. In edit mode
+            // the heading is a rename target and a hold on it must not
+            // quietly close the whole budget under the field.
+            onLongPress={edit ? undefined : () => onFoldAll(!shut)}
+            delayLongPress={LONG_PRESS_MS}
             {...(edit ? KEEP_FOCUS : {})}
             style={styles.headMain}
             accessibilityRole="button"
             accessibilityState={edit ? undefined : { expanded: !shut }}
+            accessibilityHint={edit ? undefined : 'Hold to fold or unfold every category'}
             testID={`category-head-${category.id}`}
           >
             <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
@@ -354,7 +606,7 @@ function CategorySection({
             */}
             <Money
               style={styles.headNum}
-              cents={availableOf(budgeted, spent)}
+              cents={availableOf(budgeted, spent, carried)}
               testID={`category-available-${category.id}`}
               tone
             />
@@ -393,21 +645,30 @@ function CategorySection({
             MARKS, not words — see Icons.tsx. At 56 points a column
             `BUDGETED` and `AVAILABLE` broke mid-word on a phone and drew as
             `BUDGETE / D`. The accessibility label carries the word, so a
-            screen reader still hears "Budgeted" where an eye sees an
+            screen reader still hears "Assigned" where an eye sees an
             envelope.
+
+            …and since 2026-09-18 so does a TIP: hover one on the Mac, tap one
+            on a phone, and it says which column it is. The word was reaching
+            everybody except the people looking straight at it.
+
+            ASSIGNED, not "budgeted", for the envelope. It is what the bar at
+            the top of this screen calls the same number and what Sean calls
+            it; the stored field is `budget` and always was, and a column head
+            is not the place to make anyone care about that.
           */}
-          <View style={styles.colLabel} accessibilityLabel="Needs" testID="col-needs">
+          <Tip style={styles.colLabel} text="Needs" testID="col-needs">
             <FlagIcon />
-          </View>
-          <View style={styles.colLabel} accessibilityLabel="Budgeted" testID="col-budgeted">
+          </Tip>
+          <Tip style={styles.colLabel} text="Assigned" testID="col-budgeted">
             <EnvelopeIcon />
-          </View>
-          <View style={styles.colLabel} accessibilityLabel="Spent" testID="col-spent">
+          </Tip>
+          <Tip style={styles.colLabel} text="Spent" testID="col-spent">
             <ReceiptIcon />
-          </View>
-          <View style={styles.colLabel} accessibilityLabel="Available" testID="col-available">
+          </Tip>
+          <Tip style={styles.colLabel} text="Available" testID="col-available">
             <CoinIcon />
-          </View>
+          </Tip>
         </View>
       )}
 
@@ -420,6 +681,9 @@ function CategorySection({
           <LineRow
             line={l}
             spent={spentOn(l.id)}
+            budgeted={budgetOf(l)}
+            carry={carryOf(l)}
+            set={set}
             edit={edit}
             naming={naming === l.id}
             onName={() => setNaming(l.id)}
@@ -444,11 +708,28 @@ function CategorySection({
 }
 
 function LineRow({
-  line, spent, edit, naming, onName, onNamed, onEditAmount, onDelete, onSnooze,
-  grip, lifted, dy,
+  line, spent, budgeted, carry, set, edit, naming, onName, onNamed, onEditAmount,
+  onDelete, onSnooze, grip, lifted, dy,
 }: {
   line: Line;
   spent: number;
+  /**
+   * What this line is budgeted IN THE ACTIVE SET.
+   *
+   * Passed in rather than read off the line, because `line.budget` is only
+   * the All Time answer — a month or a named view has its own (core/views.ts).
+   */
+  budgeted: number;
+  /**
+   * Assigned to this line in EARLIER months and still here — see `carried`.
+   *
+   * It is not drawn as a column of its own: four money columns is already
+   * what forced this row onto two lines, and the place it shows is
+   * AVAILABLE, which is the number it is actually part of.
+   */
+  carry: number;
+  /** Which set the pad should write a change into. */
+  set: string;
   edit: boolean;
   naming: boolean;
   onName: () => void;
@@ -460,10 +741,12 @@ function LineRow({
   lifted: boolean;
   dy: number;
 }) {
-  const pick = { line, spent };
+  const pick = { line, spent, budgeted, carry, set };
   // One word, from core. Four colours decided in a component is four chances
   // for the Mac and the phone to disagree about what a yellow line means.
-  const tone = lineTone(line, spent);
+  // The line is handed over wearing THIS SET's amount, so a month where the
+  // groceries are unfunded reads red there and nowhere else.
+  const tone = lineTone({ ...line, budget: budgeted }, spent, carry);
   return (
     <Animated.View
       style={[
@@ -505,28 +788,6 @@ function LineRow({
       </View>
 
 
-      {/*
-        Snooze, FIRST on the line and under the category name above it —
-        Sean, 2026-09-15. It read as an afterthought parked at the right
-        margin; at the head of the row it reads the way a checkbox does
-        everywhere else, as a thing you tick about the name beside it.
-
-        A checkbox rather than a menu because it is a per-line yes/no flipped
-        often, and it is the one control here that changes nothing about the
-        money.
-      */}
-      <Pressable
-        onPress={() => onSnooze(!line.snoozed)}
-        style={styles.snoozeCol}
-        accessibilityRole="checkbox"
-        accessibilityState={{ checked: line.snoozed }}
-        accessibilityLabel={line.snoozed ? `Wake ${line.name}` : `Snooze ${line.name}`}
-        testID={`line-snooze-${line.id}`}
-      >
-        <View style={[styles.box, line.snoozed && styles.boxOn]}>
-          {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
-        </View>
-      </Pressable>
       {naming ? (
         <NameField
           value={line.name}
@@ -560,10 +821,41 @@ function LineRow({
       </View>
 
       <View style={styles.rowNums}>
+      {/*
+        Snooze — on the NUMBERS line, its box starting exactly under the
+        first letter of the name above it (Sean, 2026-09-16: "immediately
+        under the M in Milk"). It sat first on line one until then, which
+        pushed the name 26pt right of every category heading and left the
+        checkbox floating against nothing.
+
+        ABSOLUTE, and that is the point: in the flow it would be 26 more
+        points on a line that already spends 300 of a phone's 307 on four
+        money columns, and the columns shrink first (see `colName`). A
+        truncated number is the one thing this row must never draw, so the
+        control that is not a number is the one taken out of the flex line.
+
+        A checkbox rather than a menu because it is a per-line yes/no flipped
+        often, and it is the one control here that changes nothing about the
+        money.
+      */}
+      <Pressable
+        onPress={() => onSnooze(!line.snoozed)}
+        style={styles.snoozeCol}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: line.snoozed }}
+        accessibilityLabel={line.snoozed ? `Wake ${line.name}` : `Snooze ${line.name}`}
+        testID={`line-snooze-${line.id}`}
+      >
+        <View style={[styles.box, line.snoozed && styles.boxOn]}>
+          {line.snoozed && <Text style={styles.boxTick}>✓</Text>}
+        </View>
+      </Pressable>
+
       {/* What the line is AIMING at. Editable like the other two. */}
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'needs', at)}
         label={`Needs ${formatAmount(line.needs)}`}
+        tip="Needs"
         testID={`line-needs-tap-${line.id}`}
       >
         <Money
@@ -578,25 +870,36 @@ function LineRow({
           it hides the list you were reading to decide. */}
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'budget', at)}
-        label={`Budgeted ${formatAmount(line.budget)}`}
+        label={`Assigned ${formatAmount(budgeted)}`}
+        tip="Assigned"
         testID={`line-budgeted-tap-${line.id}`}
       >
         <Money
           style={[styles.rowNum, toneStyle(tone)]}
-          cents={line.budget}
+          cents={budgeted}
           testID={`line-budgeted-${line.id}`}
         />
       </AmountCell>
-      {/* Spent is not tappable. It is what actually moved. */}
-      <Money style={[styles.rowNum, toneStyle(tone)]} cents={spent} testID={`line-spent-${line.id}`} />
+      {/* Spent still cannot be TYPED OVER — it is what actually moved, and
+          there is deliberately no `line-spent-tap-*` to open a pad with. It
+          only carries a tip now, which is why this one may be flashed by a
+          tap: there is nothing else for a tap here to mean. */}
+      <Tip
+        text="Spent"
+        label={`Spent ${formatAmount(spent)}`}
+        above
+      >
+        <Money style={[styles.rowNum, toneStyle(tone)]} cents={spent} testID={`line-spent-${line.id}`} />
+      </Tip>
       <AmountCell
         onPress={(at) => onEditAmount(pick, 'available', at)}
-        label={`Available ${formatAmount(availableOf(line.budget, spent))}`}
+        label={`Available ${formatAmount(availableOf(budgeted, spent, carry))}`}
+        tip="Available"
         testID={`line-available-tap-${line.id}`}
       >
         <Money
           style={[styles.rowNum, toneStyle(tone)]}
-          cents={availableOf(line.budget, spent)}
+          cents={availableOf(budgeted, spent, carry)}
           testID={`line-available-${line.id}`}
         />
       </AmountCell>
@@ -648,7 +951,7 @@ function DoubleTap({ onConfirm, label, testID }: {
     >
       {armed
         ? <Text style={styles.delText} testID={`${testID}-armed`}>Sure?</Text>
-        : <XIcon color={T.dim} />}
+        : <XIcon color={T.dim} size={12} />}
     </Pressable>
   );
 }
@@ -713,16 +1016,29 @@ function NameField({ value, style, onDone, testID }: {
  * whichever parent asked, and the pad is placed against the window. Measuring
  * at press time also means a scrolled list gives the right answer.
  */
-function AmountCell({ onPress, label, testID, children }: {
+function AmountCell({ onPress, label, tip, testID, children }: {
   onPress: (at: Anchor) => void;
   label: string;
+  /**
+   * Which column this is, for the tip — Sean, 2026-09-18: "tooltip should
+   * appear over numbers as well."
+   *
+   * HOVER ONLY, and that is not an omission. A tap on one of these opens the
+   * pad, which is a better answer to "what is this number" than a word is;
+   * the mark at the head of the column is the one that flashes when tapped,
+   * for the surface with no pointer to hover with.
+   */
+  tip: string;
   testID: string;
   children: React.ReactNode;
 }) {
   const box = useRef<View>(null);
+  const t = useTip();
   return (
     <Pressable
       ref={box}
+      onHoverIn={t.hover.onHoverIn}
+      onHoverOut={t.hover.onHoverOut}
       onPress={() => {
         const node = box.current;
         if (node === null) { onPress({ x: 0, y: 0, w: 0, h: 0 }); return; }
@@ -735,6 +1051,7 @@ function AmountCell({ onPress, label, testID, children }: {
       testID={testID}
     >
       {children}
+      <TipBubble text={tip} shown={t.shown} above />
     </Pressable>
   );
 }
@@ -802,16 +1119,43 @@ const GRIP = 16;
  */
 const COL = 72;
 const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
+/**
+ * How far a LINE sits in — the grip and the gap after it, and nothing else.
+ *
+ * Sean, 2026-09-16: "move the budget items and their check marks further to
+ * the left, closer to vertically aligned with the caret." So a line name
+ * starts at 20, where the caret's own box ends, rather than at INDENT (47)
+ * under the category NAME. The lines read as a column under the carets now
+ * instead of under the headings' text.
+ *
+ * 20 is as far left as they go while the grip stays drawn INSIDE the indent,
+ * which is what keeps edit mode from sliding every name sideways. The snooze
+ * box follows to the same x — it has to stay under the first letter of the
+ * name above it — so the two move together, which is how Sean asked for them.
+ */
+const LINE_INDENT = GRIP + SPACE.xs;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  monthArrow: { minWidth: TAP, minHeight: TAP, alignItems: 'center', justifyContent: 'center' },
+  monthArrowText: { color: T.accent, fontSize: 22, lineHeight: 24 },
+  // Tabular so stepping through the year does not shuffle the arrows about.
+  monthName: {
+    color: T.text, fontSize: 15, fontWeight: '600',
+    minWidth: 130, textAlign: 'center', fontVariant: ['tabular-nums'],
+  },
   totals: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap' },
   list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
   section: { gap: SPACE.xs },
   head: {
     flexDirection: 'row', alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
+    // Matching `row`, so the heading's delete and every line's delete stand in
+    // ONE column. Without it the heading had no right padding at all and its X
+    // sat 4pt further out than the ones under it.
+    paddingRight: SPACE.xs,
   },
   headMain: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flex: 1, minHeight: TAP },
   chev: { color: T.dim, fontSize: 15, width: 20, height: 20, lineHeight: 20, textAlign: 'center' },
@@ -828,6 +1172,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
     justifyContent: 'flex-end',
     paddingTop: SPACE.xs, paddingRight: SPACE.xs, paddingLeft: INDENT,
+    // Above the lines underneath, so a tip hanging off a column head is not
+    // painted over by the first row it hangs across.
+    zIndex: 2,
   },
   // 56, not 68. A fourth money column arrived on 2026-09-15 and four at the
   // old width plus the snooze box leave a phone about seventy points for the
@@ -848,18 +1195,23 @@ const styles = StyleSheet.create({
    */
   colName: { flex: 1, minWidth: 0, textAlign: 'left' },
   // The row is a COLUMN of two lines now, not a row of seven things.
+  //
+  // No padding of its own: the grip and the gap after it ARE the indent, so
+  // the name lands at LINE_INDENT and edit mode still slides nothing.
   row: {
-    paddingLeft: INDENT - GRIP, paddingRight: SPACE.xs,
+    paddingRight: SPACE.xs,
     paddingVertical: SPACE.sm, gap: 2, backgroundColor: T.bg,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.lineSoft,
   },
-  // Line one: the grip, the name, the snooze box and (in edit mode) delete.
+  // Line one: the grip, the name, and (in edit mode) delete.
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs, minHeight: 26 },
   // Line two: the four money columns, hard right so they line up with the
   // icons above them and with every other row.
+  // `relative` so the snooze box can be positioned against this line rather
+  // than take width from it.
   rowNums: {
     flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
-    justifyContent: 'flex-end', paddingLeft: GRIP,
+    justifyContent: 'flex-end', paddingLeft: GRIP, position: 'relative',
   },
   // The name now has the whole of line one to itself.
   nameFill: { flex: 1, minWidth: 0 },
@@ -875,13 +1227,34 @@ const styles = StyleSheet.create({
     color: T.text, fontSize: 13, lineHeight: 18, width: COL, flexShrink: 1,
     textAlign: 'right', fontVariant: ['tabular-nums'],
   },
+  /*
+   * The delete, in edit mode only — 22 points, not 28, and never touching the
+   * name it belongs to (Sean, 2026-09-16: "the X button should have proper
+   * spacing and not be so large").
+   *
+   * It was the heaviest mark on the screen: a bordered 28pt circle around a
+   * 15pt cross, next to 13pt numbers and a 15pt name, sitting flush against
+   * whatever ended the row. The circle is what carries the weight, so the
+   * circle is what came down; the cross follows it to 12 so the ring keeps
+   * its breathing room rather than tightening around the glyph.
+   */
   del: {
-    width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+    width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center',
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+    marginLeft: SPACE.sm,
   },
-  delArmed: { backgroundColor: T.danger, borderColor: T.danger },
+  /*
+   * ARMED IT IS A PILL, not a circle. "Sure?" is about 30 points of text and
+   * the circle is 22 — a fixed width here clipped the word that is the whole
+   * point of the second press. `auto` lets it grow and the padding keeps it
+   * from reading as a label with a border round it.
+   */
+  delArmed: {
+    backgroundColor: T.danger, borderColor: T.danger,
+    width: 'auto', paddingHorizontal: SPACE.sm,
+  },
   delText: { color: '#ffffff', fontSize: 11, fontWeight: '600' },
-  dropLine: { height: 2, backgroundColor: T.accent, marginLeft: INDENT },
+  dropLine: { height: 2, backgroundColor: T.accent, marginLeft: LINE_INDENT },
   // The four states a line can be in — see core's `lineTone`. Gray reads as
   // "not asking", which is exactly what a snoozed line is.
   toneSnoozed: { color: T.faint },
@@ -892,7 +1265,14 @@ const styles = StyleSheet.create({
   // short of and so only ever answers "is there any left".
   over: { color: T.danger },
   under: { color: T.positive },
-  snoozeCol: { width: 22, alignItems: 'center', justifyContent: 'center' },
+  // `left` is measured from this line's own left edge, and the row keeps no
+  // padding of its own — so LINE_INDENT lands the BOX exactly under the first
+  // letter of the name above it. flex-start, not center: it is the box's left
+  // edge that has to line up, not the middle of the column it sits in.
+  snoozeCol: {
+    position: 'absolute', left: LINE_INDENT, top: 0, bottom: 0,
+    width: 22, alignItems: 'flex-start', justifyContent: 'center',
+  },
   box: {
     width: 15, height: 15, borderRadius: 4,
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.dim,
@@ -900,7 +1280,7 @@ const styles = StyleSheet.create({
   },
   boxOn: { backgroundColor: T.dim, borderColor: T.dim },
   boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
-  sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: INDENT },
+  sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: LINE_INDENT },
   empty: {
     flexGrow: 1, alignItems: 'center', justifyContent: 'center',
     gap: SPACE.xs, padding: SPACE.xl,

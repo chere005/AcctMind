@@ -169,12 +169,47 @@ export type DraftErrors = Partial<Record<keyof Draft, string>>;
  * six surfaces holding copies of this, so the first migration will not be
  * able to reach them all at once.
  */
+/**
+ * A named budget view — one alternative set of budgeted amounts.
+ *
+ * It holds no amounts of its own: those are `BudgetAmount` records keyed by
+ * `viewSet(id)`, so adding a view is cheap and deleting one leaves its
+ * amounts to be ignored rather than hunted down.
+ */
+export type View = Record_ & {
+  name: string;
+  order: number;
+};
+
+/**
+ * One line's budgeted amount inside one SET — a month, or a named view.
+ *
+ * The All Time set is `Line.budget` and has no records here; see views.ts for
+ * the key grammar and for why this is a record per amount rather than a map
+ * per set.
+ */
+export type BudgetAmount = Record_ & {
+  /** 'm:YYYY-MM' or 'v:<viewId>'. Never 'all'. */
+  set: string;
+  /** The line this budgets. */
+  line: string;
+  /** Integer MINOR UNITS, like every amount. */
+  amount: number;
+};
+
 export type Store = {
   v: 4;
   txns: Txn[];
   accounts: Account[];
   categories: Category[];
   lines: Line[];
+  /**
+   * ADDITIVE, and defaulted rather than migrated — the same bargain `needs`
+   * and `snoozed` made. A store written before views simply has none, which
+   * is what an empty array means, so there is no v5.
+   */
+  views: View[];
+  budgets: BudgetAmount[];
 };
 
 /** What the one account a migrated store gets is called. */

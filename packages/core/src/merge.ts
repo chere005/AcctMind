@@ -70,6 +70,10 @@ export function mergeStores(mine: Store, theirs: Store): Store {
     accounts: mergeRecords(mine.accounts, theirs.accounts),
     categories: mergeRecords(mine.categories, theirs.categories),
     lines: mergeRecords(mine.lines, theirs.lines),
+    // Views and the amounts inside them merge per record, which is the whole
+    // reason an amount IS a record — see views.ts.
+    views: mergeRecords(mine.views, theirs.views),
+    budgets: mergeRecords(mine.budgets, theirs.budgets),
   };
 }
 
@@ -128,6 +132,8 @@ export function prune(store: Store, now: number, ttl: number = TOMBSTONE_TTL_MS)
     accounts: fresh(store.accounts),
     categories: fresh(store.categories),
     lines: fresh(store.lines),
+    views: fresh(store.views),
+    budgets: fresh(store.budgets),
   };
 }
 
@@ -150,6 +156,8 @@ export function canonical(store: Store): Store {
     accounts: byId(store.accounts),
     categories: byId(store.categories),
     lines: byId(store.lines),
+    views: byId(store.views),
+    budgets: byId(store.budgets),
   };
 }
 

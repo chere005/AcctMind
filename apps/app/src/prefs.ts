@@ -28,10 +28,27 @@ export type Prefs = {
   sort: SortMode;
   /** Accounts folded shut, by id. Also a view choice. */
   collapsed: string[];
+  /**
+   * Which budget SET the Budget tab is reading — 'all', 'month', or a view's
+   * id (see core/views.ts for the set keys those become).
+   *
+   * A view choice, so it lives here rather than on the records: which set you
+   * were last looking at is about this device, while the amounts inside the
+   * set are the ledger's and sync.
+   */
+  budgetView: string;
+  /** The month the stepper is on, `YYYY-MM`. Only read when a set has one. */
+  budgetMonth: string;
+};
+
+/** The month a device that has never stepped anywhere starts on. */
+const thisMonth = (): string => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 
 /** What a device that has never chosen anything gets. */
-export const DEFAULTS: Prefs = { amountMode: 'cents', sort: 'date', collapsed: [] };
+export const DEFAULTS: Prefs = { amountMode: 'cents', sort: 'date', collapsed: [], budgetView: 'all', budgetMonth: thisMonth() };
 
 export async function loadPrefs(): Promise<Prefs> {
   try {
@@ -45,10 +62,18 @@ export async function loadPrefs(): Promise<Prefs> {
     // here understands.
     const sort = (data as Record<string, unknown>)['sort'];
     const collapsed = (data as Record<string, unknown>)['collapsed'];
+    const budgetView = (data as Record<string, unknown>)['budgetView'];
+    const budgetMonth = (data as Record<string, unknown>)['budgetMonth'];
     return {
       amountMode: mode === 'whole' ? 'whole' : 'cents',
       sort: sort === 'custom' || sort === 'amount' ? sort : 'date',
       collapsed: Array.isArray(collapsed) ? collapsed.filter((c): c is string => typeof c === 'string') : [],
+      // A view that has since been deleted is not resolvable here — the
+      // screen falls back to All Time when it cannot find the id, which is
+      // the only place that knows what views exist.
+      budgetView: typeof budgetView === 'string' && budgetView !== '' ? budgetView : 'all',
+      budgetMonth: typeof budgetMonth === 'string' && /^\d{4}-\d{2}$/.test(budgetMonth)
+        ? budgetMonth : thisMonth(),
     };
   } catch {
     return DEFAULTS;

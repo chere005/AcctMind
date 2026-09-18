@@ -406,15 +406,21 @@ test('a line is two lines, so the name and the numbers both fit', async ({ page 
   }
 });
 
-test('the snooze box heads the line, under the category name', async ({ page }) => {
+test('the snooze box sits under the first letter of the name', async ({ page }) => {
   // Sean, 2026-09-15: "put the snooze button under the category name." It sat
   // at the right margin and read as an afterthought; at the head of the row
   // it reads the way a checkbox does everywhere else — a thing you tick about
   // the name beside it.
+  //
+  // ALIGNED with the name, not left of it. Sean refined the placement on
+  // 2026-09-16 — "immediately under the M in Milk" — and the row became two
+  // lines, so the box moved onto the numbers line with its left edge on the
+  // name's. This read `<` until then, which is the same claim about a row
+  // that no longer exists.
   const line = await seed(page);
   const box = await page.getByTestId(`line-snooze-${line}`).boundingBox();
   const name = await page.getByTestId(`line-name-${line}`).boundingBox();
-  expect(box!.x).toBeLessThan(name!.x);
+  expect(Math.abs(box!.x - name!.x), 'the box starts where the name does').toBeLessThanOrEqual(1);
 
   // Under the CATEGORY name, not out at the margin: within a grip's width of
   // where the heading's own text starts.

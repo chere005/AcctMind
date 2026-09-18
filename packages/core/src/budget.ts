@@ -18,6 +18,16 @@
  * backwards. Keeping one stored number and two views of it is what makes the
  * two edit paths incapable of disagreeing.
  *
+ * Sean, 2026-09-18: "assignments that aren't spent by the end of the month
+ * carry over." So in a MONTH set there is a fourth number, and it is derived
+ * too — CARRY, what the line brought in from every month before this one
+ * (`carriedInto`, views.ts). It is a term in `availableOf` rather than a
+ * number of its own because that is exactly what it is: money that is still
+ * assigned to this line, just assigned in an earlier month. Sets with no
+ * months — All Time, a named view — carry nothing, which is why it defaults
+ * to 0 and every caller written before the month-by-month budget still reads
+ * correctly.
+ *
  * Everything here is integer minor units, like the rest of the ledger. See
  * money.ts for why that is not negotiable.
  */
@@ -35,9 +45,13 @@ import { MAX_CENTS } from './money';
  * It also means a refund does the right thing for free: a +$10 correction
  * filed against the line raises what is available, because that is what
  * actually happened to the money.
+ *
+ * `carry` is the same kind of term — assigned money that arrived in an
+ * earlier month — so it is added, not special-cased. 0 means "no earlier
+ * months to carry from", which is the truth for every set but a month.
  */
-export function availableOf(budget: number, spent: number): number {
-  return budget + spent;
+export function availableOf(budget: number, spent: number, carry = 0): number {
+  return carry + budget + spent;
 }
 
 /**
@@ -46,9 +60,13 @@ export function availableOf(budget: number, spent: number): number {
  * The exact inverse of `availableOf`, which `spec/budget.json` pins as a
  * round trip in both directions — that identity is the entire promise the
  * two-way edit makes, and a sign error in either function breaks it.
+ *
+ * `carry` comes off too, and must: typing $200 into a line that carried $150
+ * in means assigning $50 THIS month, not $200 on top of the $150. Dropping it
+ * here is how a two-way edit starts inventing money every time you look at it.
  */
-export function budgetFor(available: number, spent: number): number {
-  return available - spent;
+export function budgetFor(available: number, spent: number, carry = 0): number {
+  return available - spent - carry;
 }
 
 /* ------------------------------------------------------------------ *
@@ -109,7 +127,12 @@ export function applyOp(current: number, op: AmountOp, typed: number): number | 
  *
  *   OVER next, and it beats short. Money already spent that you do not have
  *   is worse than money you have not assigned yet, and if a line is both, the
- *   overspend is the one to look at.
+ *   overspend is the one to look at. It reads CARRY too — a line covered by
+ *   what it brought in from last month has not overspent anything.
+ *
+ *   SHORT does NOT read carry, deliberately. `needs` is what this line wants
+ *   ASSIGNING in the month being looked at, and money left over from August
+ *   does not mean September was funded.
  *
  *   SHORT only when a target was actually SET. Zero means "no target", and
  *   painting every line without one yellow would make the colour mean
@@ -120,9 +143,10 @@ export type LineTone = 'snoozed' | 'over' | 'short' | 'funded';
 export function lineTone(
   line: { budget: number; needs: number; snoozed: boolean },
   spent: number,
+  carry = 0,
 ): LineTone {
   if (line.snoozed) return 'snoozed';
-  if (availableOf(line.budget, spent) < 0) return 'over';
+  if (availableOf(line.budget, spent, carry) < 0) return 'over';
   if (line.needs > 0 && line.budget < line.needs) return 'short';
   return 'funded';
 }

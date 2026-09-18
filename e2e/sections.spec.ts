@@ -9,6 +9,16 @@
 import { expect, test, type Page } from '@playwright/test';
 import { addTransaction, fresh, stored } from './helpers';
 
+/** A long press — 350ms is the suite's one threshold (core's LONG_PRESS_MS). */
+async function hold(page: Page, locator: ReturnType<Page['getByTestId']>) {
+  const box = (await locator.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.waitForTimeout(500);
+  await page.mouse.up();
+}
+
+
 type Stored = {
   accounts: { id: string; name: string; color: string; deleted?: true }[];
   categories: { id: string; name: string; deleted?: true }[];
@@ -69,7 +79,7 @@ test('each account has its own + that adds into THAT account', async ({ page }) 
   expect(after.txns[0]?.account).toBe(id);
 });
 
-test('an account folds shut and the collapse-all folds every one', async ({ page }) => {
+test('an account folds shut, and a HELD caret folds every one', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
@@ -83,9 +93,15 @@ test('an account folds shut and the collapse-all folds every one', async ({ page
   await page.getByTestId(`account-head-${store.accounts[0]?.id}`).click();
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
 
-  await page.getByTestId('collapse-all').click();
+  // The collapse-all button is gone (Sean, 2026-09-16, across the test suite):
+  // holding any account's heading folds or unfolds every account, and which
+  // way it goes is read off the heading that was held. So the same gesture
+  // closes the ledger and opens it, with no button state to read first.
+  const head = page.getByTestId(`account-head-${store.accounts[0]?.id}`);
+  await expect(page.getByTestId('collapse-all'), 'the button is gone').toHaveCount(0);
+  await hold(page, head);
   await expect(page.getByTestId('txn-row')).toHaveCount(0);
-  await page.getByTestId('collapse-all').click();
+  await hold(page, head);
   await expect(page.getByTestId('txn-row')).toHaveCount(1);
 });
 

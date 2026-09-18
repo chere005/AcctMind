@@ -14,9 +14,9 @@
  * is a second name function and nothing else.
  */
 import { parseAmount } from './money';
-import { isDay } from './day';
+import { addDays, isDay } from './day';
 import { newId, REORDER_GAP } from './txn';
-import { tombstone } from './merge';
+import { tombstone, touch } from './merge';
 import type { Store, Txn } from './types';
 
 /* ------------------------------------------------------------------ *
@@ -77,18 +77,64 @@ export type CsvRow = {
   description: string;
   /** Integer minor units. Negative is money out, as everywhere else. */
   amount: number;
+  /**
+   * On the statement already (Sean, 2026-09-16: "yes everything should be
+   * cleared except the pending transactions").
+   *
+   * TRUE BY DEFAULT, which is the opposite of how this started. A bank export
+   * is a list of what the bank has done; PENDING is the exception it marks,
+   * and everything else in the file — including a blank cell, and including a
+   * file with no status column at all — has happened.
+   */
+  cleared: boolean;
 };
 
 /** A line that could not be read, and why — never silently dropped. */
 export type CsvProblem = { line: number; reason: string; text: string };
 
-export type CsvRead = { rows: CsvRow[]; problems: CsvProblem[] };
+/**
+ * What a file turned into.
+ *
+ * `problems` are lines that could NOT be read — damage, to go and look at.
+ * `skipped` are lines read perfectly well and deliberately left out, which is
+ * a different thing and must not be reported as breakage: a clean import of a
+ * file with two voided rows should not warn about two unreadable lines.
+ * Neither list is ever silently empty — see the note on `problems`.
+ */
+export type CsvRead = { rows: CsvRow[]; problems: CsvProblem[]; skipped: CsvProblem[] };
 
 /** Column names this understands, lowercased. First match wins. */
 const HEADERS = {
   date: ['date', 'transaction date', 'posted date', 'post date'],
   description: ['description', 'memo', 'payee', 'details'],
   amount: ['amount', 'value'],
+  /** Whatever the bank calls the column that says it has posted. */
+  cleared: ['cleared', 'status', 'state', 'posted', 'reconciled'],
+};
+
+/**
+ * The two things a status column can say that are not "this happened".
+ *
+ * PENDING is money the bank has not settled: it belongs in the ledger,
+ * because it is going to leave the account, but it is not on the statement.
+ *
+ * VOID is money that never moved — Sean, 2026-09-16: "drop any transactions
+ * that don't count like void". A voided or returned row in the file is the
+ * bank telling you about something it then unwound, and importing it puts a
+ * transaction in the ledger that no balance will ever account for.
+ *
+ * Everything else is cleared. The lists are the exceptions precisely because
+ * a bank writes far more words for "done" — posted, complete, a bare `*`, an
+ * empty cell — than it does for the two states that are not.
+ */
+const PENDING_WORDS = ['pending', 'processing', 'hold', 'authorization', 'authorized', 'unposted'];
+const VOID_WORDS = ['void', 'voided', 'cancel', 'cancelled', 'canceled', 'returned', 'reversed', 'declined', 'failed', 'denied'];
+
+const statusOf = (cell: string): 'cleared' | 'pending' | 'void' => {
+  const w = cell.trim().toLowerCase();
+  if (VOID_WORDS.includes(w)) return 'void';
+  if (PENDING_WORDS.includes(w)) return 'pending';
+  return 'cleared';
 };
 
 const findCol = (head: readonly string[], want: readonly string[]): number =>
@@ -122,12 +168,16 @@ export function readCsv(text: string): CsvRead {
   const table = parseDelimited(text);
   const rows: CsvRow[] = [];
   const problems: CsvProblem[] = [];
-  if (table.length === 0) return { rows, problems };
+  const skipped: CsvProblem[] = [];
+  if (table.length === 0) return { rows, problems, skipped };
 
   const head = table[0] as string[];
   const iDate = findCol(head, HEADERS.date);
   const iDesc = findCol(head, HEADERS.description);
   const iAmt = findCol(head, HEADERS.amount);
+  // OPTIONAL, like the description: a file without it still imports, with
+  // every row uncleared, which is exactly what it was doing before.
+  const iCleared = findCol(head, HEADERS.cleared);
   if (iDate < 0 || iAmt < 0) {
     return {
       rows,
@@ -136,6 +186,7 @@ export function readCsv(text: string): CsvRead {
         reason: 'no DATE and AMOUNT columns in the header',
         text: head.join(','),
       }],
+      skipped,
     };
   }
 
@@ -157,13 +208,20 @@ export function readCsv(text: string): CsvRead {
       });
       continue;
     }
+    const status = iCleared < 0 ? 'cleared' : statusOf(r[iCleared] ?? '');
+    if (status === 'void') {
+      // Read fine, deliberately left out — `skipped`, never `problems`.
+      skipped.push({ line, reason: `${squash(r[iCleared] ?? '')} — does not count`, text: r.join(',') });
+      continue;
+    }
     rows.push({
       date: day,
       description: squash(iDesc < 0 ? '' : r[iDesc] ?? ''),
       amount: cents,
+      cleared: status === 'cleared',
     });
   }
-  return { rows, problems };
+  return { rows, problems, skipped };
 }
 
 /** Runs of whitespace to one space, ends trimmed. Bank exports are padded. */
@@ -293,30 +351,40 @@ export function importKey(row: { date: string; description: string; amount: numb
  */
 const SEP = String.fromCharCode(31);
 
-/**
- * The lines not already in the ledger, COUNTED rather than collapsed.
+/* ------------------------------------------------------------------ *
+ * The second import, and every one after it
  *
- * Three identical $50 Zelles on one day are three transactions, and a set
- * would treat them as one. So this counts what is already filed under each
- * key and keeps the surplus — import the same file twice and the second
- * import adds nothing; import a file with one more repeat and it adds one.
+ * Sean, 2026-09-18: "if it goes back enough days which it usually will..
+ * check if any transactions no longer exist in the csv, or if any values need
+ * to be modified (final amounts, whether it's cleared)".
+ *
+ * A bank export is not a list of new things — it is the bank's CURRENT
+ * account of a stretch of days, and the second export of an overlapping
+ * stretch is the bank changing its mind out loud. Three things it says:
+ *
+ *   A PENDING ROW SETTLED. The amount moves (a tip, a fuel hold), the date
+ *   often moves with it, and the status goes from pending to posted.
+ *   A ROW CLEARED. Everything else the same; only the status moved.
+ *   A ROW WENT AWAY. An authorization the merchant never captured. The money
+ *   never moved, and the ledger is carrying a transaction no statement will
+ *   ever account for.
+ *
+ * Importing over the top of that without looking leaves the settled row
+ * beside its own pending ghost and the dead authorization for ever, which is
+ * exactly what every import before today did.
+ * ------------------------------------------------------------------ */
+
+/**
+ * How far a transaction may move when it settles and still be the same one.
+ *
+ * Four days. A card authorization posts in one to three, and a weekend pushes
+ * the far end out; past that the resemblance is a coincidence, and matching
+ * on it would fold two genuine visits to the same shop into one.
  */
-export function newRows(incoming: readonly CsvRow[], existing: readonly Txn[]): CsvRow[] {
-  const have = new Map<string, number>();
-  for (const t of existing) {
-    if (t.deleted === true) continue;
-    const k = importKey({ date: t.date, description: t.description, amount: t.amount });
-    have.set(k, (have.get(k) ?? 0) + 1);
-  }
-  const out: CsvRow[] = [];
-  for (const row of incoming) {
-    const k = importKey(row);
-    const n = have.get(k) ?? 0;
-    if (n > 0) have.set(k, n - 1);
-    else out.push(row);
-  }
-  return out;
-}
+export const SETTLE_DRIFT = 4;
+
+/** A row the file has CHANGED: what is in the ledger, and what it now says. */
+export type ImportChange = { txn: Txn; row: CsvRow };
 
 /** How an import treats what is already in the account. */
 export type ImportMode = 'add' | 'replace';
@@ -326,9 +394,132 @@ export type ImportPlan = {
   adding: readonly CsvRow[];
   /** Live rows in the account that would be tombstoned. `replace` only. */
   removing: readonly Txn[];
-  /** Lines skipped because the ledger already has them. `add` only. */
+  /** Lines the ledger already has, unchanged. `add` only. */
   duplicates: number;
+  /** Rows the file has changed — settled, or newly cleared. `add` only. */
+  updating: readonly ImportChange[];
+  /** Live rows INSIDE the file's span that the file no longer has. */
+  missing: readonly Txn[];
 };
+
+/** Is `b` within `days` either side of `a`? On the string, never a Date. */
+const near = (a: string, b: string, days: number): boolean =>
+  b >= addDays(a, -days) && b <= addDays(a, days);
+
+/** How far apart two days are, up to `max`, or `max + 1` for "further". */
+function drift(a: string, b: string, max: number): number {
+  for (let n = 0; n <= max; n++) {
+    if (addDays(a, n) === b || addDays(a, -n) === b) return n;
+  }
+  return max + 1;
+}
+
+/**
+ * A row the file could be talking ABOUT — one that came from a bank.
+ *
+ * The bank's raw text is on every imported row and on almost no hand-typed
+ * one, and it is the only handle there is: nothing on a `Txn` says where it
+ * came from. So a row with no description is left alone entirely — never
+ * matched loosely, never reported missing — because the alternative is an
+ * import quietly removing the cash somebody entered by hand.
+ */
+const fromBank = (t: Txn): boolean => t.description !== '';
+
+/**
+ * Line the file up against what the account already holds.
+ *
+ * Two passes, and the order is the rule:
+ *
+ *   EXACT first — same day, same cents, same bank text (`importKey`). That is
+ *   the same transaction beyond argument, and anything it claims is settled.
+ *   Only the cleared flag can differ, and when it does that is an update.
+ *
+ *   NEAR second, and only over what the first pass did not take: same bank
+ *   text, within `SETTLE_DRIFT` days, nearest day first. This is the pending
+ *   row that posted for a different amount. Running it second is what stops
+ *   it stealing a row that had an exact match waiting.
+ *
+ * What is left over on each side is the answer: file rows nobody claimed are
+ * NEW, and bank-sourced ledger rows inside the file's span that nobody
+ * claimed are GONE.
+ *
+ * The span matters as much as the matching. Rows older than the file reaches
+ * are none of its business, and neither is one dated after its last day —
+ * which is what a transaction entered by hand this morning, from a file
+ * exported last night, actually is.
+ */
+export function reconcileRows(incoming: readonly CsvRow[], existing: readonly Txn[]): {
+  adding: CsvRow[]; updating: ImportChange[]; missing: Txn[]; duplicates: number;
+} {
+  if (incoming.length === 0) {
+    return { adding: [], updating: [], missing: [], duplicates: 0 };
+  }
+  let first = incoming[0]!.date;
+  let last = first;
+  for (const r of incoming) {
+    if (r.date < first) first = r.date;
+    if (r.date > last) last = r.date;
+  }
+  const live = existing.filter((t) => t.deleted !== true);
+  /** The days the file COVERS — the only ones it can say are gone. */
+  const span = live.filter((t) => t.date >= first && t.date <= last);
+  /**
+   * The days it can MATCH over, which reach a little further back.
+   *
+   * A pending row dated the day before the file starts can be the same
+   * transaction as the settled one on its first day, and refusing to see that
+   * leaves the ghost sitting in the ledger for ever with its own settled twin
+   * beside it. Reaching BACK is safe in a way that reaching back for
+   * `missing` would not be: a match needs the bank's own text to agree, where
+   * a removal needs only silence.
+   *
+   * It does not reach FORWARD past the file's last day, and that asymmetry is
+   * the point: a row dated after the file was exported is one somebody
+   * entered since, and dragging it back onto the statement's last week would
+   * rewrite a date nobody asked to change.
+   */
+  const nearby = live.filter((t) => t.date >= addDays(first, -SETTLE_DRIFT) && t.date <= last);
+
+  // Pass one: exact, counted rather than collapsed — three identical $50
+  // Zelles on one day are three transactions, and a set would make them one.
+  const byKey = new Map<string, Txn[]>();
+  for (const t of span) {
+    const k = importKey(t);
+    const at = byKey.get(k);
+    if (at === undefined) byKey.set(k, [t]); else at.push(t);
+  }
+  const taken = new Set<string>();
+  const updating: ImportChange[] = [];
+  const unclaimed: CsvRow[] = [];
+  let duplicates = 0;
+  for (const row of incoming) {
+    const t = byKey.get(importKey(row))?.shift();
+    if (t === undefined) { unclaimed.push(row); continue; }
+    taken.add(t.id);
+    if ((t.cleared === true) !== row.cleared) updating.push({ txn: t, row });
+    else duplicates++;
+  }
+
+  // Pass two: the pending row that settled for a different amount.
+  const adding: CsvRow[] = [];
+  for (const row of unclaimed) {
+    let best: Txn | undefined;
+    let bestAt = SETTLE_DRIFT + 1;
+    if (row.description !== '') {
+      for (const t of nearby) {
+        if (taken.has(t.id) || !fromBank(t) || t.description !== row.description) continue;
+        if (!near(t.date, row.date, SETTLE_DRIFT)) continue;
+        const at = drift(t.date, row.date, SETTLE_DRIFT);
+        if (at < bestAt) { best = t; bestAt = at; }
+      }
+    }
+    if (best === undefined) adding.push(row);
+    else { taken.add(best.id); updating.push({ txn: best, row }); }
+  }
+
+  const missing = span.filter((t) => !taken.has(t.id) && fromBank(t));
+  return { adding, updating, missing, duplicates };
+}
 
 /**
  * What an import WOULD do, computed before anything is written.
@@ -344,9 +535,11 @@ export function planImport(
   mode: ImportMode,
 ): ImportPlan {
   const live = store.txns.filter((t) => t.deleted !== true && t.account === account);
-  if (mode === 'replace') return { adding: rows, removing: live, duplicates: 0 };
-  const adding = newRows(rows, live);
-  return { adding, removing: [], duplicates: rows.length - adding.length };
+  if (mode === 'replace') {
+    return { adding: rows, removing: live, duplicates: 0, updating: [], missing: [] };
+  }
+  const { adding, updating, missing, duplicates } = reconcileRows(rows, live);
+  return { adding, removing: [], duplicates, updating, missing };
 }
 
 /**
@@ -366,8 +559,28 @@ export function applyImport(
   now: number,
   id: () => string = newId,
 ): Store {
-  const dead = new Set(plan.removing.map((t) => t.id));
-  const kept = store.txns.map((t) => (dead.has(t.id) ? tombstone(t, now) : t));
+  const dead = new Set([...plan.removing, ...plan.missing].map((t) => t.id));
+  const changed = new Map(plan.updating.map((c) => [c.txn.id, c.row]));
+  const kept = store.txns.map((t) => {
+    if (dead.has(t.id)) return tombstone(t, now);
+    const row = changed.get(t.id);
+    if (row === undefined) return t;
+    // NAME and CATEGORY are left alone, and that is the point of updating a
+    // row rather than replacing it: a pending charge somebody already filed
+    // under Groceries and renamed stays filed and stays renamed when it
+    // settles. Only what the bank is telling us moves.
+    //
+    // `cleared` is rebuilt rather than assigned, for the reason the field
+    // exists: an uncleared row carries NO key at all (see Txn.cleared), so a
+    // row that has gone back to pending has to LOSE the key, not hold false.
+    const { cleared: _was, ...rest } = t;
+    return touch({
+      ...rest,
+      amount: row.amount,
+      date: row.date,
+      ...(row.cleared ? { cleared: true as const } : {}),
+    }, now);
+  });
 
   // Ordered oldest-first so a custom sort opens on something sensible rather
   // than the file's own order, which is newest-first.
@@ -385,6 +598,11 @@ export function applyImport(
     order: base + (i + 1) * REORDER_GAP,
     created: now,
     updated: now,
+    // Spread, never `cleared: row.cleared` — an uncleared row carries NO key
+    // at all (see Txn.cleared), so writing `false` would make every imported
+    // row differ from one written by hand and give the merge something to
+    // disagree about.
+    ...(row.cleared ? { cleared: true as const } : {}),
   }));
 
   return { ...store, txns: [...kept, ...added] };

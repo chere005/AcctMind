@@ -116,6 +116,23 @@ export function total(txns: readonly Txn[]): number {
   return txns.reduce((sum, t) => sum + t.amount, 0);
 }
 
+/**
+ * The part of a total the BANK has confirmed — Sean, 2026-09-18.
+ *
+ * Only rows carrying `cleared`, which is the flag an import sets for
+ * everything a statement lists and leaves off everything still pending. Shown
+ * beside the account's own total, the gap between the two is what is still in
+ * the air: authorizations, a cheque nobody has presented, the row somebody
+ * typed in this morning.
+ *
+ * `t.cleared === true` rather than a truthiness test, deliberately: the field
+ * is `true` or ABSENT and never `false`, and a loose test would quietly start
+ * counting a row the day something wrote a 0 or an empty string into it.
+ */
+export function clearedTotal(txns: readonly Txn[]): number {
+  return total(txns.filter((t) => t.cleared === true));
+}
+
 /** Base-36 milliseconds, zero-padded — see `newId`. */
 const TIME_WIDTH = 9;
 

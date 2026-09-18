@@ -18,6 +18,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SPACE, T, TAP } from './theme';
+import { TipBubble, useTip } from './Tip';
 
 /** The drawn size of every control in the bar. CalMind's number. */
 export const TOPBAR_CTRL = 32;
@@ -58,6 +59,11 @@ export function TopBar({ title, titleTestID, controls, picker }: {
  *
  * `on` fills it with the accent, for a control that is a state rather than an
  * action — the collapse-all arrow and the `.00` toggle both are.
+ *
+ * The LABEL it already carries for a screen reader is also its tip (Sean,
+ * 2026-09-18): hover one and it says what it is. Every one of these is a mark
+ * with no word anywhere near it, and the word existed all along — it was
+ * simply only being told to the people who could not see the mark.
  */
 export function CircleBtn({ glyph, label, onPress, on = false, testID, children }: {
   glyph?: string;
@@ -67,15 +73,19 @@ export function CircleBtn({ glyph, label, onPress, on = false, testID, children 
   testID?: string | undefined;
   children?: ReactNode;
 }) {
+  const tip = useTip();
   return (
     <Pressable
       onPress={onPress}
+      onHoverIn={tip.hover.onHoverIn}
+      onHoverOut={tip.hover.onHoverOut}
       style={styles.hit}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ selected: on }}
       testID={testID}
     >
+      <TipBubble text={label} shown={tip.shown} />
       <View style={[styles.ring, on && styles.ringOn]}>
         {/* Three characters do not fit a 32pt circle at a single glyph's
             size — `.00` is a label, not an icon, and gets the smaller face. */}
@@ -106,6 +116,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: SPACE.lg, paddingTop: SPACE.xs,
     minHeight: TAP,
+    // Above the rule and the screen under it, so a control's tip hangs over
+    // them rather than behind them.
+    zIndex: 5,
   },
   // 24/800, CalMind's `appname`, not the 32/700 this screen used to carry.
   appname: { color: T.text, fontSize: 24, fontWeight: '800', flexShrink: 1, minWidth: 0 },

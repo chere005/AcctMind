@@ -48,3 +48,33 @@ test('the cleared box is the far-right column, ticks, persists, and unticks to n
   await expect(page.getByTestId(/^txn-cleared-/)).toHaveAttribute('aria-label', 'Coffee not cleared');
   expect('cleared' in (await txns(page))[0]!, 'unticking removes the key, never writes false').toBe(false);
 });
+
+test('the account head says how much of its total the bank has confirmed', async ({ page }) => {
+  // Sean, 2026-09-18: "to the right of the hammer, have a Cleared: $xx that
+  // shows the cleared amount." Two claims — the figure, and where it sits.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await addTransaction(page, { name: 'Payday', amount: '100000' });
+
+  const cleared = page.getByTestId(/^account-cleared-/);
+  const total = page.getByTestId(/^account-total-/);
+  await expect(total).toHaveText('$995.50');
+  // Nothing ticked reads zero, not the total: the two sit on one head and
+  // must never be able to say the same thing by accident. The label is
+  // stacked over the amount, so the aria-label is the whole sentence.
+  await expect(cleared).toHaveAttribute('aria-label', 'Cleared $0.00');
+  await expect(cleared).toContainText('$0.00');
+
+  await page.locator('[aria-label="Payday not cleared"]').click();
+  await expect(cleared).toHaveAttribute('aria-label', 'Cleared $1,000.00');
+  await expect(total).toHaveText('$995.50');
+
+  // RIGHT OF THE HAMMER, which is the placement he asked for and not a
+  // consequence of the order things happen to be written in.
+  const hammer = (await page.getByTestId(/^account-reconcile-/).boundingBox())!;
+  const box = (await cleared.boundingBox())!;
+  expect(box.x).toBeGreaterThan(hammer.x + hammer.width - 1);
+  // …and the + still owns the right-hand edge.
+  const add = (await page.getByTestId(/^account-add-/).boundingBox())!;
+  expect(add.x).toBeGreaterThan(box.x + box.width - 1);
+});

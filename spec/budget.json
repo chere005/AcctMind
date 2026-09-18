@@ -43,6 +43,51 @@
       -6000
     ]
   ],
+  "_carried": "what carries in from earlier months is a THIRD term of the same sum, not a number of its own \u2014 assignments that aren't spent by the end of the month carry over. [carry, budget, spent, available]",
+  "carried": [
+    [
+      0,
+      10000,
+      -3000,
+      7000
+    ],
+    [
+      5000,
+      10000,
+      -3000,
+      12000
+    ],
+    [
+      5000,
+      0,
+      0,
+      5000
+    ],
+    [
+      5000,
+      0,
+      -8000,
+      -3000
+    ],
+    [
+      -2500,
+      10000,
+      0,
+      7500
+    ],
+    [
+      5000,
+      10000,
+      1000,
+      16000
+    ],
+    [
+      0,
+      0,
+      0,
+      0
+    ]
+  ],
   "_roundTrip": "budgetFor is the exact inverse of availableOf. [available, spent]",
   "roundTrip": [
     [
@@ -70,7 +115,35 @@
       -987654321
     ]
   ],
-  "_ops": "[current, op, typed, result] — null is a refusal, not a clamp.",
+  "_roundTripCarried": "the same round trip with money carried in: typing into available must take the carry off too, or it gets assigned twice. [available, spent, carry]",
+  "roundTripCarried": [
+    [
+      7000,
+      -3000,
+      5000
+    ],
+    [
+      0,
+      0,
+      5000
+    ],
+    [
+      -2500,
+      -8000,
+      5000
+    ],
+    [
+      20000,
+      0,
+      -2500
+    ],
+    [
+      5000,
+      1000,
+      0
+    ]
+  ],
+  "_ops": "[current, op, typed, result] \u2014 null is a refusal, not a clamp.",
   "ops": [
     [
       0,
@@ -139,7 +212,7 @@
       null
     ]
   ],
-  "_tone": "How a line reads, as one word — the four colours the Budget screen paints. Sean, 2026-09-15: \"any column that needs more money is yellow, negative is red, positive is green\", and Snooze \"turns the column gray\". The ORDER of the tests is the rule: snoozed beats everything (a snoozed line is not asking), over beats short (money already spent that you do not have is worse than money not yet assigned), and short applies only when a target was actually set — 0 means no target, and painting every line without one yellow would make the colour mean nothing. Rows are [budget, needs, snoozed, spent, tone]. The [-5000, 0, false, 6000] row is the one that reaches the \"a target was set\" guard: money moved off the line, a refund landed, available is positive and no target exists. Without the guard `budget < needs` is -5000 < 0 and the line reads as short of nothing. Added 2026-09-15 after a mutation that removed the guard passed every other row.",
+  "_tone": "How a line reads, as one word \u2014 the four colours the Budget screen paints. Sean, 2026-09-15: \"any column that needs more money is yellow, negative is red, positive is green\", and Snooze \"turns the column gray\". The ORDER of the tests is the rule: snoozed beats everything (a snoozed line is not asking), over beats short (money already spent that you do not have is worse than money not yet assigned), and short applies only when a target was actually set \u2014 0 means no target, and painting every line without one yellow would make the colour mean nothing. Rows are [budget, needs, snoozed, spent, tone]. The [-5000, 0, false, 6000] row is the one that reaches the \"a target was set\" guard: money moved off the line, a refund landed, available is positive and no target exists. Without the guard `budget < needs` is -5000 < 0 and the line reads as short of nothing. Added 2026-09-15 after a mutation that removed the guard passed every other row.",
   "tone": [
     [
       10000,
@@ -247,7 +320,58 @@
       "funded"
     ]
   ],
-  "_stillNeeded": "What is left to assign before a line meets its target. Never negative — a line funded past its target does not need minus money, and a negative here would draw as a debt. Rows are [budget, needs, snoozed, expected].",
+  "_toneCarried": "the colour, with carry: OVER reads it, SHORT does not. [budget, needs, snoozed, spent, carry, tone]",
+  "toneCarried": [
+    [
+      0,
+      0,
+      false,
+      -3000,
+      5000,
+      "funded"
+    ],
+    [
+      0,
+      0,
+      false,
+      -8000,
+      5000,
+      "over"
+    ],
+    [
+      0,
+      0,
+      false,
+      -5000,
+      5000,
+      "funded"
+    ],
+    [
+      0,
+      10000,
+      false,
+      0,
+      50000,
+      "short"
+    ],
+    [
+      0,
+      0,
+      true,
+      -8000,
+      0,
+      "snoozed"
+    ],
+    [
+      10000,
+      0,
+      false,
+      -3000,
+      0,
+      "funded"
+    ]
+  ],
+  "_stillNeeded": "What is left to assign before a line meets its target. Never negative \u2014 a line funded past its target does not need minus money, and a negative here would draw as a debt. Rows are [budget, needs, snoozed, expected].",
   "stillNeeded": [
     [
       0,
@@ -286,7 +410,7 @@
       0
     ]
   ],
-  "_reconcile": "The adjustment a reconcile writes: what the account SHOULD hold minus what the ledger says it does. The sign needs no special case — a real balance higher than the ledger is money the ledger has not heard about. Zero means no transaction is made at all, because a reconcile that agrees has nothing to record and a 0.00 row would mark the register every time someone checked. Rows are [ledger total, stated total, adjustment].",
+  "_reconcile": "The adjustment a reconcile writes: what the account SHOULD hold minus what the ledger says it does. The sign needs no special case \u2014 a real balance higher than the ledger is money the ledger has not heard about. Zero means no transaction is made at all, because a reconcile that agrees has nothing to record and a 0.00 row would mark the register every time someone checked. Rows are [ledger total, stated total, adjustment].",
   "reconcile": [
     [
       0,

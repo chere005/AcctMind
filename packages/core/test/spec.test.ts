@@ -212,13 +212,21 @@ describe('spec/sortmodes.json', () => {
 describe('spec/budget.json', () => {
   const b = spec<{
     available: [number, number, number][];
+    carried: [number, number, number, number][];
     roundTrip: [number, number][];
+    roundTripCarried: [number, number, number][];
     ops: [number, AmountOp, number, number | null][];
   }>('budget');
 
   it('available is budgeted PLUS spent — money out is negative', () => {
     for (const [budget, spent, want] of b.available) {
       expect(availableOf(budget, spent), `${budget} / ${spent}`).toBe(want);
+    }
+  });
+
+  it('what carried in is one more term of the same sum', () => {
+    for (const [carry, budget, spent, want] of b.carried) {
+      expect(availableOf(budget, spent, carry), `${carry} / ${budget} / ${spent}`).toBe(want);
     }
   });
 
@@ -232,6 +240,14 @@ describe('spec/budget.json', () => {
     }
   });
 
+  it('and the inverse takes the carry off too, or it is assigned twice', () => {
+    for (const [available, spent, carry] of b.roundTripCarried) {
+      const budget = budgetFor(available, spent, carry);
+      expect(availableOf(budget, spent, carry), `${available} / ${spent} / ${carry}`).toBe(available);
+      expect(budgetFor(availableOf(budget, spent, carry), spent, carry)).toBe(budget);
+    }
+  });
+
   it('the operator picker', () => {
     for (const [current, op, typed, want] of b.ops) {
       expect(applyOp(current, op, typed), `${current} ${op} ${typed}`).toBe(want);
@@ -242,6 +258,7 @@ describe('spec/budget.json', () => {
 describe('spec/budget.json — how a line reads', () => {
   const b = spec<{
     tone: [number, number, boolean, number, string][];
+    toneCarried: [number, number, boolean, number, number, string][];
     stillNeeded: [number, number, boolean, number][];
     reconcile: [number, number, number][];
   }>('budget');
@@ -264,6 +281,13 @@ describe('spec/budget.json — how a line reads', () => {
     for (const [budget, needs, snoozed, spent, want] of b.tone) {
       expect(lineTone({ budget, needs, snoozed }, spent),
         JSON.stringify([budget, needs, snoozed, spent])).toBe(want);
+    }
+  });
+
+  it('and OVER reads what carried in, while SHORT does not', () => {
+    for (const [budget, needs, snoozed, spent, carry, want] of b.toneCarried) {
+      expect(lineTone({ budget, needs, snoozed }, spent, carry),
+        JSON.stringify([budget, needs, snoozed, spent, carry])).toBe(want);
     }
   });
 

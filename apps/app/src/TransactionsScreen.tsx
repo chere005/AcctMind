@@ -8,7 +8,8 @@ import {
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  amountDigits, amountInput, claimsSwipe, formatAmount, formatDay, parseAmount, rowTap,
+  LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, foldLevel, formatAmount,
+  formatDay, parseAmount, rowTap,
   selectedTotal,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
   type Account, type AmountMode, type Line, type SortMode, type Txn,
@@ -20,6 +21,7 @@ import {
   ClipboardIcon, DuplicateIcon, HammerIcon, ImportIcon, PencilIcon, XIcon,
 } from './Icons';
 import { useRowDrag } from './rowdrag';
+import { TipBubble, useTip } from './Tip';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
@@ -96,7 +98,6 @@ export function TransactionsScreen({
     rows: sortTxns(txns.filter((t) => t.account === a.id), sort),
   }));
   const anyRows = sections.some((sec) => sec.rows.length > 0);
-  const allShut = shown.length > 0 && shown.every((a) => collapsed.includes(a.id));
 
   /*
    * id -> the line's name, for the category column.
@@ -112,6 +113,21 @@ export function TransactionsScreen({
 
   const toggle = (id: string) =>
     onCollapsed(collapsed.includes(id) ? collapsed.filter((c) => c !== id) : [...collapsed, id]);
+  /**
+   * Hold an account's caret, fold or unfold EVERY account — the collapse-all
+   * button's job, moved onto the control it was describing (Sean,
+   * 2026-09-16, across the whole test suite).
+   *
+   * `wasOpen` is the state of the caret that was HELD, not a toggle of a
+   * remembered all-or-nothing: hold an open one and the ledger closes, hold a
+   * closed one and it opens. So "put this all away" is one gesture on
+   * whatever is still open, with no button state to read first.
+   *
+   * `shown`, not every account: folding one that is filtered out of view
+   * would leave a surprise waiting behind the next pick.
+   */
+  const foldAllAccounts = (wasOpen: boolean) =>
+    onCollapsed(foldLevel(shown.map((a) => a.id), wasOpen));
   /**
    * Edit mode, for the whole page.
    *
@@ -250,13 +266,6 @@ export function TransactionsScreen({
           list is doing, and collapse and `.00` were always the second thing.
         */}
         <View style={styles.barTools}>
-          <CircleBtn
-            glyph={allShut ? '⌄' : '⌃'}
-            on={allShut}
-            onPress={() => onCollapsed(allShut ? [] : shown.map((a) => a.id))}
-            label={allShut ? 'Expand all accounts' : 'Collapse all accounts'}
-            testID="collapse-all"
-          />
           {/* `.00` reads bare digits as whole dollars. It is a setting that
               holds between entries, which is why it is out here and not in
               the form. */}
@@ -304,6 +313,7 @@ export function TransactionsScreen({
             rows={rows}
             shut={collapsed.includes(account.id)}
             onToggle={() => toggle(account.id)}
+            onFoldAll={foldAllAccounts}
             onAdd={() => onAdd(account.id)}
             edit={edit}
             onEdited={leaveEdit}
@@ -369,7 +379,7 @@ export function TransactionsScreen({
  * number of hooks whenever an account appeared or was filtered away.
  */
 function Section({
-  account, rows, shut, onToggle, onAdd, edit, onEdited, picked, onPick,
+  account, rows, shut, onToggle, onFoldAll, onAdd, edit, onEdited, picked, onPick,
   inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction, onMove,
   onDragging, reconciling, onReconcileOpen, onReconcile,
 }: {
@@ -377,6 +387,8 @@ function Section({
   rows: readonly Txn[];
   shut: boolean;
   onToggle: () => void;
+  /** Fold or unfold every account; the argument is this caret's own state. */
+  onFoldAll: (wasOpen: boolean) => void;
   onAdd: () => void;
   /** Is the page in edit mode? Every row shows its controls when it is. */
   edit: boolean;
@@ -428,15 +440,21 @@ function Section({
    */
   const parked = swipedId !== null;
   const dismiss = () => setSwipedId(null);
+  const hammerTip = useTip();
 
   return (
     <View testID="account-section" style={styles.section}>
       <View style={styles.head}>
         <Pressable
           onPress={parked ? dismiss : onToggle}
+          // Hold it and every account follows this one — see foldAllAccounts.
+          // 350, the app's one long-press threshold.
+          onLongPress={() => onFoldAll(!shut)}
+          delayLongPress={LONG_PRESS_MS}
           style={styles.headMain}
           accessibilityRole="button"
           accessibilityState={{ expanded: !shut }}
+          accessibilityHint="Hold to fold or unfold every account"
           testID={`account-head-${account.id}`}
         >
           <Text style={[styles.chev, shut && styles.chevShut]}>⌄</Text>
@@ -476,13 +494,48 @@ function Section({
         )}
         <Pressable
           onPress={parked ? dismiss : () => onReconcileOpen(account.id)}
+          onHoverIn={hammerTip.hover.onHoverIn}
+          onHoverOut={hammerTip.hover.onHoverOut}
           style={styles.headHammer}
           accessibilityRole="button"
           accessibilityLabel={`Reconcile ${account.name}`}
           testID={`account-reconcile-${account.id}`}
         >
           <HammerIcon />
+          {/* The VERB only, where the accessibility label names the account
+              too: a bubble hanging off this hammer is already beside the
+              account it belongs to. */}
+          <TipBubble text="Reconcile" shown={hammerTip.shown} />
         </Pressable>
+
+        {/*
+          WHAT THE BANK HAS CONFIRMED, right of the hammer — Sean,
+          2026-09-18, and right of the hammer is the placement, not a
+          consequence of the layout. The number beside the name is everything
+          the ledger knows; this is the part a statement would agree with, and
+          the two together say how much is still in the air.
+
+          Labelled, where the total beside the name is not: an unlabelled
+          second figure on the same line is two numbers and no way to tell
+          which is which.
+
+          STACKED, label over amount, because `Cleared: $3,457.17` on one line
+          is 92 points and the head has 343 of them on a phone — which it
+          spent, and the account NAME was what gave, drawing `Account` as
+          `Acco…`. The same two words over each other are 52, and they read
+          as the column heading this is.
+        */}
+        <View
+          style={styles.headCleared}
+          testID={`account-cleared-${account.id}`}
+          accessibilityLabel={`Cleared ${formatAmount(clearedTotal(rows))}`}
+        >
+          <Text style={styles.headClearedLabel}>Cleared</Text>
+          <Text style={styles.headClearedNum} numberOfLines={1}>
+            {formatAmount(clearedTotal(rows))}
+          </Text>
+        </View>
+
         {/* Whatever the row has left, so the + keeps the right-hand edge. */}
         <View style={styles.headSpacer} />
 
@@ -1162,6 +1215,9 @@ const styles = StyleSheet.create({
   head: {
     flexDirection: 'row', alignItems: 'center',
     marginTop: SPACE.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
+    // Above the rows under it, so the hammer's tip hangs over the first one
+    // rather than behind it.
+    zIndex: 2,
   },
   // No `flex: 1` any more: the name is followed by the total and the hammer,
   // and a heading that grabbed the whole row pushed both to the far edge. It
@@ -1178,11 +1234,34 @@ const styles = StyleSheet.create({
   headName: { color: T.gold, fontSize: 16, lineHeight: 20, fontWeight: '600', flexShrink: 1 },
   // 15, the bar total's size — this IS that number, moved. Dim until the
   // account is in credit, when `totalUp` turns it green.
-  headSum: { color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'], marginLeft: SPACE.xs },
-  reconcileField: { padding: 0, margin: 0, minWidth: 90, textAlign: 'left', color: T.text },
+  //
+  // A GAP ON BOTH SIDES (Sean, 2026-09-16: "pad a tiny bit more space to the
+  // left and right of the number"). It had 4 on the left and none at all on
+  // the right, so it read as belonging to the hammer it was touching rather
+  // than to the account name it reports. 8 either side is the scale's next
+  // step and the same gap the name keeps from the dot.
+  headSum: {
+    color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'],
+    marginLeft: SPACE.sm, marginRight: SPACE.sm,
+  },
+  // The SAME margins as the number it replaces. The field already wears the
+  // same type and no padding for this reason — swapping one for the other
+  // must not move the hammer beside it.
+  reconcileField: {
+    padding: 0, margin: 0, marginLeft: SPACE.sm, marginRight: SPACE.sm,
+    minWidth: 90, textAlign: 'left', color: T.text,
+  },
   headHammer: {
     width: 30, height: TAP, alignItems: 'center', justifyContent: 'center',
   },
+  // Smaller and dimmer than the account's own total: it is the second thing
+  // on the line, and drawing it at the same weight would make the head read
+  // as two totals arguing.
+  headCleared: { alignItems: 'flex-end', flexShrink: 0, paddingLeft: SPACE.xs },
+  headClearedLabel: {
+    color: T.faint, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, lineHeight: 11,
+  },
+  headClearedNum: { color: T.faint, fontSize: 12, lineHeight: 14, fontVariant: ['tabular-nums'] },
   headSpacer: { flex: 1 },
   headAdd: {
     width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center',
