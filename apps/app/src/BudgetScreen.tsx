@@ -283,17 +283,19 @@ export function BudgetScreen({
     [txns, hasMonth, budgetMonth],
   );
   /**
-   * FUNDS AVAILABLE — what the accounts hold, less what this month assigned.
+   * AVAILABLE — what the accounts hold, less what this month assigned.
    *
-   * Sean, 2026-09-18: "the current month is how much is available with the
-   * amount assigned for the current month."
+   * Sean, 2026-09-18, twice over. First: "the current month is how much is
+   * available with the amount assigned for the current month". Then, seeing
+   * the bar: "change Funds Available to Account, assigned to Assigned, and to
+   * the right of that put available - assigned with label Available" — so
+   * the bar says all three, and the third is the first less the second, in
+   * that order, which is the arithmetic written out.
    *
-   * A QUIET MONTH READS ZERO — his rule, asked for twice: "previous months
-   * will be 0 because the month is over and no money was assigned", and then
-   * exactly, "0 if there was no activity". A month that nothing was paid
-   * into, nothing was paid out of and nothing was assigned in has nothing to
-   * say, and saying the balance anyway would draw the same figure across a
-   * run of empty months as though each one were news.
+   * The quiet-month zero went with the rename. It existed so a run of empty
+   * months would not repeat the balance as though each were news; with the
+   * balance now LABELLED as the account's, repeating it is exactly right —
+   * the account holds that much in an empty month too.
    *
    * It does NOT take off what earlier months carried into the LINES
    * (`carried` above), and that was Sean's call between the two readings:
@@ -305,8 +307,7 @@ export function BudgetScreen({
    * whose name predates lines carrying the money). Filtering the budget to
    * Groceries cannot change how much money you have.
    */
-  const quiet = inScope.length === 0 && assigned === 0;
-  const available = quiet ? 0 : held - assigned;
+  const available = held - assigned;
 
   /** Money that belongs to no line at all. Drawn under its own heading. */
   const loose = inScope.filter((t) => t.category === null);
@@ -366,20 +367,18 @@ export function BudgetScreen({
 
       <BarRow>
         <View style={styles.totals}>
-          {/* FUNDS AVAILABLE, and FIRST (Sean, 2026-09-16) — what is in the
-              accounts, which is the number you open this screen holding a
-              decision about. `assigned` beside it is what has been promised
-              out of it, and it keeps the same amount-then-label shape so the
-              two read as one pair.
-
-              The two are deliberately NOT a subtraction of each other: one is
-              the ledger, the other is the plan, and the gap between them is
-              the thing worth seeing. */}
-          <Text style={styles.total} testID="budget-available-line">
-            <Money style={styles.total} cents={available} testID="budget-available" tone /> Funds Available
+          {/* ACCOUNT, ASSIGNED, AVAILABLE — in that order, because the third
+              is the first less the second and the row reads as the sum it is
+              (Sean, 2026-09-18). Amount-then-label on all three, so they read
+              as one row rather than three kinds of thing. */}
+          <Text style={styles.total} testID="budget-account-line">
+            <Money style={styles.total} cents={held} testID="budget-account" tone /> Account
           </Text>
           <Text style={styles.total} testID="budget-assigned">
-            {formatAmount(assigned)} assigned
+            {formatAmount(assigned)} Assigned
+          </Text>
+          <Text style={styles.total} testID="budget-available-line">
+            <Money style={styles.total} cents={available} testID="budget-available" tone /> Available
           </Text>
         </View>
       </BarRow>
@@ -1146,7 +1145,11 @@ const styles = StyleSheet.create({
     color: T.text, fontSize: 15, fontWeight: '600',
     minWidth: 130, textAlign: 'center', fontVariant: ['tabular-nums'],
   },
-  totals: { flexDirection: 'row', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap' },
+  // `flex: 1` is what makes the wrap real: a row child with no width of its
+  // own grows to fit its content and overflows the bar instead of wrapping.
+  // Three figures arrived on 2026-09-18 and the third drew as `Availa` on a
+  // phone until this took the bar's width.
+  totals: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: SPACE.md, flexWrap: 'wrap' },
   list: { paddingHorizontal: SPACE.lg, paddingBottom: 48, flexGrow: 1, gap: 18 },
   section: { gap: SPACE.xs },
   head: {

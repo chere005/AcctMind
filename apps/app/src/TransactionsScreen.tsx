@@ -220,11 +220,19 @@ export function TransactionsScreen({
                 <PencilIcon color={edit ? '#ffffff' : T.text} />
               </CircleBtn>
             )}
-            {onImport !== undefined && (
-              <CircleBtn onPress={onImport} label="Import a CSV" testID="import-button">
-                <ImportIcon />
-              </CircleBtn>
-            )}
+            {/* `.00` — bare digits read as whole dollars. Sean, 2026-09-18:
+                between the pencil and the picker. It sat in the row under
+                the divider from the day the pencil arrived, because five
+                circles across the bar drew `Transactions` as `Transac…`;
+                the import button has since gone down to the account line,
+                so the bar is back to three and this one fits. */}
+            <CircleBtn
+              glyph=".00"
+              on={amountMode === 'whole'}
+              onPress={() => onAmountMode(amountMode === 'whole' ? 'cents' : 'whole')}
+              label="Enter whole dollars"
+              testID="whole-toggle"
+            />
             {onDevices !== undefined && (
               <CircleBtn onPress={onDevices} label={peers > 0 ? `Devices, ${peers} connected` : 'Devices'} testID="devices-button">
                 <>
@@ -268,23 +276,13 @@ export function TransactionsScreen({
         {/*
           The LIST's controls, beside the sort that was already here.
 
-          They were in the top bar, and with the pencil added that made five
-          circles across it: `Transactions` drew as `Transac…`, which is the
-          same overflow the category heading had. The split is not just to
-          make room — the bar is what the screen IS and this row is what the
-          list is doing, and collapse and `.00` were always the second thing.
+          Only the sort is left here (Sean, 2026-09-18): `.00` went back up
+          to the bar once the import button came down to the account line,
+          and collapse-all went altogether. The row still earns its place —
+          the bar is what the screen IS and this row is what the list is
+          doing.
         */}
         <View style={styles.barTools}>
-          {/* `.00` reads bare digits as whole dollars. It is a setting that
-              holds between entries, which is why it is out here and not in
-              the form. */}
-          <CircleBtn
-            glyph=".00"
-            on={amountMode === 'whole'}
-            onPress={() => onAmountMode(amountMode === 'whole' ? 'cents' : 'whole')}
-            label="Enter whole dollars"
-            testID="whole-toggle"
-          />
           <SortPick
             mode={sort}
             onPick={onSort}
@@ -342,6 +340,7 @@ export function TransactionsScreen({
             }}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
+            onImport={onImport}
             onAction={onAction}
             /* Dragging is offered only in CUSTOM order. Anywhere else a
                hand-placed row is a statement the app cannot keep: the next
@@ -390,7 +389,7 @@ export function TransactionsScreen({
 function Section({
   account, rows, shut, onToggle, onFoldAll, onAdd, edit, onEdited, picked, onPick,
   inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction, onMove,
-  onDragging, reconciling, onReconcileOpen, onReconcile,
+  onDragging, reconciling, onReconcileOpen, onReconcile, onImport,
 }: {
   account: Account;
   rows: readonly Txn[];
@@ -421,6 +420,8 @@ function Section({
   onReconcile: (account: string, stated: number | null, what: Reconciled) => void;
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
+  /** Open the CSV import. Absent where the ledger is read-only. */
+  onImport?: (() => void) | undefined;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
   onMove?: ((txn: Txn, shown: readonly Txn[], index: number) => void) | undefined;
   onDragging: (on: boolean) => void;
@@ -451,6 +452,7 @@ function Section({
   const dismiss = () => setSwipedId(null);
   const hammerTip = useTip();
   const clearedTip = useTip();
+  const importTip = useTip();
 
   return (
     <View testID="account-section" style={styles.section}>
@@ -577,6 +579,28 @@ function Section({
 
         {/* Whatever the row has left, so the + keeps the right-hand edge. */}
         <View style={styles.headSpacer} />
+
+        {/*
+          IMPORT, left of the + — Sean, 2026-09-18. It was a circle in the
+          top bar; the account line is where the rows it makes will land, and
+          the bar is what the screen is rather than what a list does. Hammer-
+          sized rather than a 44-point circle: the head has nothing to spare
+          on a phone, and the target is the row's full height either way.
+        */}
+        {onImport !== undefined && (
+          <Pressable
+            onPress={parked ? dismiss : onImport}
+            onHoverIn={importTip.hover.onHoverIn}
+            onHoverOut={importTip.hover.onHoverOut}
+            style={styles.headHammer}
+            accessibilityRole="button"
+            accessibilityLabel="Import a CSV"
+            testID="import-button"
+          >
+            <ImportIcon color={T.dim} size={16} />
+            <TipBubble text="Import a CSV" shown={importTip.shown} />
+          </Pressable>
+        )}
 
         {/* Each account adds into ITSELF: the + is the only thing that tells
             the form which section it was opened from. */}

@@ -129,7 +129,7 @@ test('a category is a heading, and the money is on the line inside it', async ({
   expect(live(s)[0]).not.toHaveProperty('budget');
 
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$250.00');
-  await expect(page.getByTestId('budget-assigned')).toHaveText('$250.00 assigned');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$250.00 Assigned');
 });
 
 test('a line shows budgeted, spent and available, and available is the sum', async ({ page }) => {

@@ -18,6 +18,12 @@
  */
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+
+/** `preventDefault` on mousedown, so a tap on a button beside the field does
+ *  not move focus out of it. See BudgetScreen's KEEP_FOCUS for the history. */
+const KEEP_FOCUS = {
+  onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
+} as unknown as Record<string, unknown>;
 import { AMOUNT_OPS, amountDigits, applyOp, formatAmount, parseAmount, type AmountOp } from '@acctmind/core';
 import { SPACE, T, TAP } from './theme';
 
@@ -111,6 +117,13 @@ export function OpAmount({
           <Pressable
             key={o}
             onPress={() => start(o)}
+            // Keep the tap from taking focus off the field. On the web a
+            // pressable div is focusable, so choosing `+` moved the caret out
+            // of the input and the digits typed next went nowhere — the same
+            // opening-blur the budget's rename guards, one button later. Web
+            // only and harmless elsewhere: react-native-web forwards the prop
+            // to the DOM node, and native never sees a mousedown.
+            {...KEEP_FOCUS}
             style={[styles.op, compact && styles.opCompact, editing && op === o && styles.opOn]}
             accessibilityRole="button"
             accessibilityLabel={o === '=' ? 'Set to' : o === '+' ? 'Add' : 'Subtract'}

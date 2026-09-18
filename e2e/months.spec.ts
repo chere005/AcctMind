@@ -69,14 +69,14 @@ test('assigning in one month says nothing about the next — and the leftover ca
 
   await assign(page, line, '250');
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$250.00');
-  await expect(page.getByTestId('budget-assigned')).toHaveText('$250.00 assigned');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$250.00 Assigned');
 
   await page.getByTestId('budget-month-next').click();
   // A FRESH SHEET. It read $250.00 here until 2026-09-18, because an unset
   // month fell back to the line's own amount — which quietly claimed every
   // month in the ledger's history had been funded.
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$0.00');
-  await expect(page.getByTestId('budget-assigned')).toHaveText('$0.00 assigned');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$0.00 Assigned');
   // …and the $250 nobody spent is still the line's to spend.
   await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$250.00');
   await expect(page.getByTestId(`category-available-${(await stored(page) as Stored)
@@ -91,12 +91,14 @@ function lastMonthDay(): string {
   return `${y}-${String((m === 0 ? 11 : m - 1) + 1).padStart(2, '0')}-15`;
 }
 
-test('Funds Available is what the accounts HOLD, less what the month assigned', async ({ page }) => {
+test('the bar reads Account, Assigned, Available — and the third is the first less the second', async ({ page }) => {
   // The bug this pins, from Sean's own September: the month had moved
   // -$1,682.76 and the account held $484.63, and the bar drew the movement.
   // "Funds available should read as how much is in the account in the current
-  // month" — so it is the balance, which is every transaction up to the end
-  // of the month being looked at and not the ones that landed in it.
+  // month" — so ACCOUNT is the balance, every transaction up to the end of
+  // the month being looked at and not the ones that landed in it. Then, the
+  // same day: "change Funds Available to Account, assigned to Assigned, and
+  // to the right of that put available - assigned with label Available".
   await fresh(page);
   // Cents, like every amount field in this app — 100000 is $1,000.00.
   await addTransaction(page, { name: 'Payday', amount: '100000', day: lastMonthDay() });
@@ -105,27 +107,33 @@ test('Funds Available is what the accounts HOLD, less what the month assigned', 
   await onMonth(page);
 
   // Not -$100.00, which is all this month moved.
+  await expect(page.getByTestId('budget-account')).toHaveText('$900.00');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$0.00 Assigned');
   await expect(page.getByTestId('budget-available')).toHaveText('$900.00');
   await assign(page, line, '300');
+  await expect(page.getByTestId('budget-account')).toHaveText('$900.00');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
   await expect(page.getByTestId('budget-available')).toHaveText('$600.00');
 });
 
-test('a month nothing happened in reads zero rather than the balance again', async ({ page }) => {
-  // Sean, 2026-09-18, of a month that is over: "0 if there was no activity."
-  // Nothing in, nothing out, nothing assigned — so there is nothing to say,
-  // and repeating the balance down a run of empty months would read as news
-  // every time.
+test('an empty month still holds the account\'s balance', async ({ page }) => {
+  // The quiet-month zero left with the rename: with the figure LABELLED as
+  // the account's, an empty month showing the balance is exactly right — the
+  // account holds that much in an empty month too, and nothing was assigned
+  // against it.
   await fresh(page);
   await addTransaction(page, { name: 'Payday', amount: '100000' });
   await seedLine(page);
   await onMonth(page);
-  await expect(page.getByTestId('budget-available')).toHaveText('$1,000.00');
+  await expect(page.getByTestId('budget-account')).toHaveText('$1,000.00');
 
   await page.getByTestId('budget-month-next').click();
-  await expect(page.getByTestId('budget-available')).toHaveText('$0.00');
+  await expect(page.getByTestId('budget-account')).toHaveText('$1,000.00');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$0.00 Assigned');
+  await expect(page.getByTestId('budget-available')).toHaveText('$1,000.00');
 });
 
-test('Funds Available does not narrow with the category picker', async ({ page }) => {
+test('the bar does not narrow with the category picker', async ({ page }) => {
   // It never has — filtering the budget to Groceries cannot change how much
   // money you have — and now that ASSIGNED is the other half of that
   // subtraction, it must not narrow either, or the pair stops being true the
@@ -142,5 +150,5 @@ test('Funds Available does not narrow with the category picker', async ({ page }
   await page.getByTestId(`section-${cat}`).click();
 
   await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
-  await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 assigned');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
 });
