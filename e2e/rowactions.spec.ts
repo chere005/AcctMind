@@ -758,3 +758,49 @@ test('the hammer reconciles an account, dated today, and only when it differs', 
   // And the account now reads what was stated.
   await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('$100.00');
 });
+
+test('the second hammer reconciles what has CLEARED, and the row it writes is cleared', async ({ page }) => {
+  // Sean, 2026-09-18: a reconcile button beside the cleared figure as well as
+  // beside the balance. The statement in your hand is a statement about what
+  // has cleared, so this is the one you hold it against — and the difference
+  // it writes is on that statement by definition, so the row is cleared too.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await addTransaction(page, { name: 'Payday', amount: '100000' });
+  await page.locator('[aria-label="Payday not cleared"]').click();
+
+  const s0 = await stored(page) as { accounts: { id: string }[] };
+  const acct = s0.accounts[0]!.id;
+  await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('$995.50');
+  await expect(page.getByTestId(`account-cleared-${acct}`)).toHaveAttribute('aria-label', 'Cleared $1,000.00');
+
+  // The statement says $980. Held-and-cleared is $1,000, so the adjustment is
+  // -$20 — against the CLEARED figure, not the balance, which would have
+  // given -$15.50 and quietly reconciled the wrong number.
+  await page.getByTestId(`account-reconcile-cleared-${acct}`).click();
+  await expect(page.getByTestId(`account-reconcile-cleared-input-${acct}`)).toBeVisible();
+  await page.getByTestId(`account-reconcile-cleared-input-${acct}`).fill('980');
+  await page.getByTestId(`account-reconcile-cleared-input-${acct}`).press('Enter');
+  await expect(page.getByTestId('txn-row')).toHaveCount(3);
+
+  const s = await stored(page) as {
+    txns: { name: string; amount: number; date: string; cleared?: true; deleted?: true }[];
+  };
+  const made = s.txns.filter((t) => t.deleted !== true).find((t) => t.name === 'Reconcile');
+  expect(made?.amount).toBe(-2000);
+  expect(made?.cleared, 'the adjustment is on the statement, so it is cleared').toBe(true);
+  const d = new Date();
+  const localToday = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  expect(made?.date).toBe(localToday);
+
+  // Cleared now reads what the statement said; the balance moved by the same
+  // amount, because the adjustment is real money.
+  await expect(page.getByTestId(`account-cleared-${acct}`)).toHaveAttribute('aria-label', 'Cleared $980.00');
+  await expect(page.getByTestId(`account-total-${acct}`)).toHaveText('$975.50');
+
+  // The first hammer still states the whole balance, untouched by this.
+  await page.getByTestId(`account-reconcile-${acct}`).click();
+  await expect(page.getByTestId(`account-reconcile-input-${acct}`)).toBeVisible();
+  await page.getByTestId(`account-reconcile-input-${acct}`).press('Enter');
+  await expect(page.getByTestId('txn-row')).toHaveCount(3);
+});

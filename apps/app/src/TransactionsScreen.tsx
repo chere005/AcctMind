@@ -78,7 +78,16 @@ type Props = {
    * A stated balance for an account. Core decides whether that is a
    * difference worth a transaction; this only reports what was typed.
    */
-  onReconcile: (account: string, stated: number) => void;
+  /**
+   * The balance as stated — of the whole account, or of what has CLEARED.
+   *
+   * Sean, 2026-09-18: a reconcile button beside the cleared figure as well
+   * as beside the balance. They are the same gesture against two numbers: the
+   * statement in your hand agrees with what has cleared, not with the whole
+   * ledger, and a difference there is an adjustment the bank has already
+   * settled — so the row it writes is cleared too.
+   */
+  onReconcile: (account: string, stated: number, what: Reconciled) => void;
   /** Open the CSV import. Absent on a surface that cannot read a file. */
   onImport?: (() => void) | undefined;
 };
@@ -186,7 +195,7 @@ export function TransactionsScreen({
    * two open reconciles is two half-stated balances and no way to tell which
    * Return will land on.
    */
-  const [reconciling, setReconciling] = useState<string | null>(null);
+  const [reconciling, setReconciling] = useState<{ account: string; what: Reconciled } | null>(null);
 
   // A row that stops existing — deleted here, or deleted on another device
   // mid-gesture — must not leave a parked delete behind attached to nothing.
@@ -326,10 +335,10 @@ export function TransactionsScreen({
             onCleared={onCleared}
             lineName={lineName}
             reconciling={reconciling}
-            onReconcileOpen={setReconciling}
-            onReconcile={(id, stated) => {
+            onReconcileOpen={(account, what) => setReconciling({ account, what })}
+            onReconcile={(id, stated, what) => {
               setReconciling(null);
-              if (stated !== null) onReconcile(id, stated);
+              if (stated !== null) onReconcile(id, stated, what);
             }}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
@@ -405,11 +414,11 @@ function Section({
   onCleared?: ((txn: Txn, cleared: boolean) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
   lineName: (id: string | null) => string;
-  /** The account whose total is open as a field, if any. */
-  reconciling: string | null;
-  onReconcileOpen: (account: string) => void;
-  /** The total as stated, or null for a field left unreadable. */
-  onReconcile: (account: string, stated: number | null) => void;
+  /** The account, and which of its two figures, open as a field — if any. */
+  reconciling: { account: string; what: Reconciled } | null;
+  onReconcileOpen: (account: string, what: Reconciled) => void;
+  /** The figure as stated, or null for a field left unreadable. */
+  onReconcile: (account: string, stated: number | null, what: Reconciled) => void;
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
@@ -441,6 +450,7 @@ function Section({
   const parked = swipedId !== null;
   const dismiss = () => setSwipedId(null);
   const hammerTip = useTip();
+  const clearedTip = useTip();
 
   return (
     <View testID="account-section" style={styles.section}>
@@ -477,10 +487,10 @@ function Section({
           controls, and inside it a tap meant to reconcile would fold the
           section instead.
         */}
-        {reconciling === account.id ? (
+        {reconciling?.account === account.id && reconciling.what === 'total' ? (
           <ReconcileField
             value={total(rows)}
-            onDone={(stated) => onReconcile(account.id, stated)}
+            onDone={(stated) => onReconcile(account.id, stated, 'total')}
             testID={`account-reconcile-input-${account.id}`}
           />
         ) : (
@@ -493,7 +503,7 @@ function Section({
           </Text>
         )}
         <Pressable
-          onPress={parked ? dismiss : () => onReconcileOpen(account.id)}
+          onPress={parked ? dismiss : () => onReconcileOpen(account.id, 'total')}
           onHoverIn={hammerTip.hover.onHoverIn}
           onHoverOut={hammerTip.hover.onHoverOut}
           style={styles.headHammer}
@@ -531,10 +541,39 @@ function Section({
           accessibilityLabel={`Cleared ${formatAmount(clearedTotal(rows))}`}
         >
           <Text style={styles.headClearedLabel}>Cleared</Text>
-          <Text style={styles.headClearedNum} numberOfLines={1}>
-            {formatAmount(clearedTotal(rows))}
-          </Text>
+          {reconciling?.account === account.id && reconciling.what === 'cleared' ? (
+            <ReconcileField
+              value={clearedTotal(rows)}
+              onDone={(stated) => onReconcile(account.id, stated, 'cleared')}
+              style={styles.headClearedNum}
+              testID={`account-reconcile-cleared-input-${account.id}`}
+            />
+          ) : (
+            <Text style={styles.headClearedNum} numberOfLines={1}>
+              {formatAmount(clearedTotal(rows))}
+            </Text>
+          )}
         </View>
+        {/*
+          A SECOND HAMMER, for the cleared figure — Sean, 2026-09-18. The
+          statement in your hand is a statement about what has CLEARED, so
+          this is the one you reconcile against it; the first hammer states
+          the whole balance, cash in the drawer included. Same field, same
+          arithmetic, and the row it writes is cleared, because a difference
+          the bank has already settled is by definition on the statement.
+        */}
+        <Pressable
+          onPress={parked ? dismiss : () => onReconcileOpen(account.id, 'cleared')}
+          onHoverIn={clearedTip.hover.onHoverIn}
+          onHoverOut={clearedTip.hover.onHoverOut}
+          style={styles.headHammer}
+          accessibilityRole="button"
+          accessibilityLabel={`Reconcile what has cleared in ${account.name}`}
+          testID={`account-reconcile-cleared-${account.id}`}
+        >
+          <HammerIcon />
+          <TipBubble text="Reconcile cleared" shown={clearedTip.shown} />
+        </Pressable>
 
         {/* Whatever the row has left, so the + keeps the right-hand edge. */}
         <View style={styles.headSpacer} />
@@ -933,9 +972,14 @@ function ShareIcon() {
  * NOTHING rather than a zero: a balance nobody typed must never become an
  * adjustment.
  */
-function ReconcileField({ value, onDone, testID }: {
+/** Which of an account's two figures a reconcile is stating. */
+export type Reconciled = 'total' | 'cleared';
+
+function ReconcileField({ value, onDone, style, testID }: {
   value: number;
   onDone: (stated: number | null) => void;
+  /** The face of the figure it replaces — the total's by default. */
+  style?: object;
   testID: string;
 }) {
   const [text, setText] = useState(() => amountInput(value));
@@ -953,7 +997,7 @@ function ReconcileField({ value, onDone, testID }: {
         onDone(parseAmount(text));
       }}
       onSubmitEditing={() => onDone(parseAmount(text))}
-      style={[styles.headSum, styles.reconcileField]}
+      style={[style ?? styles.headSum, styles.reconcileField]}
       autoFocus
       selectTextOnFocus
       keyboardType="numbers-and-punctuation"
@@ -1242,7 +1286,10 @@ const styles = StyleSheet.create({
   // step and the same gap the name keeps from the dot.
   headSum: {
     color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'],
-    marginLeft: SPACE.sm, marginRight: SPACE.sm,
+    // 6, not SPACE.sm: the head grew a second hammer on 2026-09-18 and the
+    // NAME is what gives when the row is short — at 375 points every two
+    // points here were two points off `Account`.
+    marginLeft: 6, marginRight: 6,
   },
   // The SAME margins as the number it replaces. The field already wears the
   // same type and no padding for this reason — swapping one for the other
@@ -1251,13 +1298,17 @@ const styles = StyleSheet.create({
     padding: 0, margin: 0, marginLeft: SPACE.sm, marginRight: SPACE.sm,
     minWidth: 90, textAlign: 'left', color: T.text,
   },
+  // 26 drawn, two of them now; the glyph is 14 and the target is the row's
+  // full height, so the width was never the hit area.
   headHammer: {
-    width: 30, height: TAP, alignItems: 'center', justifyContent: 'center',
+    width: 26, height: TAP, alignItems: 'center', justifyContent: 'center',
   },
   // Smaller and dimmer than the account's own total: it is the second thing
   // on the line, and drawing it at the same weight would make the head read
   // as two totals arguing.
-  headCleared: { alignItems: 'flex-end', flexShrink: 0, paddingLeft: SPACE.xs },
+  // No padding of its own: a hammer sits either side of it now, and each one
+  // is the gap.
+  headCleared: { alignItems: 'flex-end', flexShrink: 0 },
   headClearedLabel: {
     color: T.faint, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, lineHeight: 11,
   },

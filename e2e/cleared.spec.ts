@@ -71,7 +71,9 @@ test('the account head says how much of its total the bank has confirmed', async
 
   // RIGHT OF THE HAMMER, which is the placement he asked for and not a
   // consequence of the order things happen to be written in.
-  const hammer = (await page.getByTestId(/^account-reconcile-/).boundingBox())!;
+  // The FIRST hammer — the total's. A second one reconciles the cleared
+  // figure (2026-09-18) and sits after it, so the prefix alone matches two.
+  const hammer = (await page.getByTestId(/^account-reconcile-(?!cleared)/).boundingBox())!;
   const box = (await cleared.boundingBox())!;
   expect(box.x).toBeGreaterThan(hammer.x + hammer.width - 1);
   // …and the + still owns the right-hand edge.

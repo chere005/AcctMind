@@ -25,7 +25,7 @@ import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
   live, makeTxn,
-  applyImport, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
+  applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
   REORDER_GAP, ALL_TIME,
   reorder, today, tombstone, touch,
@@ -523,9 +523,13 @@ export default function App() {
                * which is `reconcileAdjustment` returning 0 and this doing
                * nothing with it.
                */
-              onReconcile={(account, stated) => {
+              onReconcile={(account, stated, what) => {
                 if (phase.k !== 'ready') return;
-                const held = total(live(phase.store.txns).filter((t) => t.account === account));
+                const mine = live(phase.store.txns).filter((t) => t.account === account);
+                // Against the figure that was STATED: the whole balance, or
+                // only what has cleared (Sean, 2026-09-18) — the statement in
+                // your hand is a statement about the second.
+                const held = what === 'cleared' ? clearedTotal(mine) : total(mine);
                 const diff = reconcileAdjustment(held, stated);
                 if (diff === 0) return;
                 const now = Date.now();
@@ -540,6 +544,11 @@ export default function App() {
                   order: 0,
                   created: now,
                   updated: now,
+                  // A difference the bank has already settled is on the
+                  // statement by definition, so the row that closes it is
+                  // cleared — otherwise the cleared figure would still
+                  // disagree with the statement it was just told to match.
+                  ...(what === 'cleared' ? { cleared: true as const } : {}),
                 }));
               }}
               onImport={() => setImporting(true)}
