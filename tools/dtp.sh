@@ -110,28 +110,36 @@ fi
 REPORTER="${MIND_DIR:-$(cd .. && pwd)}/CoreMind/bin/report-status.sh"
 RUN_ID=""
 REPORT_DONE=0
+# DEFINED OUT HERE, not inside the branch below. It is called at the foot
+# of the lane unconditionally, and under CoreMind's batch MIND_RUN_ID is
+# set so that branch never runs — "beat_stop: command not found" then made
+# a lane that had shipped, tagged, pushed and installed exit non-zero, and
+# the batch read that back as "a platform build did not finish" for every
+# repo in the suite (2026-09-18). The sandbox lanes carried this shape
+# already; this is the copy-across.
+BEAT_PID=""
+# ERREXIT-PROOF, and it was not. The first shape — `[ -n "$BEAT_PID" ] &&
+# { kill …; wait …; }` — puts the brace group LAST in an AND list, which is
+# the one place `set -e` still applies; `wait` on a process just killed
+# returns 143, the lane died right there, AFTER the push and BEFORE the
+# status finish, and the EXIT trap re-entered this function and died the
+# same way — so every standalone lane since the beat arrived (2026-09-06)
+# ended 1 with its card stuck purple at "running". Found by TestAcctMind's
+# first qdtp, 2026-09-15; `|| true` on both, and `if` instead of the list.
+beat_stop() {
+  if [ -n "$BEAT_PID" ]; then
+    kill "$BEAT_PID" >/dev/null 2>&1 || true
+    wait "$BEAT_PID" 2>/dev/null || true
+    BEAT_PID=""
+  fi
+  return 0
+}
+
 if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   KIND=dtp; [ "$FULL" = 1 ] && KIND=tdtp
   RUN_ID=$(sh "$REPORTER" start "$KIND" AcctMind 2>/dev/null || true)
   # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
   # must not leave this repo purple on the page for ever.
-  BEAT_PID=""
-  # ERREXIT-PROOF, and it was not. The first shape — `[ -n "$BEAT_PID" ] &&
-  # { kill …; wait …; }` — puts the brace group LAST in an AND list, which is
-  # the one place `set -e` still applies; `wait` on a process just killed
-  # returns 143, the lane died right there, AFTER the push and BEFORE the
-  # status finish, and the EXIT trap re-entered this function and died the
-  # same way — so every standalone lane since the beat arrived (2026-09-06)
-  # ended 1 with its card stuck purple at "running". Found by TestAcctMind's
-  # first qdtp, 2026-09-15; `|| true` on both, and `if` instead of the list.
-  beat_stop() {
-    if [ -n "$BEAT_PID" ]; then
-      kill "$BEAT_PID" >/dev/null 2>&1 || true
-      wait "$BEAT_PID" 2>/dev/null || true
-      BEAT_PID=""
-    fi
-    return 0
-  }
   trap 'beat_stop; if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
   # A BEAT A MINUTE — Sean, 2026-09-07: "make sure during dtp that status is
   # updated every minute at least". start/finish alone leave the card frozen at
