@@ -220,9 +220,29 @@ for inst in $INSTANCES; do
       echo "guard: $URL answered $code — expected 401 (sign in) or 200 (already signed in)" >&2
       exit 1
     fi
-    served=$(curl -s "${URL}build.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(JSON.parse(s).baseUrl)}catch{process.stdout.write('unreadable')}})")
+    # ASKED MORE THAN ONCE, deliberately. This proof reads a file rsync has
+    # just this second finished writing, and on 2026-09-19 it read one
+    # mid-write: build.json came back unparseable, the guard called the whole
+    # release "a bundle built for 'unreadable'", and nothing was tagged —
+    # though every byte had in fact landed and the very same URL read
+    # perfectly a moment later. A guard that turns a half-second race into a
+    # blocked release is not guarding anything.
+    #
+    # It keeps ALL of its teeth: a bundle genuinely built for another base
+    # answers the same wrong thing every time, so it still fails, just four
+    # seconds later. Only the race is forgiven.
+    served=""
+    for try in 1 2 3 4 5; do
+      served=$(curl -s "${URL}build.json" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{process.stdout.write(JSON.parse(s).baseUrl)}catch{process.stdout.write('unreadable')}})")
+      [ "$served" = "$BASE" ] && break
+      [ "$try" = "5" ] || sleep 1
+    done
     if [ "$served" != "$BASE" ]; then
-      echo "guard: $URL is serving a bundle built for '$served'" >&2; exit 1
+      echo "guard: $URL is serving a bundle built for '$served', asked five times" >&2
+      echo "       what it answered last:" >&2
+      curl -s "${URL}build.json" | head -c 400 | sed 's/^/         /' >&2
+      echo "" >&2
+      exit 1
     fi
     echo "    $URL — HTTP $code, serving the $served build"
   fi
