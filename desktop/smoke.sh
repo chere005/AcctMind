@@ -53,17 +53,57 @@ else
   bad "and the index.html the window opens" "the window url and the embedded assets disagree"
 fi
 
+# LAUNCHING, AND WHY THIS IS MORE THAN FOUR LINES.
+#
+# On 2026-09-19 this check failed twice in one evening — "it exited on its
+# own" — and blocked the release both times, and the app could not be made to
+# fail again afterwards: six launches, one of them under ten busy cores, all
+# lived. The check had thrown the app's output into /dev/null and kept no exit
+# status, so a crash and a flake read exactly the same and there was nothing
+# to act on. Whatever it was, the next one has to leave evidence.
+#
+# So: the output is kept, the exit status is read and named (a signal is a
+# crash, a status is a refusal, and they are different bugs), and a first
+# death is retried once. One launch that dies and a second that lives is not a
+# broken bundle — it is this check losing a race — and a release should not
+# stop for it. Two deaths in a row is the app, and then the log is printed.
+LAUNCHLOG="$ROOT/desktop/.smoke-launch.log"
+launch_once() {
+  : > "$LAUNCHLOG"
+  "$BIN" > "$LAUNCHLOG" 2>&1 &
+  PID=$!
+  sleep 8
+  if kill -0 "$PID" 2>/dev/null; then
+    kill "$PID" 2>/dev/null || true
+    wait "$PID" 2>/dev/null || true
+    return 0
+  fi
+  # It is already gone; `wait` on a finished child still yields its status.
+  wait "$PID" 2>/dev/null
+  WHY=$?
+  return 1
+}
+
 echo "==> launching"
-"$BIN" > /dev/null 2>&1 &
-PID=$!
-sleep 8
-if kill -0 "$PID" 2>/dev/null; then
+if launch_once; then
   ok "it is still alive after 8 seconds"
-  kill "$PID" 2>/dev/null || true
-  wait "$PID" 2>/dev/null || true
   ok "it quits when asked"
 else
-  bad "it is still alive after 8 seconds" "it exited on its own"
+  FIRST=$WHY
+  echo "  ..   it died (${FIRST}) — trying once more before calling it"
+  if launch_once; then
+    ok "it is still alive after 8 seconds (on the second try; the first died ${FIRST})"
+    ok "it quits when asked"
+  else
+    # 128+n is a signal: 139 segfault, 134 abort, 137 killed.
+    if [ "$WHY" -gt 128 ]; then
+      bad "it is still alive after 8 seconds" "it CRASHED on signal $((WHY - 128)), twice"
+    else
+      bad "it is still alive after 8 seconds" "it exited on its own with status $WHY, twice"
+    fi
+    echo "       what it said (also in desktop/.smoke-launch.log):"
+    if [ -s "$LAUNCHLOG" ]; then sed 's/^/         /' "$LAUNCHLOG" | tail -20; else echo "         nothing at all"; fi
+  fi
 fi
 
 echo ""

@@ -6,6 +6,7 @@ apps/app/web-build/
 desktop/dist-desktop/
 desktop/src-tauri/target/
 desktop/.smoke-build.log
+desktop/.smoke-launch.log
 
 # Continuous native generation: ios/ and android/ are `expo prebuild` output
 # and are disposable. The watch target is NOT in there — it lives in
