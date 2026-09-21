@@ -67,7 +67,7 @@ fi
 # export:web is the export PLUS tools/patch-web-html.mjs — the head patch and
 # the build stamp. A bare `expo export` ships an index.html that renders a
 # white strip above a dark app and carries no build.json, and the shell's own
-# stage-dist.sh refuses a dist without the stamp — the README's "Nothing
+# stage-dist.sh refuses a dist without the stamp — ARCHITECTURE.md's "Nothing
 # should call it directly" is enforced, not advisory. The desktop build then
 # stages the export UNDER /AcctMind (desktop/stage-dist.sh says why: the base
 # path is baked into the JS, so the window opens the path the export was
@@ -371,7 +371,7 @@ if [ "$WANT_ANDROID" = 1 ]; then
   echo "==> Android"
   # ANDROID_HOME exported, not assumed: `expo run:android` sets it, a bare
   # ./gradlew does not, and the failure ("SDK location not found") reads like
-  # a broken project rather than a missing variable (README).
+  # a broken project rather than a missing variable (ARCHITECTURE.md).
   export ANDROID_HOME="${ANDROID_HOME:-$HOME/Library/Android/sdk}"
   export ANDROID_SDK_ROOT="$ANDROID_HOME"
   export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"

@@ -249,7 +249,7 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
 
 - **The Mac app, at all.** It compiles for `platform=macOS,variant=Designed
   for iPad` and has never been LAUNCHED — not once, by anyone. A shell cannot
-  do it (see README), so it takes Xcode and a person. Everything said about
+  do it (see ARCHITECTURE.md), so it takes Xcode and a person. Everything said about
   phone-to-Mac sync is therefore reasoning, not observation: the two
   simulators proved the transport, and the Mac has never been one of the two
   ends.

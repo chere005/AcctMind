@@ -4,8 +4,9 @@ The baseline for all of Sean's repos lives in ~/GIT/AgentSuite/AGENTS.md
 and is imported here; this file holds only what is true of THIS repo.
 @../AgentSuite/AGENTS.md
 
-Sean's ledger. `README.md` is the map, `TESTING.md` is what the tests are
-worth. This file is how to work in here.
+Sean's ledger. `README.md` is the short front door and `ARCHITECTURE.md` is
+the map; `TESTING.md` is what the tests are worth. This file is how to work in
+here.
 
 Two lists below. The second is **inherited** — traps that cost real time in
 CalMind (`~/GIT/CalMind`), whose architecture this is, written down before
