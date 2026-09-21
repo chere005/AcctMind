@@ -15,7 +15,7 @@
  * subtraction they claim to be.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, stored } from './helpers';
+import { addTransaction, fresh, pickView, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -91,7 +91,7 @@ function lastMonthDay(): string {
   return `${y}-${String((m === 0 ? 11 : m - 1) + 1).padStart(2, '0')}-15`;
 }
 
-test('the bar reads Account, Assigned, Available — and the third is the first less the second', async ({ page }) => {
+test('the bar reads Available, Assigned, Account — and the first is the last less the middle', async ({ page }) => {
   // The bug this pins, from Sean's own September: the month had moved
   // -$1,682.76 and the account held $484.63, and the bar drew the movement.
   // "Funds available should read as how much is in the account in the current
@@ -99,6 +99,11 @@ test('the bar reads Account, Assigned, Available — and the third is the first 
   // the month being looked at and not the ones that landed in it. Then, the
   // same day: "change Funds Available to Account, assigned to Assigned, and
   // to the right of that put available - assigned with label Available".
+  //
+  // The ORDER reversed on 2026-09-21 — "the bar should be ordered Available,
+  // Assigned, Account" — so the answer comes first and the two facts it is
+  // made of follow it. The arithmetic is unchanged and so is every figure
+  // below; what moved is which one the eye lands on.
   await fresh(page);
   // Cents, like every amount field in this app — 100000 is $1,000.00.
   await addTransaction(page, { name: 'Payday', amount: '100000', day: lastMonthDay() });
@@ -169,6 +174,10 @@ test('No Category is a line that cannot be deleted, and a reconcile draws its st
   await addTransaction(page, { name: 'Later', amount: '-2000', day: tomorrowDay() });
 
   await page.getByTestId('tab-budget').click();
+  // ALL TIME: the claim is that both rows land under No Category, and one of
+  // them is last month's. The tab opens on the current month now, which is
+  // the view that would leave it out.
+  await pickView(page, 'all');
   const row = page.getByTestId('line-row-none');
   await expect(row).toBeVisible();
   await expect(row).toContainText('No Category');

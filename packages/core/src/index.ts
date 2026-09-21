@@ -20,4 +20,6 @@ export * from './merge';
 export * from './sync';
 export * from './peer';
 export * from './folds';
+// The drop rule, byte-identical with CoreMind canon — see rowslots.ts.
+export * from './rowslots';
 export * from './views';

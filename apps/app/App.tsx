@@ -24,16 +24,19 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import {
   addTxn, applyDraft, availableOf, budgetFor, duplicateTxn, emptyStore, ensureAccount,
-  live, makeTxn,
+  live, makeTxn, moveLineTo, moveTxnTo,
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
-  REORDER_GAP, ALL_TIME,
-  reorder, today, tombstone, touch,
+  REORDER_GAP, ALL_TIME, budgetCsv, budgetIn, carriedInto, linesIn, monthOf, monthSet, viewSet,
+  today, tombstone, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
   type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
+import { AppMenu } from './src/AppMenu';
 import { Import } from './src/Import';
+import { saveTextFile } from './src/savefile';
+import { ALL_VIEW, MONTH_VIEW } from './src/ViewPick';
 import * as peer from './src/peer';
 import * as sync from './src/sync';
 import { AddTransaction } from './src/AddTransaction';
@@ -322,6 +325,73 @@ export default function App() {
    * perfectly on this device and then be undone by the next merge, because
    * every other device still has it and nothing would say it had gone.
    */
+  /**
+   * A short-lived line at the top of the app — Export's only way of saying
+   * it worked.
+   *
+   * This app has no toast host (CalMind's is a whole component and a whole
+   * canon file). What it has is the banner the dropped-rows and save-error
+   * messages already use, so a note is that banner with a timer on it
+   * rather than a second way of telling somebody something.
+   */
+  const [note, setNote] = useState<string | null>(null);
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const say = useCallback((text: string) => {
+    setNote(text);
+    clearTimeout(noteTimer.current);
+    noteTimer.current = setTimeout(() => setNote(null), 3200);
+  }, []);
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+
+  /**
+   * THE BUDGET AS A FILE — Sean, 2026-09-21: "export budget".
+   *
+   * What it exports is the budget as the tab is CURRENTLY READING IT: the
+   * set the View picker is on, and the month the stepper is on when that set
+   * has one. Exporting All Time from a screen showing September would be a
+   * file that disagrees with what is on the screen it was asked from, and
+   * nothing on the row would say so.
+   *
+   * The shape of the file is core's (`budgetCsv`); the numbers are the same
+   * ones the rows draw, read through the same `budgetIn`/`carriedInto`.
+   */
+  const onExportBudget = useCallback(() => {
+    if (phase.k !== 'ready') return;
+    const store = phase.store;
+    const set = prefs.budgetView === ALL_VIEW ? ALL_TIME
+      : prefs.budgetView === MONTH_VIEW ? monthSet(prefs.budgetMonth)
+        : viewSet(prefs.budgetView);
+    const month = prefs.budgetView !== ALL_VIEW;
+    const txns = live(store.txns);
+    const lines = live(store.lines);
+    const inScope = month ? txns.filter((t) => monthOf(t.date) === prefs.budgetMonth) : txns;
+    // The same map the screen draws from, so the file and the rows cannot
+    // disagree about what a line is worth — see core's carriedInto.
+    const carried = prefs.budgetView === MONTH_VIEW
+      ? carriedInto(store, prefs.budgetMonth, lines, txns)
+      : new Map<string, number>();
+    const rows = live(store.categories).flatMap((c) =>
+      linesIn(lines, c.id).map((l) => {
+        const assigned = budgetIn(store, set, l);
+        const spent = total(inScope.filter((t) => t.category === l.id));
+        return {
+          category: c.name, line: l.name, assigned, spent,
+          available: availableOf(assigned, spent, carried.get(l.id) ?? 0),
+        };
+      }));
+    const name = `acctmind-budget-${month ? prefs.budgetMonth : 'all-time'}.csv`;
+    void saveTextFile(name, budgetCsv(rows)).then(say).catch(() => say('Could not export'));
+  }, [phase, prefs.budgetView, prefs.budgetMonth, say]);
+
+  const appMenu = (
+    <AppMenu
+      onImport={() => setImporting(true)}
+      onExport={onExportBudget}
+      whole={prefs.amountMode === 'whole'}
+      onWhole={(next) => setPref('amountMode', next ? 'whole' : 'cents')}
+    />
+  );
+
   const onRowAction = useCallback((action: RowAction, txn: Txn) => {
     if (phase.k !== 'ready') return;
     switch (action) {
@@ -368,6 +438,9 @@ export default function App() {
             {saveError !== null && (
               <Banner testID="save-error" tone="bad" text={`Not saved — ${saveError}`} />
             )}
+            {/* Export's receipt — the file was handed over or copied, and on
+                both paths the only evidence is that something left the app. */}
+            {note !== null && <Banner testID="note" tone="warn" text={note} />}
             {tooBig && (
               <Banner
                 testID="toobig-banner"
@@ -385,7 +458,8 @@ export default function App() {
                 budgetView={prefs.budgetView}
                 budgetMonth={prefs.budgetMonth}
                 onBudgetView={(id) => setPref('budgetView', id)}
-                onBudgetMonth={(m) => setPref('budgetMonth', m)}
+                onBudgetMonth={(m: string) => setPref('budgetMonth', m)}
+                menu={appMenu}
                 /* A new view is a record, and picking it is a device choice —
                    so it both syncs and lands in front of you. */
                 onNewView={(name) => {
@@ -459,11 +533,13 @@ export default function App() {
                   if (phase.k !== 'ready') return;
                   commit(phase, removeCategoryDeep(phase.store, category.id, Date.now()));
                 }}
-                onMoveLine={(line, siblings, to) => {
+                /* A line dropped into a category — its own or another one
+                   (Sean, 2026-09-21). Core decides both halves: which slot
+                   the order lands in, and that the line keeps every amount
+                   it carries. One record changes, or none. */
+                onMoveLine={(line, category, beforeId) => {
                   if (phase.k !== 'ready') return;
-                  // One row changes, or none — see reorder. A drag that ends
-                  // where it started costs no merge clock and no sync.
-                  const moved = reorder(siblings, line.id, to, Date.now());
+                  const moved = moveLineTo(live(phase.store.lines), line, category, beforeId, Date.now());
                   if (moved !== null) commit(phase, putLine(phase.store, moved));
                 }}
               />
@@ -480,12 +556,13 @@ export default function App() {
                 setAdding(true);
               }}
               onAction={onRowAction}
-              onMove={(txn, shown, index) => {
+              /* A row dropped into an account — its own or another one
+                 (Sean, 2026-09-21). Core returns only the row that changed,
+                 or null when nothing needs to move, so a drag that ends
+                 where it started costs no merge clock and no sync. */
+              onMove={(txn, account, beforeId) => {
                 if (phase.k !== 'ready') return;
-                // `reorder` returns only the row that changed, or null when
-                // nothing needs to move — so a drag that ends where it started
-                // costs no merge clock and no sync.
-                const moved = reorder(shown, txn.id, index, Date.now());
+                const moved = moveTxnTo(live(phase.store.txns), txn, account, beforeId, Date.now());
                 if (moved !== null) commit(phase, updateTxn(phase.store, moved));
               }}
               /* One field, changed in place. `touch` so it travels; the rest
@@ -497,6 +574,13 @@ export default function App() {
                 if (patch.name !== undefined && patch.name.trim() === '') return;
                 commit(phase, updateTxn(phase.store, touch(next, Date.now())));
               }}
+              /* The pick bar's Delete. One press, one clock, one commit —
+                 core's `tombstoneMany` does the whole batch in a single pass
+                 so no reader can see a half-finished delete. */
+              onDeleteMany={(ids) => {
+                if (phase.k !== 'ready') return;
+                commit(phase, tombstoneMany(phase.store, ids, Date.now()));
+              }}
               onDate={(txn) => setDating(txn)}
               /* The cleared box: core says what the row becomes, `touch` included,
                  so the tick travels to the other devices like any edit. */
@@ -506,8 +590,7 @@ export default function App() {
               }}
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
-              amountMode={prefs.amountMode}
-              onAmountMode={(m) => setPref('amountMode', m)}
+              menu={appMenu}
               accounts={live(phase.store.accounts)}
               sort={prefs.sort}
               onSort={(m) => setPref('sort', m)}
@@ -551,7 +634,6 @@ export default function App() {
                   ...(what === 'cleared' ? { cleared: true as const } : {}),
                 }));
               }}
-              onImport={() => setImporting(true)}
             />
             )}
 

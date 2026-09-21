@@ -9,7 +9,7 @@
  * worst kind of check. Playwright's `toBeVisible()` reads computed style and
  * gets this right; that is why everything below goes through it.
  */
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 export const KEY = 'acctmind.store.v1';
 
@@ -102,6 +102,23 @@ export async function pickSort(page: Page, mode: 'custom' | 'date' | 'amount'): 
   // — so this waits on VISIBILITY, never on presence. A presence check here
   // would pass with the menu stuck open and with it closed.
   await expect(page.getByTestId('sort-menu-backdrop')).toBeHidden();
+}
+
+/**
+ * Choose which budget SET the Budget tab reads, from the View dropdown.
+ *
+ * Needed by every test that asserts on `line.budget` — the ALL-TIME number
+ * — because the app opens on the current month since 2026-09-21 and the pad
+ * writes to whichever set is being looked at. Before that the default WAS
+ * All Time, and those tests said nothing about the view at all; the default
+ * changing is what made the assumption visible.
+ */
+export async function pickView(page: Page, view: 'all' | 'month'): Promise<void> {
+  await page.getByTestId('budget-view-pick').click();
+  await page.getByTestId(`budget-view-${view}`).click();
+  // The menu is a Modal; react-native-web leaves a hidden one in the DOM, so
+  // this waits on VISIBILITY — see pickSort.
+  await expect(page.getByTestId('budget-view-backdrop')).toBeHidden();
 }
 
 /** Walk the month grid to a day and tap it. */
@@ -203,6 +220,70 @@ export async function swipeRow(page: Page, index: number, dx: number): Promise<v
   for (let i = 1; i <= steps; i++) {
     await cdp.send('Input.dispatchTouchEvent', {
       type: 'touchMove', touchPoints: [{ x: x0 + (dx * i) / steps, y }],
+    });
+  }
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
+
+/**
+ * Open the cog menu in the top right.
+ *
+ * It is a Modal, and react-native-web leaves a hidden one in the DOM — so
+ * every wait in here is on VISIBILITY, never on presence.
+ */
+export async function openMenu(page: Page): Promise<void> {
+  await page.getByTestId('app-menu-button').click();
+  await expect(page.getByTestId('menu-whole')).toBeVisible();
+}
+
+/** Close it. Any tap on the backdrop does. */
+export async function closeMenu(page: Page): Promise<void> {
+  await page.getByTestId('app-menu-backdrop').click({ position: { x: 5, y: 5 } });
+  await expect(page.getByTestId('menu-whole')).toBeHidden();
+}
+
+/**
+ * Flip "Whole dollars" and put the menu away.
+ *
+ * It was a round `.00` toggle in the top bar until 2026-09-21; the two
+ * presses this now takes are the cost of it having a WORD next to it.
+ */
+export async function toggleWhole(page: Page): Promise<void> {
+  await openMenu(page);
+  await page.getByTestId('menu-whole').click();
+  await closeMenu(page);
+}
+
+/**
+ * Drag a grip from one point to another, with REAL touch events.
+ *
+ * `swipeRow`'s stream, vertical, and for the same reason: react-native-web's
+ * PanResponder ignores Playwright's synthetic mouse entirely, so a mouse
+ * "drag" passes while doing nothing at all. CHROMIUM ONLY — the mobile
+ * project is WebKit and has no CDP session.
+ *
+ * `grip` is the handle to take hold of and `onto` is where to let go. Both
+ * are locators rather than offsets: a drag between sections has to land on
+ * something drawn, and naming that thing is what makes the test say what it
+ * means. `bias` nudges the release point up or down within the target — the
+ * drop reads which side of a row's MIDPOINT the finger ended on, so landing
+ * above or below the same row is the difference between two slots.
+ */
+export async function dragGrip(
+  page: Page, grip: Locator, onto: Locator, bias = 0,
+): Promise<void> {
+  const from = (await grip.boundingBox())!;
+  const to = (await onto.boundingBox())!;
+  const x = from.x + from.width / 2;
+  const y0 = from.y + from.height / 2;
+  const y1 = to.y + to.height / 2 + bias;
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y: y0 }] });
+  const steps = 16;
+  for (let i = 1; i <= steps; i++) {
+    await cdp.send('Input.dispatchTouchEvent', {
+      type: 'touchMove', touchPoints: [{ x, y: y0 + ((y1 - y0) * i) / steps }],
     });
   }
   await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });

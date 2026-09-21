@@ -32,7 +32,9 @@
  * money.ts for why that is not negotiable.
  */
 import { MAX_CENTS } from './money';
-import type { Txn } from './types';
+import { touch } from './merge';
+import { orderAbove } from './txn';
+import type { Line, Txn } from './types';
 
 /**
  * What is left on a line: what was budgeted, PLUS what has moved.
@@ -222,4 +224,41 @@ export function unfiledSince(txns: readonly Txn[]): Txn[] {
     const at = start.get(t.account);
     return at === undefined || t.date > at;
   });
+}
+
+/**
+ * A category's lines, in the order they are DRAWN — ascending `order`.
+ *
+ * Ascending, where the ledger's rows are descending; see `OrderDir` in
+ * txn.ts for why neither can be flipped to match the other. It lived in the
+ * Budget screen until 2026-09-21, which meant the one place that knew which
+ * way a line list runs was the one place that could not be unit-tested —
+ * and the drag, which needs exactly that fact, got it wrong at both ends.
+ */
+export function linesIn(lines: readonly Line[], category: string): Line[] {
+  return lines.filter((l) => l.category === category).slice().sort((a, b) => a.order - b.order);
+}
+
+/**
+ * Move a line into ANOTHER CATEGORY, at the slot it was dropped on.
+ *
+ * Sean, 2026-09-21: "make it possible to drag items between sections and
+ * folders in budget." A category is the Budget tab's section, and a line
+ * carries its category on itself — so this is one record, like `moveTxnTo`,
+ * and nothing else has to move out of the way.
+ *
+ * The MONEY does not follow the line anywhere, deliberately: the amounts
+ * live in `budgets` keyed by set and line id (views.ts), not by category,
+ * and the transactions filed against it point at the LINE. So a line that
+ * changes category keeps everything it was assigned and everything that has
+ * been spent on it, and only the heading it is summed under changes. That is
+ * the whole point of moving one — "Coffee belongs under Food, not Fun" is a
+ * statement about the heading, never about the money.
+ */
+export function moveLineTo(
+  lines: readonly Line[], line: Line, category: string, beforeId: string | null, now: number,
+): Line | null {
+  const order = orderAbove(linesIn(lines, category), line.id, beforeId, 'asc');
+  if (line.category === category && line.order === order) return null;
+  return touch({ ...line, category, order }, now);
 }

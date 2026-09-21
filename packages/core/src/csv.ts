@@ -607,3 +607,67 @@ export function applyImport(
 
   return { ...store, txns: [...kept, ...added] };
 }
+
+/* ------------------------------------------------------------------ *
+ * WRITING one. Everything above reads a bank's file; this writes ours.
+ * ------------------------------------------------------------------ */
+
+/**
+ * One cell, quoted only when it has to be.
+ *
+ * RFC 4180's rule, and the three characters that force quoting are the three
+ * that would otherwise end the cell, the row or the field: a comma, a quote
+ * and a newline. A quote inside a quoted cell is DOUBLED, not backslashed —
+ * a backslash is a C convention and every spreadsheet in the world reads the
+ * doubled one.
+ *
+ * Quoting everything unconditionally would also be valid and is what a lazy
+ * writer does; it makes the file unreadable in a terminal, which is where a
+ * person looks when the import at the other end goes wrong.
+ */
+export function csvCell(text: string): string {
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+/**
+ * Rows to a CSV, CRLF-terminated.
+ *
+ * CRLF and a trailing one, both deliberate: RFC 4180 says so, Excel on
+ * Windows needs it, and a file whose last row has no terminator is the one
+ * that loses its last line to a naive splitter. `readCsv` above accepts
+ * either, so a round trip through this app is not what proves it right.
+ */
+export function toCsv(rows: readonly (readonly string[])[]): string {
+  return rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + (rows.length > 0 ? '\r\n' : '');
+}
+
+/** One line of a budget, as an export lists it. Cents, like everything. */
+export type BudgetExportRow = {
+  category: string;
+  line: string;
+  assigned: number;
+  spent: number;
+  available: number;
+};
+
+/**
+ * The budget as a spreadsheet — Sean, 2026-09-21: "export budget".
+ *
+ * PLAIN NUMBERS, not `formatAmount`. `-$1,234.56` is a string a person
+ * reads and a string a spreadsheet cannot add up: the thousands separator
+ * makes it text in every locale, and the currency symbol makes it text in
+ * the rest. `-1234.56` is a number in every one of them. The header says
+ * the amounts are dollars so nobody has to guess, and the app's own display
+ * formatting stays where it belongs, at the edge (money.ts).
+ *
+ * The rows are given rather than computed here: which month, which view and
+ * what carried in are the screen's questions and it has already asked them
+ * (budget.ts, views.ts). What this owns is the SHAPE of the file.
+ */
+export function budgetCsv(rows: readonly BudgetExportRow[]): string {
+  const cents = (n: number) => (n / 100).toFixed(2);
+  return toCsv([
+    ['Category', 'Line', 'Assigned', 'Spent', 'Available'],
+    ...rows.map((r) => [r.category, r.line, cents(r.assigned), cents(r.spent), cents(r.available)]),
+  ]);
+}

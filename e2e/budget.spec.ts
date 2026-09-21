@@ -10,7 +10,7 @@
  * keystroke, and that the list is still there behind the pad.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { stored } from './helpers';
+import { pickView, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -23,6 +23,12 @@ const liveLines = (s: Stored) => s.lines.filter((l) => l.deleted !== true);
 async function seed(page: Page): Promise<string> {
   await page.goto('./');
   await expect(page.getByTestId('budget-title')).toBeVisible();
+  // ALL TIME, said out loud. Every assertion in this file reads
+  // `line.budget`, which is the all-time set's own number — the pad writes
+  // to whichever set is being LOOKED at, and the app opens on the current
+  // month since 2026-09-21. The tests below were silent about the view
+  // because the default used to be this one.
+  await pickView(page, 'all');
   await page.getByTestId('section-pick').click();
   await page.getByTestId('section-manage').click();
   await page.getByTestId('manage-add').click();

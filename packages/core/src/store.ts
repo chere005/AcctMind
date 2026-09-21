@@ -460,6 +460,36 @@ export function updateTxn(store: Store, txn: Txn): Store {
 }
 
 /**
+ * Delete SEVERAL, from the pick bar — one tombstone each, one clock for all.
+ *
+ * A tombstone rather than a removal, for the reason `tombstone` gives: a row
+ * dropped here is perfectly gone on this device and comes straight back on
+ * the next merge, because every other device still has it and nothing said
+ * it had gone.
+ *
+ * ONE PASS, not one `updateTxn` per id: folding the store twelve times is
+ * twelve copies of the whole ledger, and the intermediate eleven are states
+ * no reader should ever be able to observe — a save racing that fold would
+ * write a half-finished delete.
+ *
+ * One `now` for the whole batch, deliberately. They were deleted by one
+ * press, so they carry one clock, and a merge that orders them against
+ * another device's edits orders them together.
+ *
+ * Ids that name nothing are skipped rather than counted: a selection can
+ * outlive its rows (see `selectedTotal`, which has the same rule), and a
+ * bulk delete must not resurrect a row as a fresh tombstone.
+ */
+export function tombstoneMany(store: Store, ids: readonly string[], now: number): Store {
+  const want = new Set(ids);
+  if (want.size === 0) return store;
+  return {
+    ...store,
+    txns: store.txns.map((t) => (want.has(t.id) ? tombstone(t, now) : t)),
+  };
+}
+
+/**
  * A store guaranteed to have somewhere to put a transaction.
  *
  * The invariant every screen depends on: there is ALWAYS at least one live

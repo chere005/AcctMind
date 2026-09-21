@@ -51,7 +51,7 @@
  * including that month, plus everything it has spent. `assignedBefore` is the
  * first half; the ledger is the second, and budget.ts adds them.
  */
-import type { BudgetAmount, Line, View } from './types';
+import type { BudgetAmount, Line, Txn, View } from './types';
 
 /* The helpers take the COLLECTION they read, not the whole Store — a screen
  * holds `budgets` as a prop and should not have to hold a Store to ask what a
@@ -171,4 +171,40 @@ export function putBudget(
   };
   const has = store.budgets.some((b) => b.id === id);
   return has ? store.budgets.map((b) => (b.id === id ? row : b)) : [...store.budgets, row];
+}
+
+/**
+ * WHAT EACH LINE CARRIES IN — assigned in an earlier month and still there.
+ *
+ * Sean, 2026-09-18: "assignments that aren't spent by the end of the month
+ * carry over." A line's available in September is everything assigned to it
+ * in September and before, plus everything it has ever spent; this is the
+ * history half, and `availableOf` adds the month itself.
+ *
+ * MONTH ONLY, which is why the caller passes the month rather than a set:
+ * All Time has no months to carry between and a named view is one what-if
+ * budget with no calendar under it, so carrying into either would invent a
+ * timeline neither has.
+ *
+ * A MAP, built in one pass, rather than a function answering one line at a
+ * time. The spending half has to look at every transaction older than the
+ * month, and doing that once per line turns the whole ledger into an N×M
+ * scan on every keystroke of a rename. It was the Budget screen's own
+ * `useMemo` until 2026-09-21; the export needs the same number and a second
+ * copy of this loop is a second chance to disagree with the screen about
+ * what a line is worth.
+ */
+export function carriedInto(
+  store: HasBudgets, month: string, lines: readonly Line[], txns: readonly Txn[],
+): Map<string, number> {
+  const by = new Map<string, number>();
+  for (const t of txns) {
+    if (t.category === null || monthOf(t.date) >= month) continue;
+    by.set(t.category, (by.get(t.category) ?? 0) + t.amount);
+  }
+  for (const l of lines) {
+    const before = assignedBefore(store, month, l.id);
+    if (before !== 0) by.set(l.id, (by.get(l.id) ?? 0) + before);
+  }
+  return by;
 }

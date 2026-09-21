@@ -8,7 +8,7 @@
  * the app has to do, just one level down.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { fresh, setSign, stored } from './helpers';
+import { fresh, pickView, setSign, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -113,6 +113,9 @@ test('the Budget tab opens on a default category rather than an empty state', as
 
 test('a category is a heading, and the money is on the line inside it', async ({ page }) => {
   await page.goto('./');
+  // The money asserted below is `line.budget`, the ALL-TIME number, and the
+  // pad writes to whichever set is on screen — the month, by default.
+  await pickView(page, 'all');
   await openManage(page);
   const id = await makeCategory(page, 'Groceries');
   await page.getByTestId('manage-done').click();

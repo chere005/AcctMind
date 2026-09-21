@@ -129,6 +129,30 @@ export function ImportIcon({ color = T.text, size = 15 }: { color?: string; size
 }
 
 /**
+ * Settings: a cog — Sean, 2026-09-21, replacing the hamburger he asked for
+ * half a minute earlier. A hamburger says "more of the same list"; a cog
+ * says "things about the app", which is what is behind it.
+ *
+ * EIGHT TEETH AS ONE PATH, not eight rotated rectangles. A cog drawn as
+ * separate shapes has eight seams where the tooth meets the ring, and at 18
+ * points a hairline seam is a visible notch on a dark background — the tab
+ * icons in this file avoid the same thing by never abutting two fills.
+ */
+export function CogIcon({ color = T.text, size = 18 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M19.4 13a7.9 7.9 0 0 0 0-2l2-1.5-2-3.5-2.4 1a7.9 7.9 0 0 0-1.7-1L15 3.2h-4l-.3 2.6a7.9 7.9 0 0 0-1.7 1l-2.4-1-2 3.5L6.6 11a7.9 7.9 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a7.9 7.9 0 0 0 1.7 1l.3 2.6h4l.3-2.6a7.9 7.9 0 0 0 1.7-1l2.4 1 2-3.5z"
+        stroke={color}
+        strokeWidth={1.7}
+        strokeLinejoin="round"
+      />
+      <Circle cx={13} cy={12} r={2.6} stroke={color} strokeWidth={1.7} />
+    </Svg>
+  );
+}
+
+/**
  * Reconcile: a hammer. Sean's pick, 2026-09-15.
  *
  * Drawn as a head and a handle rather than a glyph, for the reason every icon

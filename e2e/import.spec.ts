@@ -12,7 +12,7 @@
  * the one thing a plan computed in two places can get wrong.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { fresh, stored } from './helpers';
+import { fresh, openMenu, stored } from './helpers';
 
 type StoredTxn = { id: string; name: string; amount: number; date: string; deleted?: true; cleared?: true };
 const live = async (page: Page): Promise<StoredTxn[]> =>
@@ -27,7 +27,11 @@ const ZELLE = '09/14/2026","ZELLE FROM FOB ON 09/14 REF # WFCT1';
 
 /** Pick the file and stop on the plan, without agreeing to it. */
 async function load(page: Page, text: string): Promise<void> {
-  await page.getByTestId('import-button').click();
+  // The import moved off the account heading into the cog menu — Sean,
+  // 2026-09-21: "drop the import button next to the + button in
+  // transactions."
+  await openMenu(page);
+  await page.getByTestId('menu-import').click();
   await expect(page.getByTestId('import-title')).toBeVisible();
   await page.setInputFiles('[data-testid="import-file"]', {
     name: 'export.csv', mimeType: 'text/csv', buffer: Buffer.from(text),

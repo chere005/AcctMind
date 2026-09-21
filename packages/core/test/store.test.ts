@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  STORE_VERSION, addTxn, emptyStore, normalizeTxn, parseStore, removeTxn, serialize,
-  updateTxn,
+  STORE_VERSION, addTxn, emptyStore, live, normalizeTxn, parseStore, removeTxn, serialize,
+  tombstoneMany, updateTxn,
 } from '../src/index';
 import type { Txn } from '../src/index';
 
@@ -370,5 +370,48 @@ describe('the cleared flag on a stored transaction', () => {
     const back = parseStore(serialize(store));
     expect(back.ok).toBe(true);
     if (back.ok) expect(back.store.txns[0]?.cleared).toBe(true);
+  });
+});
+
+describe('tombstoneMany — the pick bar\'s Delete', () => {
+  const store = () => ({
+    ...emptyStore(),
+    txns: [txn({ id: 'a' }), txn({ id: 'b' }), txn({ id: 'c' })],
+  });
+
+  it('marks every named row deleted and leaves the rest alone', () => {
+    const next = tombstoneMany(store(), ['a', 'c'], 5000);
+    expect(live(next.txns).map((t) => t.id)).toEqual(['b']);
+    // A tombstone, not a removal: the rows are still there to travel.
+    expect(next.txns).toHaveLength(3);
+  });
+
+  it('gives the whole batch one clock', () => {
+    // They were deleted by one press, so a merge orders them together
+    // rather than interleaving another device's edits between them.
+    const next = tombstoneMany(store(), ['a', 'b'], 5000);
+    const clocks = next.txns.filter((t) => t.deleted === true).map((t) => t.updated);
+    expect(clocks).toEqual([5000, 5000]);
+  });
+
+  it('skips an id that names nothing', () => {
+    // A selection can outlive its rows — deleted on another device while it
+    // sat picked here. It must not come back as a fresh tombstone.
+    const next = tombstoneMany(store(), ['a', 'gone'], 5000);
+    expect(next.txns).toHaveLength(3);
+    expect(live(next.txns).map((t) => t.id)).toEqual(['b', 'c']);
+  });
+
+  it('returns the very same store for an empty selection', () => {
+    // Identity, not equality: Delete with nothing picked must not make the
+    // app think the ledger changed and write the file again.
+    const before = store();
+    expect(tombstoneMany(before, [], 5000)).toBe(before);
+  });
+
+  it('does not mutate what it was given', () => {
+    const before = store();
+    tombstoneMany(before, ['a'], 5000);
+    expect(live(before.txns).map((t) => t.id)).toEqual(['a', 'b', 'c']);
   });
 });

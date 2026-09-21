@@ -6,7 +6,7 @@
  * way past, and that the two round buttons do what the rules say.
  */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh, rows, setSign, stored, reload } from './helpers';
+import { addTransaction, closeMenu, fresh, openMenu, rows, setSign, stored, reload, toggleWhole } from './helpers';
 
 // Typed into the field, with both toggles off — the default.
 const CASES: [string, string, number][] = [
@@ -50,19 +50,23 @@ test('the preview shows what the digits mean, before saving', async ({ page }) =
   await expect(page.getByTestId('amount-preview')).toHaveText('$12.34');
 });
 
-test('.00 is off to begin with', async ({ page }) => {
+test('Whole dollars is off to begin with', async ({ page }) => {
   await fresh(page);
-  await expect(page.getByTestId('whole-toggle')).toBeVisible();
+  await openMenu(page);
+  await expect(page.getByTestId('menu-whole')).toBeVisible();
+  // Unticked: bare digits are cents until somebody says otherwise.
+  await expect(page.getByTestId('menu-whole-box')).toHaveText('');
+  await closeMenu(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('1450');
   await setSign(page, false);
   await expect(page.getByTestId('amount-preview')).toHaveText('$14.50');
 });
 
-test('the .00 button reads bare digits as whole dollars', async ({ page }) => {
+test('Whole dollars reads bare digits as whole dollars', async ({ page }) => {
   await fresh(page);
   // It lives on the Transactions header now, not inside the form.
-  await page.getByTestId('whole-toggle').click();
+  await toggleWhole(page);
 
   await page.getByTestId('add-button').click();
   await page.getByTestId('name-input').fill('Rent');
@@ -76,11 +80,11 @@ test('the .00 button reads bare digits as whole dollars', async ({ page }) => {
   expect(store.txns[0]?.amount).toBe(145000);
 });
 
-test('the .00 choice is remembered across a reload', async ({ page }) => {
+test('the Whole dollars choice is remembered across a reload', async ({ page }) => {
   // A setting that reset on every launch would have to be found and flipped
   // again before every single entry, which is the same as not having it.
   await fresh(page);
-  await page.getByTestId('whole-toggle').click();
+  await toggleWhole(page);
   await reload(page);
 
   await page.getByTestId('add-button').click();
@@ -94,7 +98,7 @@ test('and it is not part of the ledger', async ({ page }) => {
   // sync, and a preference travelling as though it were a transaction is a
   // bug waiting for the second device.
   await fresh(page);
-  await page.getByTestId('whole-toggle').click();
+  await toggleWhole(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('name-input').fill('Rent');
   await page.getByTestId('amount-input').fill('1450');
@@ -105,9 +109,9 @@ test('and it is not part of the ledger', async ({ page }) => {
   expect(JSON.stringify(store)).not.toContain('amountMode');
 });
 
-test('a typed dot beats the .00 button', async ({ page }) => {
+test('a typed dot beats Whole dollars', async ({ page }) => {
   await fresh(page);
-  await page.getByTestId('whole-toggle').click();
+  await toggleWhole(page);
   await page.getByTestId('add-button').click();
   await page.getByTestId('amount-input').fill('12.34');
   await setSign(page, false);

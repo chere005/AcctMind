@@ -486,56 +486,139 @@ test.describe('the swipe', () => {
   });
 });
 
-test('rows are picked out in edit mode, and the bar says what they come to', async ({ page }) => {
-  // Sean, 2026-08-21: "in edit mode allow for selecting multiple
-  // transactions.. when multiple transactions are selected, show the sum of
-  // their amounts." Which is the point of it — "what did this weekend cost"
-  // should be four taps, not four numbers added by hand.
+/** The three rows every selection test below picks from. */
+async function threeRows(page: Page): Promise<void> {
   await fresh(page);
   await addTransaction(page, { name: 'a', amount: '-450', day: '2026-08-20' });
   await addTransaction(page, { name: 'b', amount: '-1250', day: '2026-08-19' });
   await addTransaction(page, { name: 'c', amount: '2400', day: '2026-08-18' });
+}
 
-  // Nothing selected: the running total, as before.
-  // -4.50 + -12.50 + 24.00
+/** Tap the selector dot on the nth row. */
+async function pick(page: Page, n: number): Promise<void> {
+  await page.getByTestId(/^txn-pick-/).nth(n).click();
+}
+
+test('the dot picks a row, and the bar says what the picks come to', async ({ page }) => {
+  // Sean, 2026-08-21: "when multiple transactions are selected, show the sum
+  // of their amounts" — "what did this weekend cost" should be three taps,
+  // not three numbers added by hand. And 2026-09-21: ChefMind's selection,
+  // which means an always-visible dot and no mode to find first.
+  await threeRows(page);
+
+  // Nothing picked: the bar is STILL THERE and says so. It appeared only
+  // once something was selected until 2026-09-21, which made the count you
+  // wanted before choosing the one thing you could not see.
+  await expect(page.getByTestId('picked-count')).toHaveText('0 selected');
+  // -4.50 + -12.50 + 24.00, on the account's own heading, unchanged.
   await expect(page.getByTestId(/^account-total-/)).toHaveText('$7.00');
-  await edit(page);
-  await expect(page.getByTestId('picked-total')).toHaveCount(0);
 
-  await page.getByTestId('txn-row-body').nth(0).click();
-  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
-  await expect(page.getByTestId('picked-total')).toContainText('-$4.50');
+  await pick(page, 0);
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$4.50');
 
-  await page.getByTestId('txn-row-body').nth(1).click();
-  await expect(page.getByTestId('picked-total')).toContainText('2 selected');
-  await expect(page.getByTestId('picked-total')).toContainText('-$17.00');
+  await pick(page, 1);
+  await expect(page.getByTestId('picked-count')).toHaveText('2 selected · -$17.00');
 
   // Tapping again puts a row back, and the sum follows.
-  await page.getByTestId('txn-row-body').nth(0).click();
-  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
-  await expect(page.getByTestId('picked-total')).toContainText('-$12.50');
+  await pick(page, 0);
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$12.50');
 });
 
-test('leaving edit mode clears the selection', async ({ page }) => {
-  // A selection you cannot see is one that will surprise you the next time
-  // the pencil is pressed.
-  await fresh(page);
-  await addTransaction(page, { name: 'a', amount: '-450' });
+test('the dot picks with the pencil off, and a row tap still picks with it on', async ({ page }) => {
+  // The two halves of the change. The dot has no mode — that is the whole
+  // point of drawing it always — and edit mode keeps the meaning it had, so
+  // nobody who learned to tap a row has to relearn it.
+  await threeRows(page);
+  await pick(page, 0);
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$4.50');
+  await expect(page.getByTestId('row-actions')).toHaveCount(0);
+
+  await edit(page);
+  await page.getByTestId('txn-row-body').nth(1).click();
+  await expect(page.getByTestId('picked-count')).toHaveText('2 selected · -$17.00');
+});
+
+test('leaving edit mode KEEPS the selection; Clear is what drops it', async ({ page }) => {
+  // The reversal, and the reason: the selection used to be cleared by the
+  // pencil going off because it was invisible without it. The dot and the
+  // bar are drawn either way now, so there is nothing to surprise anyone
+  // with — and Clear sits an inch from the count it acts on.
+  await threeRows(page);
   await edit(page);
   await page.getByTestId('txn-row-body').first().click();
-  await expect(page.getByTestId('picked-total')).toBeVisible();
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$4.50');
 
   await page.getByTestId('edit-toggle').click();
-  await expect(page.getByTestId(/^account-total-/)).toBeVisible();
-  await edit(page);
-  await expect(page.getByTestId('picked-total')).toHaveCount(0);
+  await expect(page.getByTestId('row-actions')).toHaveCount(0);
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$4.50');
+
+  await page.getByTestId('picked-clear').click();
+  await expect(page.getByTestId('picked-count')).toHaveText('0 selected');
 });
 
-test('a tap outside edit mode picks nothing', async ({ page }) => {
+test('All picks every row on the screen, and not the ones behind a fold', async ({ page }) => {
+  // "All means ALL" — of what is SHOWN. A fold is the person saying "not
+  // now", and All followed by Delete reaching behind one is the outcome this
+  // bar must not have.
+  await threeRows(page);
+  await page.getByTestId('picked-all').click();
+  await expect(page.getByTestId('picked-count')).toHaveText('3 selected · $7.00');
+
+  await page.getByTestId('picked-clear').click();
+  const s = await stored(page) as { accounts: { id: string }[] };
+  await page.getByTestId(`account-head-${s.accounts[0]!.id}`).click();
+  await expect(page.getByTestId('txn-row')).toHaveCount(0);
+  await page.getByTestId('picked-all').click();
+  await expect(page.getByTestId('picked-count')).toHaveText('0 selected');
+});
+
+test('Delete takes two presses, and tombstones every picked row at once', async ({ page }) => {
+  // The suite's delete gesture — one press arms it, the second fires — and
+  // the thing the ledger cares about: the rows leave as TOMBSTONES, because
+  // a row dropped outright is one the next merge puts back.
+  await threeRows(page);
+  await pick(page, 0);
+  await pick(page, 1);
+
+  await page.getByTestId('picked-delete').click();
+  // Armed, and nothing has gone yet.
+  await expect(page.getByTestId('picked-delete')).toContainText('Delete?');
+  await expect(page.getByTestId('txn-row')).toHaveCount(3);
+
+  await page.getByTestId('picked-delete').click();
+  await expect(page.getByTestId('txn-row')).toHaveCount(1);
+  await expect(page.getByTestId('picked-count')).toHaveText('0 selected');
+
+  const s = await stored(page) as Stored;
+  expect(s.txns).toHaveLength(3);
+  expect(s.txns.filter((t) => t.deleted === true).map((t) => t.name).sort()).toEqual(['a', 'b']);
+  // The clock is one press, so both carry it — see core's tombstoneMany.
+  await reload(page);
+  await expect(page.getByTestId('txn-row')).toHaveCount(1);
+});
+
+test('picking another row disarms a Delete that was already armed', async ({ page }) => {
+  // Arming on two rows and then picking a third would otherwise leave a
+  // press that deletes something the arming never saw.
+  await threeRows(page);
+  await pick(page, 0);
+  await page.getByTestId('picked-delete').click();
+  await expect(page.getByTestId('picked-delete')).toContainText('Delete?');
+
+  await pick(page, 1);
+  await expect(page.getByTestId('picked-delete')).toContainText('Delete');
+  await expect(page.getByTestId('picked-delete')).not.toContainText('Delete?');
+  // And the press that would have fired only arms again.
+  await page.getByTestId('picked-delete').click();
+  await expect(page.getByTestId('txn-row')).toHaveCount(3);
+});
+
+test('a tap on the row body outside edit mode picks nothing', async ({ page }) => {
+  // The dot is the control; the body still means "edit this field".
   await fresh(page);
   await addTransaction(page, { name: 'a', amount: '-450' });
   await page.getByTestId('txn-row-body').first().click();
-  await expect(page.getByTestId('picked-total')).toHaveCount(0);
+  await expect(page.getByTestId('picked-count')).toHaveText('0 selected');
   await expect(page.getByTestId(/^account-total-/)).toHaveText('-$4.50');
 });
 
@@ -615,7 +698,7 @@ test('in edit mode a tap picks the row instead of editing a field', async ({ pag
   await edit(page);
   await page.getByTestId('txn-name-tap').click();
   await expect(page.getByTestId('txn-name-input')).toHaveCount(0);
-  await expect(page.getByTestId('picked-total')).toContainText('1 selected');
+  await expect(page.getByTestId('picked-count')).toHaveText('1 selected · -$4.50');
 });
 
 test('the inline amount has a − beside it, and pressing it does not commit', async ({ page }) => {

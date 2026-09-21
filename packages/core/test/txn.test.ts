@@ -3,7 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  clearedTotal, reorder, respace, rowTap, selectedTotal, setCleared, sortTxns, swipeArms,
+  clearedTotal, moveTxnTo, orderAbove, orderBetween, pickTap, reorder, respace, rowTap,
+  selectedTotal, setCleared, sortTxns, swipeArms,
   toggleSelected, total,
   txnText, validateDraft,
 } from '../src/index';
@@ -319,6 +320,38 @@ describe('sorting and hand ordering', () => {
       expect(reorder(shown, 'nope', 0, 5000)).toBeNull();
     });
 
+    it('runs the other way for an ASCENDING list, at BOTH ends', () => {
+      // The bug this argument exists for. Budget lines sort ascending — a
+      // smaller order draws higher — and `orderBetween` was written for the
+      // ledger, which is descending. So a line dropped at the TOP was given
+      // `below + GAP`, the biggest number in the list, and went to the
+      // bottom; a line dropped at the bottom went to the top. The MIDDLE is
+      // a midpoint either way, which is why it looked like it worked.
+      const asc = [t('x', { order: 100 }), t('y', { order: 200 }), t('z', { order: 300 })];
+      const byAsc = (rows: typeof asc) => rows.slice().sort((a, b) => a.order - b.order);
+
+      const toTop = reorder(asc, 'z', 0, 5000, 'asc');
+      expect(toTop!.order).toBeLessThan(100);
+      expect(byAsc(asc.map((r) => (r.id === 'z' ? toTop! : r))).map((r) => r.id))
+        .toEqual(['z', 'x', 'y']);
+
+      const toEnd = reorder(asc, 'x', 2, 5000, 'asc');
+      expect(toEnd!.order).toBeGreaterThan(300);
+      expect(byAsc(asc.map((r) => (r.id === 'x' ? toEnd! : r))).map((r) => r.id))
+        .toEqual(['y', 'z', 'x']);
+    });
+
+    it('defaults to descending, so every ledger caller reads as it did', () => {
+      const a = t('a', { order: 100 });
+      expect(orderBetween(null, a)).toBe(orderBetween(null, a, 'desc'));
+      expect(orderBetween(null, a)).toBeGreaterThan(100);
+      expect(orderBetween(null, a, 'asc')).toBeLessThan(100);
+      expect(orderBetween(a, null, 'asc')).toBeGreaterThan(100);
+      // Between two, direction cannot matter: it is the midpoint.
+      const b = t('b', { order: 200 });
+      expect(orderBetween(b, a, 'asc')).toBe(orderBetween(b, a, 'desc'));
+    });
+
     it('respace re-opens the gaps without changing the order', () => {
       // Repeated drops into one spot halve the gap; this is the way out.
       const tight = [t('a', { order: 2 }), t('b', { order: 1 }), t('c', { order: 0 })];
@@ -429,6 +462,23 @@ describe('what a tap means', () => {
   });
 });
 
+describe('pickTap — the selector dot', () => {
+  it('picks, in edit mode and out of it', () => {
+    // The dot is drawn on every row at all times (ChefMind's, 2026-09-21),
+    // so it answers the same way whatever mode the page is in. If this ever
+    // grew an `edit` argument, the dot would be lying about being always on.
+    expect(pickTap(false)).toBe('pick');
+  });
+
+  it('still loses to a parked delete', () => {
+    // The one case it shares with `rowTap`, and the reason both live in
+    // core: an armed delete with no way out but the delete itself is the
+    // state this app least wants, so EVERY target on the row dismisses it.
+    expect(pickTap(true)).toBe('dismiss');
+    expect(pickTap(true)).toBe(rowTap(true, false));
+  });
+});
+
 describe('selecting several rows', () => {
   const t = (id: string, amount: number): Txn => ({
     id, name: id, description: '', amount, date: '2026-08-20',
@@ -495,5 +545,90 @@ describe('setCleared', () => {
   it('a duplicate has not been on any statement', () => {
     const dup = duplicateTxn(setCleared(base, true, 5000), 'b', 7000);
     expect('cleared' in dup).toBe(false);
+  });
+});
+
+describe('orderAbove — a drop that names the row it landed on', () => {
+  const t2 = (id: string, order: number, account = 'a1'): Txn => ({
+    id, name: id, description: '', amount: -100, date: '2026-08-20',
+    account, category: null, order, created: 1, updated: 1,
+  });
+  const into = [t2('x', 300), t2('y', 200), t2('z', 100)];
+
+  it('puts a row above the one it names', () => {
+    expect(orderAbove(into, 'new', 'y', 'desc')).toBe(250);
+  });
+
+  it('reads a null beforeId as the END of the list', () => {
+    expect(orderAbove(into, 'new', null, 'desc')).toBeLessThan(100);
+  });
+
+  it('reads an id that is no longer there as the end too', () => {
+    // The row it was aimed at was deleted on another device mid-drag. The
+    // end is the only honest answer left, and it must not throw.
+    expect(orderAbove(into, 'new', 'gone', 'desc')).toBe(orderAbove(into, 'new', null, 'desc'));
+  });
+
+  it('leaves a row already on that boundary exactly where it is', () => {
+    // `y` is already directly above `z`, so this drop asks for nothing. It
+    // must come back with y's OWN order — not a fresh midpoint that would
+    // rewrite the record, move its merge clock and sync for no reason.
+    expect(orderAbove(into, 'y', 'z', 'desc')).toBe(200);
+  });
+
+  it('fills the gap the mover is LEAVING, when the row it named has gone', () => {
+    // The two rules meeting: the id was deleted on another device mid-drag,
+    // so the drop means the end of the list — and the end is measured with
+    // the mover taken OUT, because it is no longer sitting there.
+    // Reading it with `z` still in place would give a slot below `z`, which
+    // is the position the row is vacating.
+    expect(orderAbove(into, 'z', 'gone', 'desc'))
+      .toBe(orderAbove([into[0]!, into[1]!], 'z', null, 'desc'));
+    // A clear step below `y`, the last row that is STAYING — not below the
+    // 100 that `z` is carrying out of the list with it.
+    expect(orderAbove(into, 'z', 'gone', 'desc')).toBe(200 - REORDER_GAP);
+  });
+
+  it('takes an empty destination', () => {
+    expect(orderAbove([], 'new', null, 'desc')).toBe(0);
+  });
+});
+
+describe('moveTxnTo — a row dragged into another ACCOUNT', () => {
+  const t2 = (id: string, order: number, account: string): Txn => ({
+    id, name: id, description: '', amount: -100, date: '2026-08-20',
+    account, category: null, order, created: 1, updated: 1,
+  });
+  const all = [t2('a1x', 300, 'A'), t2('a1y', 200, 'A'), t2('b1', 100, 'B')];
+
+  it('re-files the row and orders it where it was dropped', () => {
+    const moved = moveTxnTo(all, all[0]!, 'B', 'b1', 5000);
+    expect(moved?.account).toBe('B');
+    expect(moved?.order).toBeGreaterThan(100);
+    expect(moved?.updated).toBe(5000);
+  });
+
+  it('lands at the end of the destination when nothing is named', () => {
+    const moved = moveTxnTo(all, all[0]!, 'B', null, 5000);
+    expect(moved?.account).toBe('B');
+    expect(moved?.order).toBeLessThan(100);
+  });
+
+  it('takes an EMPTY account', () => {
+    const moved = moveTxnTo(all, all[0]!, 'C', null, 5000);
+    expect(moved?.account).toBe('C');
+    expect(moved?.order).toBe(0);
+  });
+
+  it('costs nothing when the row lands exactly where it was', () => {
+    // Same account, same slot: no record, no merge clock, nothing to sync.
+    expect(moveTxnTo(all, all[1]!, 'A', null, 5000)).toBeNull();
+  });
+
+  it('never measures the mover against itself', () => {
+    // Dropped above the row that currently follows it — which is where it
+    // already is. Without filtering the mover out, `a1x` would be measured
+    // between itself and `a1y` and come back with a pointless new order.
+    expect(moveTxnTo(all, all[0]!, 'A', 'a1y', 5000)).toBeNull();
   });
 });

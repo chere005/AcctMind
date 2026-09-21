@@ -2,25 +2,26 @@
  * The one screen: a header that says Transactions, the running total, the
  * list, and the + that opens the form.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated, PanResponder, Pressable, ScrollView, StyleSheet, Text,
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, foldLevel, formatAmount,
-  formatDay, parseAmount, rowTap,
-  selectedTotal,
+  LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, dropTarget, foldLevel,
+  formatAmount, formatDay, parseAmount, pickTap, rowTap,
+  selectedTotal, slotEntries,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
-  type Account, type AmountMode, type Line, type SortMode, type Txn,
+  type Account, type Line, type SortMode, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { SortPick } from './SortPick';
 import {
-  ClipboardIcon, DuplicateIcon, HammerIcon, ImportIcon, PencilIcon, XIcon,
+  ClipboardIcon, DuplicateIcon, HammerIcon, PencilIcon, XIcon,
 } from './Icons';
-import { useRowDrag } from './rowdrag';
+import { PickBar } from './PickBar';
+import { useRowDrag, type RowDrag } from './rowdrag';
 import { TipBubble, useTip } from './Tip';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
@@ -33,8 +34,18 @@ type Props = {
   onAdd: (account: string) => void;
   /** A row was held down and an action chosen. */
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
-  /** A row was dragged to a new place in its account. */
-  onMove?: ((txn: Txn, shown: readonly Txn[], index: number) => void) | undefined;
+  /**
+   * A row was dropped somewhere: the account it joins, and the row it lands
+   * ABOVE (`null` for the end of that account).
+   *
+   * It took `(txn, shown, index)` until 2026-09-21 — an index into ONE
+   * account's own list, which is the shape of a drag that could never leave
+   * it. Sean: "make it possible to drag items between sections and folders…
+   * anywhere that has folders and sections and dragging items." An account
+   * is this screen's section, and a destination plus a neighbour is the pair
+   * that says both halves.
+   */
+  onMove?: ((txn: Txn, account: string, beforeId: string | null) => void) | undefined;
   /** One field of one row was edited in place. */
   onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
   /** The date on a row was tapped — the caller opens the day grid. */
@@ -50,15 +61,14 @@ type Props = {
   /** How many devices are connected, for the dot on that control. */
   peers?: number | undefined;
   /**
-   * How bare digits are read in the amount field.
+   * The cog and its menu, built once by App and handed to both screens.
    *
-   * It lives up here rather than in the form because it is a setting, not
-   * part of an entry: it holds between transactions and across launches, and
-   * a switch that reset every time the form opened would have to be found and
-   * flipped again on every row.
+   * A NODE rather than four more props. Whole dollars, Import and Export are
+   * App's to wire — none of them is about this screen — and threading them
+   * through here only so this screen could re-assemble the same component
+   * twice is how two menus end up disagreeing.
    */
-  amountMode: AmountMode;
-  onAmountMode: (mode: AmountMode) => void;
+  menu?: ReactNode;
   /** The accounts, in order. There is always at least one — see ensureAccount. */
   accounts: readonly Account[];
   /** How the rows are ordered inside each account. */
@@ -88,14 +98,20 @@ type Props = {
    * settled — so the row it writes is cleared too.
    */
   onReconcile: (account: string, stated: number, what: Reconciled) => void;
-  /** Open the CSV import. Absent on a surface that cannot read a file. */
-  onImport?: (() => void) | undefined;
+  /**
+   * Delete everything the pick bar has picked, in one press.
+   *
+   * Ids rather than rows: core's `tombstoneMany` takes the ids and the store
+   * already holds the records, so handing whole `Txn`s back would be giving
+   * the caller a copy it has to check is still current.
+   */
+  onDeleteMany?: ((ids: readonly string[]) => void) | undefined;
 };
 
 export function TransactionsScreen({
-  txns, onAdd, onAction, onDevices, peers = 0, amountMode, onAmountMode, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile, onImport,
-  onInline, onDate, onCleared,
+  txns, onAdd, onAction, onDevices, peers = 0, menu, accounts,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile,
+  onInline, onDate, onCleared, onDeleteMany,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
   const [picking, setPicking] = useState(false);
@@ -152,10 +168,15 @@ export function TransactionsScreen({
    */
   const [edit, setEdit] = useState(false);
   /**
-   * The rows picked out in edit mode.
+   * The rows picked out — ChefMind's selection, brought over 2026-09-21.
    *
-   * Cleared when edit mode ends, because a selection you cannot see is a
-   * selection that will surprise you the next time you open the pencil.
+   * NOT TIED TO EDIT MODE any more, and that is the substance of the change
+   * rather than a detail. It was cleared the moment the pencil went off, on
+   * the reading that a selection you cannot see will surprise you; the dot
+   * is drawn on every row at all times now, so there is no such moment — the
+   * selection is visible whether the pencil is on or off, and the bar at the
+   * foot says how many and what they come to even when the answer is none.
+   * Clear is one press, an inch from the count it acts on.
    */
   const [picked, setPicked] = useState<readonly string[]>([]);
   /**
@@ -172,7 +193,7 @@ export function TransactionsScreen({
    * no way to tell which one Return will land on.
    */
   const [inline, setInline] = useState<{ id: string; field: 'name' | 'amount' } | null>(null);
-  const leaveEdit = () => { setEdit(false); setPicked([]); setSwipedId(null); };
+  const leaveEdit = () => { setEdit(false); setSwipedId(null); };
   // Both directions clear the park. Edit mode HIDES it rather than cancelling
   // it, so without this the pencil pressed twice brought back a delete armed
   // on a row the finger left minutes ago.
@@ -201,6 +222,87 @@ export function TransactionsScreen({
   // mid-gesture — must not leave a parked delete behind attached to nothing.
   if (swipedId !== null && !txns.some((t) => t.id === swipedId)) setSwipedId(null);
 
+  /**
+   * ALL MEANS ALL OF WHAT IS SHOWN, and a folded account is not shown.
+   *
+   * The account picker narrows it, because that is a decision about scope.
+   * A FOLD does not get the same treatment even though both hide rows: it
+   * is the person saying "not now", and All followed by Delete taking rows
+   * out from behind one is the one outcome this bar must not have. With
+   * everything folded All picks nothing, and the count saying 0 is the
+   * honest answer — there is nothing on the screen to pick.
+   */
+  const visible = sections.filter((sec) => !collapsed.includes(sec.account.id))
+    .flatMap((sec) => sec.rows.map((t) => t.id));
+
+  /**
+   * EVERY DRAWN ENTRY, in one flat list — so a row can be dragged into
+   * ANOTHER ACCOUNT (Sean, 2026-09-21).
+   *
+   * Each account owned its own `useRowDrag` until today, over its own rows,
+   * so "somewhere else" was not a place the gesture could express. One hook
+   * over one list is what makes it one, and core's `rowslots.ts` — the same
+   * bytes CoreMind canon and three sibling apps carry — is what turns the
+   * boundary a finger lands on into an account and a neighbour. Its two
+   * rules, both about the HEADING: the list is exactly what is DRAWN (a
+   * folded account contributes its heading and none of its rows), and the
+   * heading is an entry, which is what makes "the end of this account" a
+   * place a row can land rather than a boundary spanning the heading. The
+   * Budget tab does the same thing with the same rule.
+   */
+  /*
+   * NO `empty` PLACEHOLDER HERE, unlike the Budget tab.
+   *
+   * An empty account already draws a heading and nothing else, so the space
+   * between it and the next heading is the boundary that means "into this
+   * account" — the walk-back rule in `rowslots.ts` answers with the section
+   * ABOVE a header, which is exactly this one, and half of each heading is
+   * plenty to aim at.
+   *
+   * A placeholder that appeared only while a drag was live was tried first
+   * and was WRONG, not merely unnecessary: it pushed every heading below it
+   * down 36 points the moment a finger went down, which breaks this app's
+   * one rule about drag feedback — nothing moves during a drag — and made
+   * the drop land a placeholder's height short of where it was aimed. The
+   * budget keeps its placeholder because a category with no lines already
+   * draws a real line of text there, at rest, that a drag does not move.
+   */
+  type FlatEntry =
+    | { kind: 'row'; rec: Txn; sectionId: string }
+    | { kind: 'head'; sectionId: string };
+  const flatRows: FlatEntry[] = [];
+  for (const { account, rows } of sections) {
+    flatRows.push({ kind: 'head', sectionId: account.id });
+    if (collapsed.includes(account.id)) continue;
+    for (const t of rows) flatRows.push({ kind: 'row', rec: t, sectionId: account.id });
+  }
+
+  const drag = useRowDrag(flatRows.length, (from, to) => {
+    const src = flatRows[from];
+    if (src?.kind !== 'row') return;
+    const target = dropTarget(slotEntries(flatRows), from, to);
+    if (target === null) return;
+    onMove?.(src.rec, target.sectionId, target.beforeId);
+  });
+  useEffect(() => { setDragging(drag.dragIdx !== null); }, [drag.dragIdx]);
+
+  const flatIdxOf = (id: string) => flatRows.findIndex((x) => x.kind === 'row' && x.rec.id === id);
+  const headIdxOf = (id: string) => flatRows.findIndex((x) => x.kind === 'head' && x.sectionId === id);
+  /*
+   * A grip is offered when there is anywhere for the row to GO — and, as
+   * before, only in CUSTOM order: a hand order the next render would undo is
+   * worse than none. The test used to be "does this account hold more than
+   * one row", which is the question a per-account drag asked; one row in
+   * each of two accounts is now a move.
+   */
+  const canMove = edit && onMove !== undefined
+    && (flatRows.filter((x) => x.kind === 'row').length > 1 || sections.length > 1);
+  const deleteSelected = () => {
+    if (onDeleteMany === undefined || picked.length === 0) return;
+    onDeleteMany(picked);
+    setPicked([]);
+  };
+
   return (
     <View style={styles.fill}>
       <TopBar
@@ -220,19 +322,13 @@ export function TransactionsScreen({
                 <PencilIcon color={edit ? '#ffffff' : T.text} />
               </CircleBtn>
             )}
-            {/* `.00` — bare digits read as whole dollars. Sean, 2026-09-18:
-                between the pencil and the picker. It sat in the row under
-                the divider from the day the pencil arrived, because five
-                circles across the bar drew `Transactions` as `Transac…`;
-                the import button has since gone down to the account line,
-                so the bar is back to three and this one fits. */}
-            <CircleBtn
-              glyph=".00"
-              on={amountMode === 'whole'}
-              onPress={() => onAmountMode(amountMode === 'whole' ? 'cents' : 'whole')}
-              label="Enter whole dollars"
-              testID="whole-toggle"
-            />
+            {/* `.00` IS GONE FROM HERE. It was a round toggle between the
+                pencil and the picker from 2026-09-18; on 2026-09-21 Sean
+                asked for a cog menu carrying "whole dollars (which has a
+                checkbox toggle)", and two controls for one setting is the
+                thing this bar's comments have argued against all along. The
+                box in the menu says ON or OFF in words; a filled circle
+                only said it to someone who already knew what `.00` meant. */}
             {onDevices !== undefined && (
               <CircleBtn onPress={onDevices} label={peers > 0 ? `Devices, ${peers} connected` : 'Devices'} testID="devices-button">
                 <>
@@ -256,23 +352,18 @@ export function TransactionsScreen({
             compact
           />
         }
+        menu={menu}
       />
 
-      {/* Under the divider: what is picked, and how the list is ordered.
+      {/* Under the divider: how the list is ordered.
           The running total used to sit at the left of this row; Sean moved
-          it onto each account's own heading (2026-09-15), beside the name,
-          so the bar keeps only the selection's sum and the list controls. */}
+          it onto each account's own heading (2026-09-15), beside the name.
+          The selection's count and sum sat here next, and went down to the
+          pick bar at the foot on 2026-09-21 — a count an inch from the All
+          and Clear that change it, rather than at the opposite end of the
+          screen from them. */}
       <BarRow>
-        {/* The selection's sum, while rows are picked out — "what did this
-            weekend cost" is the question being asked. Otherwise an empty
-            left side, so the tools keep their right-hand corner. */}
-        {picked.length > 0 ? (
-          <Text style={styles.picked} testID="picked-total">
-            {picked.length} selected · {formatAmount(selectedTotal(txns, picked))}
-          </Text>
-        ) : (
-          <View />
-        )}
+        <View />
         {/*
           The LIST's controls, beside the sort that was already here.
 
@@ -340,15 +431,22 @@ export function TransactionsScreen({
             }}
             swipedId={swipedId}
             setSwipedId={setSwipedId}
-            onImport={onImport}
             onAction={onAction}
+            drag={drag}
             /* Dragging is offered only in CUSTOM order. Anywhere else a
                hand-placed row is a statement the app cannot keep: the next
                render puts it back, which reads as the app ignoring you. */
-            onMove={sort === 'custom' ? onMove : undefined}
-            onDragging={setDragging}
+            canMove={canMove && sort === 'custom'}
+            headIdx={headIdxOf(account.id)}
+            flatIdxOf={flatIdxOf}
           />
         ))}
+
+        {/* The boundary BELOW everything — one past the last entry, so it
+            belongs to the list rather than to whichever account happens to
+            be drawn last. Every other boundary is drawn by the entry under
+            it. */}
+        {drag.slot === flatRows.length && <View style={styles.dropLine} testID="drop-line" />}
 
         {/*
           The rest of the page, when a delete is parked.
@@ -374,6 +472,30 @@ export function TransactionsScreen({
         )}
       </ScrollView>
 
+      {/*
+        THE PICK BAR, at the foot and ALWAYS DRAWN — ChefMind's, and its
+        reason carries over word for word (Sean there, 2026-09-16): it is the
+        only thing that says how many are picked, and appearing only once
+        something was picked made the count you wanted before choosing the
+        one thing you could not see, with All behind a mode.
+
+        Under the list rather than over it, so the thumb that reaches Delete
+        is nowhere near the rows it deletes; above the tab bar, which the app
+        draws outside this screen.
+
+        The sum is what this app's selection is FOR — Sean, 2026-08-21: "when
+        multiple transactions are selected, show the sum of their amounts."
+        It is core's `selectedTotal`, which skips an id whose row has gone
+        rather than counting it as zero.
+      */}
+      <PickBar
+        prefix="picked"
+        count={picked.length}
+        detail={picked.length > 0 ? formatAmount(selectedTotal(txns, picked)) : undefined}
+        onAll={() => setPicked(visible)}
+        onClear={() => setPicked([])}
+        onDelete={deleteSelected}
+      />
     </View>
   );
 }
@@ -388,8 +510,9 @@ export function TransactionsScreen({
  */
 function Section({
   account, rows, shut, onToggle, onFoldAll, onAdd, edit, onEdited, picked, onPick,
-  inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction, onMove,
-  onDragging, reconciling, onReconcileOpen, onReconcile, onImport,
+  inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction,
+  drag, canMove, headIdx, flatIdxOf,
+  reconciling, onReconcileOpen, onReconcile,
 }: {
   account: Account;
   rows: readonly Txn[];
@@ -423,22 +546,15 @@ function Section({
   /** Open the CSV import. Absent where the ledger is read-only. */
   onImport?: (() => void) | undefined;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
-  onMove?: ((txn: Txn, shown: readonly Txn[], index: number) => void) | undefined;
-  onDragging: (on: boolean) => void;
+  /** The screen's one drag, over every drawn entry. */
+  drag: RowDrag;
+  /** Is there anywhere for a row to go, and is the order a hand order? */
+  canMove: boolean;
+  /** This account's heading, as an index into the screen's flat list. */
+  headIdx: number;
+  /** A row's index in that same list. */
+  flatIdxOf: (id: string) => number;
 }) {
-  const drag = useRowDrag(rows.length, (from, to) => {
-    const moved = rows[from];
-    if (moved !== undefined) onMove?.(moved, rows, to);
-  });
-
-  // Reported up so the ScrollView can hold still. In an effect rather than
-  // during render: telling a PARENT to set state while rendering a child is
-  // the render-phase update this repo has already been bitten by once.
-  useEffect(() => { onDragging(drag.dragIdx !== null); }, [drag.dragIdx, onDragging]);
-
-  // The grip is an edit-mode control like the rest. Sorting still gates it:
-  // a hand order the next render would undo is worse than none.
-  const canMove = edit && onMove !== undefined && rows.length > 1;
 
   /*
    * A parked delete outranks this header too.
@@ -452,11 +568,17 @@ function Section({
   const dismiss = () => setSwipedId(null);
   const hammerTip = useTip();
   const clearedTip = useTip();
-  const importTip = useTip();
 
   return (
     <View testID="account-section" style={styles.section}>
-      <View style={styles.head}>
+      {/* The boundary ABOVE this heading: the end of whatever is drawn over
+          it. Each entry draws its own line, so only the very last boundary
+          is the screen's to draw. */}
+      {drag.slot === headIdx && <View style={styles.dropLine} testID="drop-line" />}
+      {/* THE HEADING IS A DROP TARGET, and has to be measured to be one —
+          see the screen's `flatRows`. Registered open or shut, which is what
+          lets a row be dropped into a folded account. */}
+      <View style={styles.head} ref={drag.registerRow(headIdx)} collapsable={false}>
         <Pressable
           onPress={parked ? dismiss : onToggle}
           // Hold it and every account follows this one — see foldAllAccounts.
@@ -587,20 +709,12 @@ function Section({
           sized rather than a 44-point circle: the head has nothing to spare
           on a phone, and the target is the row's full height either way.
         */}
-        {onImport !== undefined && (
-          <Pressable
-            onPress={parked ? dismiss : onImport}
-            onHoverIn={importTip.hover.onHoverIn}
-            onHoverOut={importTip.hover.onHoverOut}
-            style={styles.headHammer}
-            accessibilityRole="button"
-            accessibilityLabel="Import a CSV"
-            testID="import-button"
-          >
-            <ImportIcon color={T.dim} size={16} />
-            <TipBubble text="Import a CSV" shown={importTip.shown} />
-          </Pressable>
-        )}
+        {/* THE IMPORT ARROW IS GONE FROM HERE — Sean, 2026-09-21: "drop the
+            import button next to the + button in transactions." It came down
+            to the account line on 2026-09-18 to give the top bar room, and
+            it never belonged on a heading: an import is not about the
+            account whose + happens to be beside it, it opens a screen that
+            asks which account to file into. It is a row in the cog menu now. */}
 
         {/* Each account adds into ITSELF: the + is the only thing that tells
             the form which section it was opened from. */}
@@ -615,7 +729,9 @@ function Section({
         </Pressable>
       </View>
 
-      {!shut && rows.map((t, i) => (
+      {!shut && rows.map((t) => {
+        const i = flatIdxOf(t.id);
+        return (
         <View key={t.id} ref={drag.registerRow(i)} collapsable={false}>
           {/* One line, at the boundary the row would land on. Nothing else
               moves while a drag is live — a list that rearranges under a
@@ -643,8 +759,8 @@ function Section({
             onSwipe={() => setSwipedId(t.id)}
           />
         </View>
-      ))}
-      {!shut && drag.slot === rows.length && <View style={styles.dropLine} testID="drop-line" />}
+        );
+      })}
     </View>
   );
 }
@@ -754,7 +870,7 @@ function Row({
           picked && styles.rowPicked,
           lifted && styles.rowLifted,
         ]}
-        accessibilityState={edit ? { selected: picked } : undefined}
+        accessibilityState={{ selected: picked }}
         testID="txn-row-body"
       >
       {/*
@@ -773,20 +889,39 @@ function Row({
         <Text style={styles.gripText}>≡</Text>
       </View>
       {/*
-        The tick, and its 18 points are reserved ALWAYS — not just in edit
-        mode, and that is the correction rather than the detail.
-        
-        Drawn only when picked, it moved every name in the ledger sideways the
-        moment the pencil was pressed, which is the exact shifting Sean asked
-        to be rid of. The grip already had this rule; the tick was written
-        without it and the geometry test caught it.
+        THE SELECTOR DOT — ChefMind's, and always drawn (Sean, 2026-09-21:
+        "take the 'selected' behavior from chefmind"). It was a tick that
+        appeared only in edit mode, and only once the row was picked.
+
+        Its 18 points were already reserved at all times, which is what keeps
+        the ledger from shifting sideways as a mode turns on — the grip has
+        the same rule, and the tick was written without it once and the
+        geometry test caught it. What changes today is that the space now
+        holds a CONTROL rather than a hidden glyph: there is a thing to press
+        before anything is picked, which is the whole difference between a
+        selection you can start and one you have to find a mode for.
+
+        A CIRCLE, where the cleared box on the far right is a SQUARE. Two
+        checkable things on one row that looked alike would be two things to
+        read; they are the same size and the same 15 points, and the shape is
+        what says which is which.
+
+        `pickTap` and not `rowTap`: the dot has no edit-mode case, because
+        picking is what it is for. The one case they share is a parked
+        delete, which wins over everything — see core.
       */}
-      <Text
-        style={[styles.tick, !(edit && picked) && styles.tickOff]}
-        testID="row-tick"
+      <Pressable
+        onPress={pickTap(parked) === 'dismiss' ? onDismiss : onPick}
+        style={styles.pickCol}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: picked }}
+        accessibilityLabel={picked ? `${txn.name} selected` : `Select ${txn.name}`}
+        testID={`txn-pick-${txn.id}`}
       >
-        ✓
-      </Text>
+        <View style={[styles.box, styles.boxRound, picked && styles.boxPicked]}>
+          {picked && <Text style={styles.boxTick}>✓</Text>}
+        </View>
+      </Pressable>
       <View style={styles.rowMain}>
         {inline === 'name' && onInline !== undefined ? (
           <InlineText
@@ -1237,7 +1372,6 @@ const styles = StyleSheet.create({
   },
   title: { color: T.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.5 },
   total: { color: T.dim, fontSize: 15, marginTop: 2 },
-  picked: { color: T.accent, fontSize: 15, fontWeight: '600', fontVariant: ['tabular-nums'] },
   barTools: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
   totalUp: { color: T.positive },
   // Drawn at TAP, not padded up to it: hitSlop does nothing on the web.
@@ -1384,8 +1518,11 @@ const styles = StyleSheet.create({
   // edit mode everything is dimmed, so being NOT dimmed is what reads as
   // chosen without adding another colour to the row.
   rowPicked: { backgroundColor: T.card },
-  tick: { color: T.accent, fontSize: 15, fontWeight: '700', width: 18, textAlign: 'center' },
-  tickOff: { opacity: 0 },
+  // The selector column, mirroring `clearedCol` at the other end of the row:
+  // the same 15pt box in a column of its own, with the row's full height as
+  // the target. 18 rather than 22 because the grip is already 16 to its left
+  // and the two together are the indent every name in the ledger sits behind.
+  pickCol: { width: 18, alignItems: 'center', justifyContent: 'center' },
   // The dragged row dims and rides the finger. It does not grow, tilt or cast
   // a shadow: the list is holding still around it, and the only question the
   // feedback has to answer is "which row am I holding".
@@ -1510,6 +1647,12 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   boxOn: { backgroundColor: T.dim, borderColor: T.dim },
+  // Round for the selector, square for cleared — see the dot's own note.
+  boxRound: { borderRadius: 999 },
+  // ACCENT, where cleared is grey. Cleared is a fact about the row that the
+  // bank decided; a selection is something you are doing right now, and the
+  // one colour the app uses for "you did this" is the accent.
+  boxPicked: { backgroundColor: T.accent, borderColor: T.accent },
   boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
   emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', gap: SPACE.xs, padding: SPACE.xl },

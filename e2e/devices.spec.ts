@@ -12,7 +12,7 @@
  * not evidence of anything. See helpers.ts.
  */
 import { expect, test } from '@playwright/test';
-import { addTransaction, fresh } from './helpers';
+import { addTransaction, fresh, openMenu } from './helpers';
 
 test('the web build offers no pairing control', async ({ page }) => {
   await fresh(page);
@@ -21,8 +21,11 @@ test('the web build offers no pairing control', async ({ page }) => {
   await expect(page.getByTestId('title')).toBeVisible();
   await expect(page.getByTestId('add-button')).toBeVisible();
   await expect(page.getByTestId('devices-button')).toBeHidden();
-  // The .00 setting is NOT device sync, so it stays on every surface.
-  await expect(page.getByTestId('whole-toggle')).toBeVisible();
+  // Whole dollars is NOT device sync, so it stays on every surface — in the
+  // cog menu since 2026-09-21, where the `.00` circle used to be a control
+  // in this same bar.
+  await openMenu(page);
+  await expect(page.getByTestId('menu-whole')).toBeVisible();
 });
 
 test('and no pairing screen behind it', async ({ page }) => {

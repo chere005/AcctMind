@@ -306,24 +306,47 @@ export function sortTxns(txns: readonly Txn[], mode: SortMode = 'date'): Txn[] {
 }
 
 /**
- * The order value that puts a row between two neighbours.
+ * WHICH WAY a list's `order` runs, because the two lists here disagree.
  *
- * `null` for an end of the list. Returns the midpoint, or a clear step beyond
- * the edge — never an average with a missing side, which is how a dragged row
- * ends up at zero and jumps somewhere nobody asked for.
+ * Transactions sort DESCENDING — a bigger `order` draws higher (see
+ * `sortTxns`). Budget lines sort ASCENDING — a smaller one draws higher (see
+ * core's `linesIn`). That is not a tidy-up waiting to happen: flipping either
+ * one would reshuffle every ledger already on a device.
+ *
+ * It has to be SAID rather than inferred, and saying it is what this type is
+ * for. `orderBetween` took no direction until 2026-09-21 and was written for
+ * transactions, so every budget-line drag that landed at an END of a list
+ * went to the opposite end: dropping a line at the top gave it
+ * `below.order + GAP`, which in an ascending list is the BOTTOM. The middle
+ * of a list is a midpoint either way, which is why it looked like it worked.
+ */
+export type OrderDir = 'asc' | 'desc';
+
+/**
+ * The order value that puts a row between two neighbours, as DRAWN.
+ *
+ * `above` and `below` are the rows the dragged one lands between on screen,
+ * not in the array — `null` for an end of the list. Returns the midpoint, or
+ * a clear step beyond the edge — never an average with a missing side, which
+ * is how a dragged row ends up at zero and jumps somewhere nobody asked for.
  *
  * Takes anything that HAS an order, not a Txn: budget lines are dragged by
  * the same gesture and were the second caller. Typed to Txn it would have
  * meant a second copy of the arithmetic, which is exactly the duplication the
- * standing rule is about.
+ * standing rule is about — and the direction argument is what makes the one
+ * copy correct for both.
  */
 export function orderBetween(
   above: { order: number } | null,
   below: { order: number } | null,
+  dir: OrderDir = 'desc',
 ): number {
   if (above === null && below === null) return 0;
-  if (above === null) return (below?.order ?? 0) + REORDER_GAP;
-  if (below === null) return above.order - REORDER_GAP;
+  // A step BEYOND the edge, in whichever direction puts it there: past the
+  // top means a bigger number descending and a smaller one ascending.
+  const step = dir === 'desc' ? REORDER_GAP : -REORDER_GAP;
+  if (above === null) return (below?.order ?? 0) + step;
+  if (below === null) return above.order - step;
   return (above.order + below.order) / 2;
 }
 
@@ -345,6 +368,7 @@ export function reorder<R extends Record_ & { order: number }>(
   id: string,
   index: number,
   now: number,
+  dir: OrderDir = 'desc',
 ): R | null {
   const from = shown.findIndex((t) => t.id === id);
   if (from < 0) return null;
@@ -355,9 +379,81 @@ export function reorder<R extends Record_ & { order: number }>(
   const below = without[to] ?? null;
   const moved: R | undefined = shown[from];
   if (moved === undefined) return null;
-  const order = orderBetween(above, below);
+  const order = orderBetween(above, below, dir);
   if (order === moved.order) return null;
   return touch({ ...moved, order }, now);
+}
+
+/**
+ * The order a row takes when it is dropped ABOVE `beforeId` in `into`.
+ *
+ * `into` is the destination as DRAWN, in its own order, and the mover is
+ * filtered out of it here rather than by every caller — a row dragged within
+ * its own section would otherwise be measured against itself and land next
+ * to where it already was.
+ *
+ * `beforeId` of `null` means the END of that list, which is what a drop below
+ * the last row and a drop onto an empty section both mean. An id that names
+ * nothing left in `into` means the same thing: the row it was aimed at went
+ * away mid-drag, and the end is the only honest answer left.
+ *
+ * This is the other half of `rowslots.ts` — that file turns a boundary into
+ * "this section, above that row", and this one turns that into a number.
+ */
+export function orderAbove<R extends { id: string; order: number }>(
+  into: readonly R[],
+  moverId: string,
+  beforeId: string | null,
+  dir: OrderDir = 'desc',
+): number {
+  /*
+   * ALREADY THERE gives back the order it already has, and that one line is
+   * what makes "a drag that ends where it started costs nothing" true for
+   * the END of a list as well as the middle.
+   *
+   * Comparing the answer with the current order cannot do it. A drop at the
+   * end is `last.order - GAP` — a fresh step beyond the edge, never the
+   * number the last row is already carrying — so the row that was ALREADY
+   * last came back rewritten, with a merge clock to travel and a sync to
+   * pay for, every time a finger wobbled over it. `reorder` never had this
+   * because it compares INDEXES before it computes anything; this is the
+   * same idea said in terms of the row a drop names.
+   */
+  const at = into.findIndex((r) => r.id === moverId);
+  if (at >= 0 && (beforeId === moverId || (into[at + 1]?.id ?? null) === beforeId)) {
+    return into[at]!.order;
+  }
+  const rest = into.filter((r) => r.id !== moverId);
+  const i = beforeId === null ? -1 : rest.findIndex((r) => r.id === beforeId);
+  const slot = i < 0 ? rest.length : i;
+  return orderBetween(rest[slot - 1] ?? null, rest[slot] ?? null, dir);
+}
+
+/**
+ * Move a transaction into ANOTHER ACCOUNT, at the slot it was dropped on.
+ *
+ * Sean, 2026-09-21: "make it possible to drag items between sections and
+ * folders". An account is this app's section, so a drag that ends over a
+ * different one has to re-file the row as well as re-order it — before
+ * today the drag was per-account and the question could not be asked.
+ *
+ * ONE record comes back, or null when nothing would change: the account is
+ * on the transaction itself, so no other row has to move out of the way.
+ * Null rather than an unchanged copy, for the reason `reorder` gives — a
+ * drag that ends where it started must cost no merge clock and no sync.
+ *
+ * `txns` is EVERY live transaction, not the destination's: the destination
+ * as DRAWN is what decides the order, and only this function knows that a
+ * dragged ledger is drawn in custom order (dragging is offered nowhere
+ * else — see `sortTxns`).
+ */
+export function moveTxnTo(
+  txns: readonly Txn[], txn: Txn, account: string, beforeId: string | null, now: number,
+): Txn | null {
+  const into = sortTxns(txns.filter((t) => t.account === account), 'custom');
+  const order = orderAbove(into, txn.id, beforeId, 'desc');
+  if (txn.account === account && txn.order === order) return null;
+  return touch({ ...txn, account, order }, now);
 }
 
 /**
@@ -465,6 +561,25 @@ export type RowTap = 'dismiss' | 'pick' | 'inline';
 export function rowTap(parked: boolean, edit: boolean): RowTap {
   if (parked) return 'dismiss';
   return edit ? 'pick' : 'inline';
+}
+
+/**
+ * What a tap on the SELECTOR DOT does — the same precedence, one case short.
+ *
+ * The dot is ChefMind's, brought over 2026-09-21, and it is drawn on every
+ * row at all times rather than only in edit mode. So it has no `edit` case:
+ * picking is what it is FOR, and a mode it ignored would be a mode it lied
+ * about.
+ *
+ * `parked` still wins, and that is the whole reason this is here rather than
+ * inline in the row. A delete parked by a swipe is the state this app least
+ * wants left lying around, so EVERY tap anywhere on the row puts it away
+ * first — see `rowTap` and the trap in AGENTS.md about four handlers each
+ * answering for themselves. Two targets, two functions, ONE rule written
+ * down twice in the same file where the difference is visible.
+ */
+export function pickTap(parked: boolean): 'dismiss' | 'pick' {
+  return parked ? 'dismiss' : 'pick';
 }
 
 /**

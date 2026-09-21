@@ -334,7 +334,31 @@ been watched failing on purpose:
   hardcoded service type in Swift;
 - the peer module's Swift, against a deliberate type error — to prove
   `xcodebuild -scheme PeerSync` was compiling the file at all and not
-  reporting a cached success.
+  reporting a cached success;
+- the cross-section drag, against six mutations across two screens — the
+  drop forced back to the row's OWN section (the per-section drag it
+  replaced), the section headings taken out of the flat list (the shape that
+  could not express "the end of this section"), the grip offered outside
+  custom order, `orderBetween` ignoring its direction, `orderAbove` keeping
+  the mover in the list it measures, and `linesIn` sorting the wrong way.
+  Each reddened the cases about it and left the rest green. A SEVENTH was
+  tried and caught nothing — removing the empty-account placeholder — which
+  is how that placeholder turned out to be unnecessary AND harmful: it grew
+  36 points the instant a finger went down, moving every heading below it
+  under the drag it was supposed to help. It is gone from the ledger and the
+  budget keeps its own, which is text drawn at rest and does not move;
+- the CSV WRITER, against four mutations — LF instead of CRLF, an inner
+  quote backslash-escaped instead of doubled, the amounts written through
+  `formatAmount` (which is what makes a column text in a spreadsheet), and
+  the header row dropped. The round trip through `parseDelimited` is in
+  there too and is deliberately not counted as proof on its own: both
+  halves of a hand-written pair can share a misunderstanding;
+- the pick bar's two core rules, against three mutations: `tombstoneMany`
+  stamping a clock PER ROW instead of one for the batch, the same function
+  returning a fresh object for an empty selection instead of the store it
+  was handed (which would tell the app the ledger had changed and write the
+  file again over nothing), and `pickTap` ignoring a parked delete. Each
+  reddened exactly one test and no others.
 
 A check nobody has seen fail is a check nobody should trust. Five green
 checks in CalMind turned out to be worthless in a single session.

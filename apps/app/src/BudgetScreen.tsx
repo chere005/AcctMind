@@ -25,19 +25,20 @@
  * gesture the Transactions tab already uses, so the two tabs stop disagreeing
  * about what a pencil means.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  ALL_TIME, LONG_PRESS_MS, assignedBefore, availableOf, budgetIn, foldLevel, formatAmount,
-  lineTone, monthOf, monthSet, total, unfiledSince, viewSet, viewsOf,
+  ALL_TIME, LONG_PRESS_MS, availableOf, budgetIn, carriedInto, dropTarget, foldLevel,
+  formatAmount, lineTone, linesIn, monthOf, monthSet, slotEntries, total, unfiledSince,
+  viewSet, viewsOf,
   type BudgetAmount, type Category, type Line, type LineTone, type Txn,
   type View as BudgetView,
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import { CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, XIcon } from './Icons';
-import { useRowDrag } from './rowdrag';
+import { useRowDrag, type RowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
 import { Tip, TipBubble, useTip } from './Tip';
 import { ALL_VIEW, MONTH_VIEW, ViewPick } from './ViewPick';
@@ -127,7 +128,7 @@ export function BudgetScreen({
   txns, categories, lines, views, budgets, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
   onDeleteCategory, onMoveLine,
-  budgetView, budgetMonth, onBudgetView, onBudgetMonth, onNewView,
+  budgetView, budgetMonth, onBudgetView, onBudgetMonth, onNewView, menu,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
@@ -138,6 +139,8 @@ export function BudgetScreen({
   budgetView: string;
   /** `YYYY-MM`, the month the stepper is on. */
   budgetMonth: string;
+  /** The cog and its menu — App builds it once for both screens. */
+  menu?: ReactNode;
   onBudgetView: (id: string) => void;
   onBudgetMonth: (month: string) => void;
   onNewView: (name: string) => void;
@@ -164,8 +167,16 @@ export function BudgetScreen({
   onSnoozeLine: (line: Line, next: boolean) => void;
   /** Tombstones the category AND its lines, and un-files its transactions. */
   onDeleteCategory: (category: Category) => void;
-  /** A line dragged to a new place among its siblings. */
-  onMoveLine: (line: Line, siblings: readonly Line[], to: number) => void;
+  /**
+   * A line dropped somewhere: which category it joins, and the line it lands
+   * ABOVE (`null` for the end of that category).
+   *
+   * It took `(line, siblings, to)` until 2026-09-21 — an index into ONE
+   * category's own list, which is the shape of a drag that could never leave
+   * it. Sean: "make it possible to drag items between sections and folders in
+   * budget." A destination and a neighbour is the pair that can say both.
+   */
+  onMoveLine: (line: Line, category: string, beforeId: string | null) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -193,15 +204,18 @@ export function BudgetScreen({
    * view reads its own set and keeps the stepper, so it is a what-if budget
    * you can walk through the year with.
    *
-   * A view chosen and then deleted falls back to All Time — the pref holds an
-   * id and only this screen knows which ids still exist.
+   * A view chosen and then deleted falls back to MONTH — the pref holds an
+   * id and only this screen knows which ids still exist. It fell back to All
+   * Time until 2026-09-21; the month is what a device that has chosen nothing
+   * now opens on (see prefs.ts), and a fallback that disagrees with the
+   * default is a second answer to the same question.
    */
   const knownViews = useMemo(() => viewsOf({ views }), [views]);
   const picked =
     budgetView === ALL_VIEW || budgetView === MONTH_VIEW
       || knownViews.some((v) => v.id === budgetView)
       ? budgetView
-      : ALL_VIEW;
+      : MONTH_VIEW;
   const hasMonth = picked !== ALL_VIEW;
   const set =
     picked === ALL_VIEW ? ALL_TIME
@@ -230,26 +244,19 @@ export function BudgetScreen({
    * every transaction older than this month, and doing that once per line
    * turns the whole ledger into an N×M scan on every keystroke of a rename.
    */
-  const carried = useMemo(() => {
-    const by = new Map<string, number>();
-    if (picked !== MONTH_VIEW) return by;
-    for (const t of txns) {
-      if (t.category === null || monthOf(t.date) >= budgetMonth) continue;
-      by.set(t.category, (by.get(t.category) ?? 0) + t.amount);
-    }
-    for (const l of lines) {
-      const before = assignedBefore({ budgets }, budgetMonth, l.id);
-      if (before !== 0) by.set(l.id, (by.get(l.id) ?? 0) + before);
-    }
-    return by;
-  }, [picked, txns, lines, budgets, budgetMonth]);
+  const carried = useMemo(
+    () => (picked === MONTH_VIEW
+      ? carriedInto({ budgets }, budgetMonth, lines, txns)
+      : new Map<string, number>()),
+    [picked, txns, lines, budgets, budgetMonth],
+  );
   const carryOf = (l: Line) => carried.get(l.id) ?? 0;
 
   const shown = view === null ? categories : categories.filter((c) => c.id === view);
   /** What has actually moved through a line. Negative for spending. */
   const spentOn = (id: string) => total(inScope.filter((t) => t.category === id));
-  const linesIn = (id: string) =>
-    lines.filter((l) => l.category === id).slice().sort((a, b) => a.order - b.order);
+  /** This budget's lines under one category, in the order they are drawn. */
+  const linesOf = (id: string) => linesIn(lines, id);
 
   /**
    * ASSIGNED — every live line's amount in this set, over the WHOLE budget.
@@ -262,7 +269,7 @@ export function BudgetScreen({
    * below are for.
    */
   const assigned = categories.reduce(
-    (n, c) => n + linesIn(c.id).reduce((m, l) => m + budgetOf(l), 0), 0,
+    (n, c) => n + linesOf(c.id).reduce((m, l) => m + budgetOf(l), 0), 0,
   );
   /**
    * WHAT THE ACCOUNTS HOLD at the end of the month being looked at.
@@ -348,6 +355,72 @@ export function BudgetScreen({
   const foldAllCategories = (wasOpen: boolean) =>
     onCollapsed(foldLevel([...shown.map((c) => c.id), ...(showNone ? [NONE] : [])], wasOpen));
 
+  /**
+   * EVERY DRAWN ENTRY, in one flat list — the shape a cross-category drag
+   * needs and the shape the drag had never had.
+   *
+   * Sean, 2026-09-21: "make it possible to drag items between sections and
+   * folders in budget." Each category owned its own `useRowDrag` until
+   * today, over its own lines, so "somewhere else" was not a place the
+   * gesture could express. One hook over one list is what makes it one.
+   *
+   * The two rules that make the arithmetic right are core's `rowslots.ts`,
+   * byte-identical with CoreMind canon and with the copies CalMind, ChefMind
+   * and MyCalMind carry — it is the same bug, already paid for there on
+   * 2026-09-19 ("dragging was buggy … when sections were closed and between
+   * sections generally"):
+   *
+   *   1. The list is exactly what is DRAWN. A folded category contributes
+   *      its heading and NONE of its lines, because rowdrag measures what is
+   *      registered and an entry that renders nothing has no midpoint.
+   *   2. A heading is an entry of its own, which is the only thing that
+   *      makes "the end of this category" a place a line can be dropped
+   *      rather than a boundary that spans the heading and always meant the
+   *      next category down. It also gives a FOLDED category something it
+   *      never had: drop a line just under a shut heading and it joins it.
+   *
+   * `No category` is deliberately NOT in here. It is not a record — see
+   * NONE — so nothing may be filed into it, and it is drawn last, after
+   * every entry this list holds, so leaving it out costs no index.
+   */
+  type FlatEntry =
+    | { kind: 'row'; rec: Line; sectionId: string }
+    | { kind: 'head' | 'empty'; sectionId: string };
+  const flatRows = useMemo(() => {
+    const out: FlatEntry[] = [];
+    for (const c of shown) {
+      out.push({ kind: 'head', sectionId: c.id });
+      if (collapsed.includes(c.id)) continue;
+      const rows = linesIn(lines, c.id);
+      if (rows.length === 0) out.push({ kind: 'empty', sectionId: c.id });
+      for (const l of rows) out.push({ kind: 'row', rec: l, sectionId: c.id });
+    }
+    return out;
+  }, [shown, collapsed, lines]);
+
+  const drag = useRowDrag(flatRows.length, (from, to) => {
+    const src = flatRows[from];
+    if (src?.kind !== 'row') return;
+    const target = dropTarget(slotEntries(flatRows), from, to);
+    if (target === null) return;
+    onMoveLine(src.rec, target.sectionId, target.beforeId);
+  });
+  useEffect(() => { setDragging(drag.dragIdx !== null); }, [drag.dragIdx]);
+
+  const flatIdxOf = (id: string) => flatRows.findIndex((x) => x.kind === 'row' && x.rec.id === id);
+  const headIdxOf = (id: string) => flatRows.findIndex((x) => x.kind === 'head' && x.sectionId === id);
+  const emptyIdxOf = (id: string) => flatRows.findIndex((x) => x.kind === 'empty' && x.sectionId === id);
+  /**
+   * A grip is offered when there is anywhere for the line to GO.
+   *
+   * One line in one category had none before and still has none. One line in
+   * each of two categories now does, which is the whole feature: the test
+   * used to be "does this category hold more than one line", and that is the
+   * question a per-category drag asked.
+   */
+  const canDrag = edit
+    && (flatRows.filter((x) => x.kind === 'row').length > 1 || shown.length > 1);
+
   return (
     <View style={styles.fill}>
       <TopBar
@@ -376,40 +449,51 @@ export function BudgetScreen({
             compact
           />
         }
+        menu={menu}
       />
 
-      {/* `View:` UNDER THE TITLE (Sean, 2026-09-16), above the numbers it
-          decides — you read which budget you are looking at before you read
-          the budget. */}
-      <BarRow>
-        <ViewPick picked={picked} views={knownViews} onPick={onBudgetView} onNew={onNewView} />
-      </BarRow>
-
+      {/* THE NUMBERS FIRST, then the controls that decide them — Sean,
+          2026-09-21. It was the other way round from 2026-09-16, on the
+          reading that you pick a budget before you read it; in use the
+          opposite is true, because the figures are what the tab is OPENED
+          for and the view and the month are changed occasionally. */}
       <BarRow>
         <View style={styles.totals}>
-          {/* ACCOUNT, ASSIGNED, AVAILABLE — in that order, because the third
-              is the first less the second and the row reads as the sum it is
-              (Sean, 2026-09-18). Amount-then-label on all three, so they read
-              as one row rather than three kinds of thing. */}
-          <Text style={styles.total} testID="budget-account-line">
-            <Money style={styles.total} cents={held} testID="budget-account" tone /> Account
+          {/* AVAILABLE, ASSIGNED, ACCOUNT — Sean, 2026-09-21, reversing the
+              2026-09-18 order. The arithmetic still reads left to right, as
+              available = account − assigned did, but the ANSWER now comes
+              first: the one figure that decides whether there is money to
+              spend is the one your eye lands on. Amount-then-label on all
+              three, so they read as one row rather than three kinds of
+              thing. */}
+          {/* ONE COLOURED NUMBER, and only this one. Account carried a tone
+              too until today, so two of the three went red together on a
+              short month and neither stood out — a colour that appears on
+              everything says nothing. Available is the figure that is
+              actually good or bad news; the other two are just facts. */}
+          <Text style={styles.total} testID="budget-available-line">
+            <Money style={styles.total} cents={available} testID="budget-available" tone /> Available
           </Text>
           <Text style={styles.total} testID="budget-assigned">
             {formatAmount(assigned)} Assigned
           </Text>
-          <Text style={styles.total} testID="budget-available-line">
-            <Money style={styles.total} cents={available} testID="budget-available" tone /> Available
+          <Text style={styles.total} testID="budget-account-line">
+            <Money style={styles.total} cents={held} testID="budget-account" /> Account
           </Text>
         </View>
       </BarRow>
 
-      {/* The stepper, UNDER the totals it moves — and absent entirely on All
-          Time, where there is no month to be on. Arrows either side of the
-          month rather than a picker: stepping to the one before or after is
-          almost always what is wanted, and a picker makes that two taps and a
+      {/* The view, and the month BESIDE it (Sean, 2026-09-21) rather than on
+          a row of its own: they are one question — which slice of the budget
+          am I looking at — and asking it on two lines cost a third of the
+          screen above the list. The stepper is absent entirely on All Time,
+          where there is no month to be on. Arrows either side of the month
+          rather than a picker: stepping to the one before or after is almost
+          always what is wanted, and a picker makes that two taps and a
           decision. */}
-      {hasMonth && (
-        <BarRow>
+      <BarRow>
+        <ViewPick picked={picked} views={knownViews} onPick={onBudgetView} onNew={onNewView} />
+        {hasMonth && (
           <View style={styles.monthRow}>
             <Pressable
               onPress={() => onBudgetMonth(stepMonth(budgetMonth, -1))}
@@ -431,8 +515,8 @@ export function BudgetScreen({
               <Text style={styles.monthArrowText}>›</Text>
             </Pressable>
           </View>
-        </BarRow>
-      )}
+        )}
+      </BarRow>
 
       <ScrollView
         contentContainerStyle={styles.list}
@@ -449,7 +533,7 @@ export function BudgetScreen({
           <CategorySection
             key={c.id}
             category={c}
-            rows={linesIn(c.id)}
+            rows={linesOf(c.id)}
             shut={collapsed.includes(c.id)}
             onToggle={() => toggle(c.id)}
             onFoldAll={foldAllCategories}
@@ -467,10 +551,21 @@ export function BudgetScreen({
             onDeleteLine={onDeleteLine}
             onSnoozeLine={onSnoozeLine}
             onDeleteCategory={onDeleteCategory}
-            onMoveLine={onMoveLine}
-            onDragging={setDragging}
+            drag={drag}
+            canDrag={canDrag}
+            headIdx={headIdxOf(c.id)}
+            emptyIdx={emptyIdxOf(c.id)}
+            flatIdxOf={flatIdxOf}
           />
         ))}
+
+        {/* The boundary BELOW everything — one past the last entry, so it
+            belongs to the list rather than to whichever category happens to
+            be drawn last. Every other boundary is drawn by the entry that
+            sits under it. */}
+        {drag.slot === flatRows.length && (
+          <View style={styles.dropLine} testID="budget-drop-line" />
+        )}
 
         {/*
           The one heading that is not a record.
@@ -541,19 +636,20 @@ export function BudgetScreen({
 }
 
 /**
- * One category, its lines, and the drag that reorders them.
+ * One category and its lines.
  *
- * A component rather than a loop body because it OWNS a hook: each category
- * has its own `useRowDrag`, since a line only ever moves within the category
- * it belongs to. Rendering the hook inside `map` would call a different
- * number of hooks whenever a category is added — the same shape the
- * Transactions tab uses, for the same reason.
+ * It OWNED the drag until 2026-09-21 — one `useRowDrag` per category, over
+ * that category's own lines — which is exactly why a line could not leave
+ * one. The hook is the screen's now, over every drawn entry at once, and
+ * what comes down here is the FLAT INDEX of each thing this section draws.
+ * The component stays a component rather than a loop body because it is
+ * still the only thing that knows how a category renders.
  */
 function CategorySection({
   category, rows, shut, onToggle, onFoldAll, onAdd, edit, naming, setNaming,
   spentOn, budgetOf, carryOf, set,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
-  onDeleteCategory, onMoveLine, onDragging,
+  onDeleteCategory, drag, canDrag, headIdx, emptyIdx, flatIdxOf,
 }: {
   category: Category;
   rows: readonly Line[];
@@ -578,19 +674,17 @@ function CategorySection({
   onDeleteLine: (line: Line) => void;
   onSnoozeLine: (line: Line, next: boolean) => void;
   onDeleteCategory: (category: Category) => void;
-  onMoveLine: (line: Line, siblings: readonly Line[], to: number) => void;
-  onDragging: (live: boolean) => void;
+  /** The screen's one drag, over every drawn entry. */
+  drag: RowDrag;
+  /** Is there anywhere for a line to go? See the screen's `canDrag`. */
+  canDrag: boolean;
+  /** This category's heading, as an index into the screen's flat list. */
+  headIdx: number;
+  /** Its empty-placeholder's index, or -1 when it has lines or is shut. */
+  emptyIdx: number;
+  /** A line's index in that same list. */
+  flatIdxOf: (id: string) => number;
 }) {
-  const drag = useRowDrag(rows.length, (from, to) => {
-    const moved = rows[from];
-    if (moved !== undefined) onMoveLine(moved, rows, to);
-  });
-
-  // Reported up so the ScrollView can hold still. In an effect rather than
-  // during render: telling a PARENT to set state while rendering a child is
-  // the render-phase update this repo has already been bitten by once.
-  useEffect(() => { onDragging(drag.dragIdx !== null); }, [drag.dragIdx, onDragging]);
-
   const budgeted = rows.reduce((n, l) => n + budgetOf(l), 0);
   const spent = rows.reduce((n, l) => n + spentOn(l.id), 0);
   // Summed the same way the rows are, so a folded category and its open one
@@ -599,7 +693,16 @@ function CategorySection({
 
   return (
     <View testID="category-section" style={styles.section}>
-      <View style={styles.head}>
+      {/* The boundary ABOVE this heading: the end of whatever is drawn over
+          it. Every entry carries its own line this way, so the last one in
+          the list is the only case the screen has to draw itself. */}
+      {drag.slot === headIdx && <View style={styles.dropLine} testID="budget-drop-line" />}
+      {/*
+        THE HEADING IS A DROP TARGET, and it has to be measured to be one —
+        see the screen's `flatRows`. Registered whether the category is open
+        or shut, which is what lets a line be dropped into a folded one.
+      */}
+      <View style={styles.head} ref={drag.registerRow(headIdx)} collapsable={false}>
         {/*
           In edit mode the heading is a FIELD, not a button. Sean,
           2026-09-15: "in edit mode tapping on a section name allows renaming
@@ -680,9 +783,15 @@ function CategorySection({
       </View>
 
       {!shut && rows.length === 0 && (
-        <Text style={styles.sectionEmpty} testID="category-empty">
-          Nothing budgeted here yet — tap + to add a line
-        </Text>
+        <View ref={drag.registerRow(emptyIdx)} collapsable={false}>
+          {/* An empty category's placeholder IS that category as far as a
+              drop is concerned — it is the only thing standing where its
+              rows would be. */}
+          {drag.slot === emptyIdx && <View style={styles.dropLine} testID="budget-drop-line" />}
+          <Text style={styles.sectionEmpty} testID="category-empty">
+            Nothing budgeted here yet — tap + to add a line
+          </Text>
+        </View>
       )}
 
       {!shut && rows.length > 0 && (
@@ -718,7 +827,9 @@ function CategorySection({
         </View>
       )}
 
-      {!shut && rows.map((l, i) => (
+      {!shut && rows.map((l) => {
+        const i = flatIdxOf(l.id);
+        return (
         <View key={l.id} ref={drag.registerRow(i)} collapsable={false}>
           {/* One line, at the boundary the row would land on. Nothing else
               moves while a drag is live — a list that rearranges under a
@@ -740,15 +851,13 @@ function CategorySection({
             onEditAmount={onEditAmount}
             onDelete={() => onDeleteLine(l)}
             onSnooze={(next) => onSnoozeLine(l, next)}
-            grip={edit && rows.length > 1 ? drag.gripFor(i) : undefined}
+            grip={canDrag ? drag.gripFor(i) : undefined}
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
           />
         </View>
-      ))}
-      {!shut && drag.slot === rows.length && (
-        <View style={styles.dropLine} testID="budget-drop-line" />
-      )}
+        );
+      })}
     </View>
   );
 }
@@ -1199,7 +1308,10 @@ const LINE_INDENT = GRIP + SPACE.xs;
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
-  monthRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
+  // Never shrinks: its arrows are 44pt targets and its name is tabular so
+  // that stepping through the year does not shuffle them. The view name
+  // beside it is what gives instead — see ViewPick's `row`.
+  monthRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flexShrink: 0 },
   monthArrow: { minWidth: TAP, minHeight: TAP, alignItems: 'center', justifyContent: 'center' },
   monthArrowText: { color: T.accent, fontSize: 22, lineHeight: 24 },
   // Tabular so stepping through the year does not shuffle the arrows about.

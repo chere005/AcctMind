@@ -42,7 +42,9 @@ export function ViewPick({ picked, views, onPick, onNew }: {
   const label =
     picked === ALL_VIEW ? 'All Time'
       : picked === MONTH_VIEW ? 'Month'
-        : views.find((v) => v.id === picked)?.name ?? 'All Time';
+        // An id with no view left behind it reads as Month, which is what
+        // the screen falls back to and what a fresh device opens on.
+        : views.find((v) => v.id === picked)?.name ?? 'Month';
 
   const rows: [string, string][] = [
     [MONTH_VIEW, 'Month'],
@@ -147,10 +149,13 @@ export function ViewPick({ picked, views, onPick, onNew }: {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
-  label: { color: T.dim, fontSize: 15 },
-  button: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs, minHeight: TAP },
-  buttonText: { color: T.text, fontSize: 15, fontWeight: '600' },
+  // SHRINKABLE, since 2026-09-21: the month stepper shares this row now, and
+  // it cannot give — its arrows are 44pt targets and its name is tabular so
+  // the arrows hold still. A long view name is what has to ellipsize.
+  row: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs, flexShrink: 1, minWidth: 0 },
+  label: { color: T.dim, fontSize: 15, flexShrink: 0 },
+  button: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs, minHeight: TAP, flexShrink: 1, minWidth: 0 },
+  buttonText: { color: T.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
   chev: { color: T.dim, fontSize: 13 },
   backdrop: { flex: 1, backgroundColor: '#00000088' },
   menu: {

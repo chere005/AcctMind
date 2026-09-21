@@ -8,7 +8,7 @@
  * a touch screen — which has no hover to give — by tapping.
  */
 import { expect, test } from '@playwright/test';
-import { withStore } from './helpers';
+import { pickView, withStore } from './helpers';
 
 const STORE = JSON.stringify({
   v: 4,
@@ -79,6 +79,9 @@ test('a number says which column it is under, and still opens the pad', async ({
   // "what is this number" than a word does, and the tip must not steal it.
   await withStore(page, STORE);
   await page.getByTestId('tab-budget').click();
+  // The fixture budgets the line in the ALL-TIME set; the tab opens on the
+  // current month, where that line has been assigned nothing.
+  await pickView(page, 'all');
 
   const assigned = page.getByTestId('line-budgeted-tap-l1');
   await expect(assigned).toHaveText('$250.00');

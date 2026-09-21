@@ -23,7 +23,7 @@ import { TipBubble, useTip } from './Tip';
 /** The drawn size of every control in the bar. CalMind's number. */
 export const TOPBAR_CTRL = 32;
 
-export function TopBar({ title, titleTestID, controls, picker }: {
+export function TopBar({ title, titleTestID, controls, picker, menu }: {
   title: string;
   titleTestID?: string | undefined;
   /** The screen's own controls, right-aligned, before the picker. */
@@ -37,6 +37,17 @@ export function TopBar({ title, titleTestID, controls, picker }: {
    * compact mode is the same 44-over-32 shape `CircleBtn` uses.
    */
   picker?: ReactNode;
+  /**
+   * The cog, LAST in the row — CalMind's account pill sits in the same
+   * place, and the two apps are on the same phone (Sean, 2026-09-21).
+   *
+   * After the picker rather than before it because what is behind it is
+   * about the APP, and everything to its left is about the screen. A person
+   * reaching for "which account am I looking at" and a person reaching for
+   * "turn whole dollars on" are reaching for different kinds of thing, and
+   * the order says which is which.
+   */
+  menu?: ReactNode;
 }) {
   return (
     <>
@@ -47,6 +58,7 @@ export function TopBar({ title, titleTestID, controls, picker }: {
         <View style={styles.right}>
           {controls}
           {picker}
+          {menu}
         </View>
       </View>
       <View style={styles.rule} testID="top-rule" />

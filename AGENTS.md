@@ -45,6 +45,36 @@ learned goes in the commit that learns it.
   without being read, and nothing is IMPORTED from it: another agent works in
   that repo, and AcctMind must never depend on its state.
 
+- **The pick bar is SHARED, and this copy is the fork.** `apps/app/src/
+  PickBar.tsx` is ChefMind's `app/src/components/PickBar.tsx`, promoted to
+  `CoreMind/canon/app/src/components/PickBar.tsx` on 2026-09-21 with ChefMind
+  as the `exact` row and this one recorded as a `fork` — one palette, no
+  `themed()`, controls DRAWN at TAP rather than bought back with
+  `WebHitSlop`, and a `detail` slot for the selection's sum. The DIVERGENCE
+  is those four things and nothing else: change what the bar DOES here and
+  the same change is owed to ChefMind and to canon, or the two bars start
+  disagreeing about what All, Clear and a two-press Delete mean.
+
+- **The drop rule is CANON, byte for byte.** `packages/core/src/rowslots.ts`
+  is `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes
+  CalMind, ChefMind and MyCalMind carry, and the FIRST file this repo's core
+  shares with the lineage (it imports nothing, which is what lets a core with
+  `"types": []` hold it). It arrived 2026-09-21 with dragging between
+  sections, and the bug it prevents was paid for in ChefMind two days
+  earlier. Do not edit it here: a change goes to its home repo, then to
+  canon, then to every consumer, or `bin/check-drift.sh` starts lying about
+  all four at once. `orderAbove` and the `OrderDir` beside it are OURS —
+  canon's half answers "which section, above which row", ours answers "what
+  number is that".
+
+- **"Things about the app" live in the cog, not in the bar.** Sean,
+  2026-09-21: a cog top right, `AppMenu.tsx`, holding Import from CSV,
+  Export budget and Whole dollars. The bar above the rule is for the SCREEN;
+  anything that holds between screens and is pressed once a session belongs
+  behind the cog. Two controls for one setting is what the `.00` circle
+  became the moment the menu row existed, which is why it is gone rather
+  than kept as a shortcut.
+
 - **Nothing here may write CalMind's areas.** `/AcctMind` and
   `/test/AcctMind` are this app's; nowhere else is. Destinations are guarded
   constants, never variables, and the guards get proven by breaking copies of
@@ -208,6 +238,19 @@ day the target comes back. Restoring is one `git revert` of the commit that
 removed it, plus the plugin line in `app.config.js`.
 
 ## Traps that have cost real time HERE
+
+- **Two lists here order themselves in OPPOSITE directions, and one shared
+  helper did not know it.** The ledger sorts DESCENDING (a bigger `order`
+  draws higher — `sortTxns`); budget lines sort ASCENDING (`linesIn`).
+  `orderBetween` was written for the ledger and taken generic for the budget
+  with a comment saying so, so every line dragged to an END of its list went
+  to the opposite end: dropped at the top it got `below + GAP`, which in an
+  ascending list is the bottom. It survived because the MIDDLE of a list is a
+  midpoint either way, so the only broken drags were the two most obvious
+  ones. `OrderDir` is now an argument and both callers say which they are.
+  **Generic over a record is not generic over a convention** — if a helper
+  is reused across two lists, ask what the second list does differently
+  before reusing it, not after.
 
 - **A `Pressable` inside a row answers the tap BEFORE the row does, so a
   mode the row is in has to be pushed down into every child.** The swipe
