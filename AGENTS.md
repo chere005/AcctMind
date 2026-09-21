@@ -194,8 +194,19 @@ Five surfaces, shipped by two different pipelines.
   installed. (`apps/app/ios` can separately be built as "My Mac (Designed for
   iPad)". That is NOT the macOS surface — this one is Xcode GUI only and part
   of no deploy.)
-- **iOS** — installs to the physical phone, one of its 3 free-tier device
-  slots, via `tools/build-platforms.sh --ios`.
+- **iOS** — builds once and installs to every phone THIS app belongs on, via
+  `tools/build-platforms.sh --ios`. For AcctMind that is Sean's handset and
+  no other: Sean, 2026-09-21, *"the only apps installed on autumn's phone are
+  ChefMind and CalMind"*, *"patricia's phone only gets CalMind"*, *"my phone
+  gets all 6 (including the test ones)"*. The list is in the script, by udid.
+  A listed phone that is switched off is skipped with a note, a phone that
+  refuses is warned about, and the step fails only when none of them took it.
+
+  There is no per-phone app cap to spend. Apple's free-tier limit of 3 apps
+  on a device does not apply: the team (2LGYTL3FSJ) is PAID, its profile
+  carrying `TimeToLive 365` where a personal team's carries 7. Sean,
+  2026-09-21: "no more caps per phone."
+
 - **Android** — builds, installs and launches on a local emulator via
   `tools/build-platforms.sh --android`.
 - **No watchOS target** — see "The watch is out, for now" below.
