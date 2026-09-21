@@ -56,6 +56,34 @@ async function assign(page: Page, line: string, amount: string): Promise<void> {
   await page.getByTestId('pad-amount').fill(amount);
   await page.getByTestId('pad-amount').press('Enter');
   await expect(page.getByTestId('pad-amount')).toBeHidden();
+  /*
+   * WAIT ON THE WRITE, not on the paint.
+   *
+   * The pad closing and the amount reaching the store are two steps, and
+   * every caller then asserts on the DRAWN figure — so a slow commit reads
+   * as "the budget refused the number", which is a different bug entirely.
+   * It cost a release on 2026-09-21: this test failed inside the suite lane
+   * with `$0.00` after fourteen polls, and passed five times out of five the
+   * moment the machine was quiet. What was different was a device build and
+   * a Gradle daemon running beside the suite.
+   *
+   * Polling the STORE is waiting on the thing being measured. Raising the
+   * element timeout would be waiting longer for the wrong signal, which
+   * TESTING.md already names as the wrong fix for exactly this shape.
+   */
+  const want = Math.round(Number(amount) * 100);
+  await expect
+    .poll(async () => {
+      const s = await stored(page) as {
+        lines: { id: string; budget: number }[];
+        budgets: { line: string; amount: number; deleted?: true }[];
+      };
+      const all = s.lines.find((l) => l.id === line)?.budget;
+      const set = (s.budgets ?? []).filter((b) => b.line === line && b.deleted !== true)
+        .map((b) => b.amount);
+      return [all, ...set].includes(want);
+    }, { message: `the ${amount} never reached the store`, timeout: 15_000 })
+    .toBe(true);
 }
 
 test('assigning in one month says nothing about the next — and the leftover carries', async ({ page }) => {

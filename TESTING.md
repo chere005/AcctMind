@@ -151,6 +151,26 @@ The rules stay in core anyway. The driver covers one browser and no phone;
   and that hiding it does not move the row's contents. The drag itself was
   checked on a simulator, by hand.
 
+## A test that failed because the LANE was the load
+
+`months.spec.ts` "assigning in one month…" went red inside the suite tdtp on
+2026-09-21 and passed five times out of five as soon as the machine was
+quiet. What was different was a device build and a Gradle daemon running
+beside the suite: the assertion polled the drawn figure fourteen times in
+five seconds, read `$0.00` every time, and reported that the budget had
+refused the number.
+
+The fix is in `assign()` and it is the one this file already prescribes —
+wait on the thing being MEASURED. The helper now polls the STORE until the
+amount is actually in it, so the screen assertion that follows is about
+rendering rather than racing the write. Raising the element timeout would
+have been waiting longer for the wrong signal.
+
+**The general shape: a suite that only fails while something else is
+building is not a flaky suite, it is a suite asserting on the wrong
+moment.** Under load, every gap between "the control closed" and "the data
+landed" gets wide enough to see.
+
 ## Two tests that flake under full parallel load
 
 Both read GEOMETRY or COMPUTED STYLE right after an interaction, and both have
