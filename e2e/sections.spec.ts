@@ -231,3 +231,100 @@ test('a deleted account leaves a tombstone, like everything else', async ({ page
   // by the next merge.
   expect(after.accounts.find((a) => a.id === extra)?.deleted).toBe(true);
 });
+
+test('everything on an account heading is the SAME distance from its neighbour', async ({ page }) => {
+  /*
+   * Sean, 2026-09-21: "even out the horizontal spacing here", over a shot of
+   * a heading reading `● Account $1,136.98 ⚒ CLEARED/$391.23 ⚒`.
+   *
+   * Measured, because the eye was right and reading the stylesheet was not:
+   * the margins said 6 and 6 either side of the total, but a hammer draws 6
+   * points of whitespace INSIDE its own 26pt tap box, so the gap a person
+   * saw there was 12 against 6 everywhere else. Only the rendered boxes know
+   * that, which is why this is a gesture test and not a unit one.
+   *
+   * The GLYPHS, not the pressables: the tap target is deliberately bigger
+   * than the mark in it, and asserting on the target would measure the very
+   * thing that made the line look crooked.
+   */
+  await fresh(page);
+  await addTransaction(page, { name: 'Rent', amount: '-1136.98' });
+
+  const ink = async (sel: string) => {
+    const box = await page.locator(sel).first().boundingBox();
+    expect(box, `nothing to measure at ${sel}`).not.toBeNull();
+    return box as NonNullable<typeof box>;
+  };
+  const dot = await ink('[data-testid^="account-head-"] svg');
+  const name = await ink('[data-testid^="account-head-"] >> text="Account"');
+  const total = await ink('[data-testid^="account-total-"]');
+  const hammer = await ink('[data-testid^="account-reconcile-"]:not([data-testid*="cleared"]) svg');
+  const cleared = await ink('[data-testid^="account-cleared-"]');
+  const clearedHammer = await ink('[data-testid^="account-reconcile-cleared-"] svg');
+
+  const between = (left: typeof dot, right: typeof dot) => right.x - (left.x + left.width);
+  const gaps = [
+    between(dot, name),
+    between(name, total),
+    between(total, hammer),
+    between(hammer, cleared),
+    between(cleared, clearedHammer),
+  ];
+
+  // All five the same, and the same as the app's one step. Sub-pixel slack
+  // only: these are laid out in points and read back in CSS pixels.
+  for (const gap of gaps) expect(gap).toBeCloseTo(8, 1);
+});
+
+test('a wide balance keeps ONE line, and the name is what gives', async ({ page }) => {
+  /*
+   * Found while evening out the gaps above, at the numbers that make the
+   * heading tight: two figures over a thousand and both negative. The total
+   * broke after its minus sign and drew `-` above `$1,528.21` inside a head
+   * one line tall, so the sign sat on top of the amount.
+   *
+   * The cause was that the figure could SHRINK. Only `headName` is supposed
+   * to — a name is the one thing here that can lose characters and still say
+   * what it says — but with both shrinking, the row spent its shortfall on
+   * the amount as well, and truncating money is not a saving.
+   */
+  await fresh(page);
+  await addTransaction(page, { name: 'Rent', amount: '-152821' });
+  await addTransaction(page, { name: 'Card', amount: '-113698' });
+  // One of them CLEARED, and that is not decoration: it is what puts a
+  // ten-character figure in the right-hand column instead of `$0.00`, and
+  // the row is only short of room with both of them wide. Written without
+  // this first, and it passed with the bug put back.
+  await page.getByTestId(/^txn-cleared-/).first().click();
+  await expect(page.locator('[data-testid^="account-cleared-"]')).toContainText('$1,');
+
+  const total = page.locator('[data-testid^="account-total-"]');
+  await expect(total).toHaveText('-$2,665.19');
+
+  /*
+   * The figure's own width, laid out with nothing to push against, against
+   * the width it was actually given. NOT `scrollWidth > clientWidth`:
+   * react-native-web CLAMPS a single-line Text, so those two stay equal
+   * whether or not anything was lost — see "A check that was DELETED" in
+   * TESTING.md, which is this same measurement getting it wrong once already.
+   */
+  const { drawn, wanted, height } = await total.evaluate((el) => {
+    const ghost = el.cloneNode(true) as HTMLElement;
+    ghost.style.position = 'fixed';
+    ghost.style.left = '-9999px';
+    ghost.style.width = 'auto';
+    ghost.style.maxWidth = 'none';
+    ghost.style.whiteSpace = 'pre';
+    document.body.appendChild(ghost);
+    const w = ghost.getBoundingClientRect().width;
+    ghost.remove();
+    const r = el.getBoundingClientRect();
+    return { drawn: r.width, wanted: w, height: r.height };
+  });
+
+  // One line. A wrap is what a second line costs and it is what a person
+  // sees: the minus sign drew ABOVE the amount, in a head one line tall.
+  expect(height).toBeLessThan(24);
+  // And all of it: the row's shortfall is spent on the NAME, never on money.
+  expect(drawn).toBeGreaterThanOrEqual(wanted - 0.5);
+});

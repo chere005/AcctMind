@@ -171,6 +171,21 @@ building is not a flaky suite, it is a suite asserting on the wrong
 moment.** Under load, every gap between "the control closed" and "the data
 landed" gets wide enough to see.
 
+**It was not the whole story — 2026-09-21, later the same day.** The store
+poll went red again on a QUIET machine, twice in fifteen runs of
+`months.spec.ts --repeat-each=3` and once in a full `npm test`, each time on
+a different test in that file and each time with the pad shut and fifteen
+seconds of polling behind it. The cause is still open, and these are the
+things it is NOT: the assign gesture itself (224 assignments across 10
+workers, 0 failures), the operator button racing `autoFocus` (`start()`
+guards on `editing`), and the two native transports (`peer`/`sync` report
+unsupported on the web, so parallel workers cannot be merging into each
+other). What is left is the shape of `onDone` — it closes over `pad` and
+`phase` and commits `pad.budget`, so a Return processed against a render
+older than the last keystroke would write the value the pad opened with and
+then close, which is precisely the symptom. Not yet reproduced; written down
+so the next person starts here instead of at the poll.
+
 ## Two tests that flake under full parallel load
 
 Both read GEOMETRY or COMPUTED STYLE right after an interaction, and both have

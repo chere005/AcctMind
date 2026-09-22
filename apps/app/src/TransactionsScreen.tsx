@@ -620,6 +620,11 @@ function Section({
         ) : (
           <Text
             style={[styles.headSum, total(rows) > 0 && styles.totalUp]}
+            // ONE LINE, always. Without it a wide figure — `-$1,528.21` is
+            // enough on a phone — broke after its minus sign and drew the
+            // sign over the amount in a head one line tall. A balance is not
+            // a sentence; the NAME is what gives when the row runs out.
+            numberOfLines={1}
             testID={`account-total-${account.id}`}
             accessibilityLabel={`Total ${formatAmount(total(rows))}`}
           >
@@ -1364,6 +1369,34 @@ function Action({ label, onPress, testID, danger = false, children }: {
   );
 }
 
+/**
+ * ONE gap, everywhere along an account heading — Sean, 2026-09-21: "even out
+ * the horizontal spacing here."
+ *
+ * It read as uneven because it WAS, measured on a phone: 8 from the dot to
+ * the name, 6 from the name to the total, 12 from the total to the hammer,
+ * 6 either side of the cleared figure. The 12 is the tell. A hammer is a TAP
+ * TARGET drawn wider than its 14pt glyph, so its box already lays down
+ * `HAMMER_PAD` of whitespace before it draws anything — and the 6pt margin
+ * on the total landed on top of that rather than instead of it.
+ *
+ * So a neighbour of a hammer contributes only the DIFFERENCE, and every pair
+ * of things on the line ends up `HEAD_GAP` apart. The boxes keep their 26:
+ * with the gap fixed at 8 the line comes to the same width whatever they
+ * are, because what the box gives up the margin beside it has to add back —
+ * narrowing them would have bought two smaller targets and not one point.
+ *
+ * The line is 2 points wider than it was (five gaps at 8 where three were 6),
+ * which is 2 points off the account NAME, the thing that gives when a 343pt
+ * heading runs out. It still fits `Account` and its figures at 375 with room
+ * over; a very long name truncates one character sooner than it did.
+ */
+const HEAD_GAP = SPACE.sm;
+/** (26 - 14) / 2: the whitespace a hammer box draws either side of its glyph. */
+const HAMMER_PAD = 6;
+/** What a neighbour of a hammer adds, so the two together come to HEAD_GAP. */
+const BESIDE_HAMMER = HEAD_GAP - HAMMER_PAD;
+
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   header: {
@@ -1444,29 +1477,37 @@ const styles = StyleSheet.create({
   // step and the same gap the name keeps from the dot.
   headSum: {
     color: T.dim, fontSize: 15, fontVariant: ['tabular-nums'],
-    // 6, not SPACE.sm: the head grew a second hammer on 2026-09-18 and the
-    // NAME is what gives when the row is short — at 375 points every two
-    // points here were two points off `Account`.
-    marginLeft: 6, marginRight: 6,
+    // Not the same on both sides, and that is the point: a hammer follows,
+    // and it brings HAMMER_PAD of its own. See HEAD_GAP.
+    marginLeft: HEAD_GAP, marginRight: BESIDE_HAMMER,
+    // It does NOT give. `headName` is the one thing on this line that
+    // shrinks, and a shrinkable figure beside it meant both did — the name
+    // ellipsised AND the amount truncated, when there was room for the whole
+    // amount and a shorter name.
+    flexShrink: 0,
   },
   // The SAME margins as the number it replaces. The field already wears the
   // same type and no padding for this reason — swapping one for the other
   // must not move the hammer beside it.
   reconcileField: {
-    padding: 0, margin: 0, marginLeft: SPACE.sm, marginRight: SPACE.sm,
+    padding: 0, margin: 0, marginLeft: HEAD_GAP, marginRight: BESIDE_HAMMER,
     minWidth: 90, textAlign: 'left', color: T.text,
   },
   // 26 drawn, two of them now; the glyph is 14 and the target is the row's
-  // full height, so the width was never the hit area.
+  // full height, so the width was never the hit area. The 6 either side of
+  // that glyph is most of the gap its neighbours see — see HEAD_GAP.
   headHammer: {
-    width: 26, height: TAP, alignItems: 'center', justifyContent: 'center',
+    width: 14 + HAMMER_PAD * 2, height: TAP, alignItems: 'center', justifyContent: 'center',
   },
   // Smaller and dimmer than the account's own total: it is the second thing
   // on the line, and drawing it at the same weight would make the head read
   // as two totals arguing.
-  // No padding of its own: a hammer sits either side of it now, and each one
-  // is the gap.
-  headCleared: { alignItems: 'flex-end', flexShrink: 0 },
+  // A hammer sits either side of it, so both margins are the short ones —
+  // each box already draws HAMMER_PAD of the gap itself. See HEAD_GAP.
+  headCleared: {
+    alignItems: 'flex-end', flexShrink: 0,
+    marginLeft: BESIDE_HAMMER, marginRight: BESIDE_HAMMER,
+  },
   headClearedLabel: {
     color: T.faint, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.4, lineHeight: 11,
   },
