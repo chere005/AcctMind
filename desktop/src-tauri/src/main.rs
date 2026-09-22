@@ -71,9 +71,18 @@ fn icloud_read() -> Option<String> {
 
 /// Write the ledger out. `false` means it did not go.
 ///
-/// The Documents folder is created if it is absent — the container exists
-/// before Documents does, and the very first write would otherwise fail
-/// for a reason nobody could act on.
+/// IT WILL NOT CREATE THE CONTAINER, and that is the important line here.
+/// A ubiquity container is registered by the SYSTEM, the first time an app
+/// holding the entitlement resolves it — which on this app means the phone
+/// launching once. `create_dir_all` under `Mobile Documents` would happily
+/// make a directory of that name anyway, and iCloud would never adopt it:
+/// the desktop would report a successful write, every time, into a folder
+/// nothing on earth syncs. A sync that says it worked is worse than one
+/// that says it cannot.
+///
+/// So the container must already be there. `Documents` INSIDE it is ours
+/// to make — that one is an ordinary subfolder and the first write would
+/// otherwise fail for a reason nobody could act on.
 ///
 /// Written to a neighbour and RENAMED, which on macOS is atomic within one
 /// filesystem: a reader on another device must never see half a ledger,
@@ -82,6 +91,10 @@ fn icloud_read() -> Option<String> {
 fn icloud_write(value: String) -> bool {
     let Some(path) = store_path() else { return false };
     let Some(dir) = path.parent() else { return false };
+    match dir.parent() {
+        Some(container) if container.is_dir() => {}
+        _ => return false,
+    }
     if std::fs::create_dir_all(dir).is_err() {
         return false;
     }
@@ -98,14 +111,16 @@ fn icloud_write(value: String) -> bool {
 
 /// Is the container there at all?
 ///
-/// The DIRECTORY, not the file: a Mac signed into iCloud with this app's
-/// container known to the account has the folder whether or not anything
-/// has written the ledger into it yet, and "no file yet" is a normal first
-/// run rather than an unavailable transport.
+/// THE CONTAINER, not `Documents` and not the file. A Mac signed into
+/// iCloud has the container folder once the account knows about it — which
+/// happens when the phone first launches — and everything inside it is
+/// ours to create. Asking about `Documents` instead would report "no
+/// iCloud" on a perfectly good container that simply has not been written
+/// to yet, which is the state every first run is in.
 #[tauri::command]
 fn icloud_available() -> bool {
     store_path()
-        .and_then(|p| p.parent().map(|d| d.is_dir()))
+        .and_then(|p| p.parent().and_then(|d| d.parent()).map(|c| c.is_dir()))
         .unwrap_or(false)
 }
 
