@@ -113,6 +113,50 @@ if [ "$WANT_MAC" = 1 ]; then
   if [ -f "$ROOT/desktop/smoke.sh" ]; then
     ( cd "$ROOT" && sh desktop/smoke.sh ) || { echo "the macOS smoke failed" >&2; exit 1; }
   fi
+  # IS IT OPEN RIGHT NOW? Asked BEFORE the rm -rf, because the answer stops
+  # being knowable the moment the bundle it names is gone.
+  #
+  # An `rm -rf` and `cp -R` UNDER a running app change nothing the person is
+  # looking at: macOS still has the old code mapped, the window keeps the JS
+  # it launched with, and the release looks like it did nothing. That is how
+  # Sean spent an afternoon on 2026-09-21 reading an old AcctMind while that
+  # same build was live on the web, on his phone and in /Applications —
+  # "make sure to reopen already opened apps in a dtp.. i was looking at an
+  # old acctmind".
+  #
+  # MATCHED ON THE BUNDLE PATH, never on the app's name. The executable
+  # inside AcctMind.app is Contents/MacOS/acctmind-desktop, so `pgrep -x
+  # AcctMind` finds nothing and this whole step would silently no-op. The
+  # name is derived from $APPBUNDLE, the same variable the install below
+  # uses, so the two can never disagree about which app this is.
+  APPNAME=$(basename "$APPBUNDLE" .app)
+  WAS_RUNNING=0
+  GONE=1
+  if pgrep -f "/Applications/$APPNAME.app/Contents/MacOS/" >/dev/null 2>&1; then
+    WAS_RUNNING=1
+    # ASKED TO QUIT, never killed. `osascript -e 'quit app "..."'` is the
+    # gesture the suite's macOS smokes use on an app they did not start
+    # (CalMind/desktop/smoke.sh) — and it is a request, not an order: the app
+    # holds the only copy of whatever is unsaved in that window ("the device
+    # is the only copy"), so a release has no business destroying it and
+    # nothing here escalates to kill -9. This repo's own desktop/smoke.sh
+    # `kill`s a pid instead, which is a different situation and not a
+    # precedent: that process is a child the smoke launched itself, and this
+    # one is Sean's session.
+    echo "    $APPNAME is open — quitting it so the new bundle is what you see"
+    osascript -e "quit app \"$APPNAME\"" >/dev/null 2>&1 || true
+    # Waited out, because copying over a LIVE bundle is the other half of
+    # what this is avoiding. Whether it actually went is remembered, not
+    # assumed: the reopen below tells the truth with it.
+    GONE=0
+    for _ in 1 2 3 4 5 6; do
+      pgrep -f "/Applications/$APPNAME.app/Contents/MacOS/" >/dev/null 2>&1 || { GONE=1; break; }
+      sleep 1
+    done
+    # Still there after a few seconds: say so and carry on with the install
+    # anyway. A stale window is a smaller problem than a skipped deploy.
+    [ "$GONE" = 1 ] || echo "WARNING: $APPNAME would not quit — installing under it anyway" >&2
+  fi
   # INSTALL IT, and verify the copy landed. A build sitting in
   # target/release/bundle/macos/ is not a deploy — it is the thing nobody
   # looks at while the app in /Applications goes stale. The verify step was
@@ -124,6 +168,26 @@ if [ "$WANT_MAC" = 1 ]; then
   INSTALLED="/Applications/$(basename "$APPBUNDLE")"
   [ -d "$INSTALLED" ] || { echo "copy reported success but $INSTALLED is not there" >&2; exit 1; }
   echo "    installed: $INSTALLED"
+  # PUT HIS SESSION BACK — and ONLY if there was one. An app that was closed
+  # when the lane started stays closed: a release must not start conjuring
+  # windows onto his desktop.
+  #
+  # Best-effort, like the quit above. Every step of this reopen dance leaves
+  # the exit status alone, because a window that failed to come back must
+  # never turn a shipped release into a failed lane.
+  if [ "$WAS_RUNNING" = 1 ] && [ "$GONE" = 1 ]; then
+    if open "$INSTALLED" >/dev/null 2>&1; then
+      echo "    reopened: $APPNAME — it was open before this ran"
+    else
+      echo "WARNING: $APPNAME was open before this ran and would not reopen" >&2
+    fi
+  elif [ "$WAS_RUNNING" = 1 ]; then
+    # It refused to quit, so the process still on screen is the one macOS
+    # mapped BEFORE the copy. `open` would only bring that stale window
+    # forward while the lane log called it "reopened" — which is this bug
+    # again, now with a reassuring line printed over it. Say what is true.
+    echo "WARNING: $APPNAME never quit — the window on screen is the build from BEFORE this install; quit and reopen it to see this one" >&2
+  fi
 fi
 
 # --------------------------------------------------------------------- iOS
