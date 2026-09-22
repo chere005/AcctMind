@@ -37,7 +37,7 @@ import {
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import {
-  CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, UpArrowIcon, XIcon,
+  CheckIcon, DollarIcon, FlagIcon, PencilIcon, UpArrowIcon, XIcon,
 } from './Icons';
 import { PickBar } from './PickBar';
 import { useRowDrag, type RowDrag } from './rowdrag';
@@ -651,9 +651,9 @@ export function BudgetScreen({
               <>
                 <View style={styles.colHead}>
                   <Tip style={styles.colLabel} text="Needs"><FlagIcon /></Tip>
-                  <Tip style={styles.colLabel} text="Assigned"><EnvelopeIcon /></Tip>
-                  <Tip style={styles.colLabel} text="Spent"><ReceiptIcon /></Tip>
-                  <Tip style={styles.colLabel} text="Available"><CoinIcon /></Tip>
+                  <Tip style={styles.colLabel} text="Assigned"><CheckIcon /></Tip>
+                  <Tip style={styles.colLabel} text="Spent"><DollarIcon color={T.danger} /></Tip>
+                  <Tip style={styles.colLabel} text="Available"><DollarIcon color={T.positive} /></Tip>
                 </View>
                 {/* Never in edit mode, whatever the page is doing: that is
                     what "can't be deleted" means in this row's terms — no
@@ -941,29 +941,43 @@ function CategorySection({
             MARKS, not words — see Icons.tsx. At 56 points a column
             `BUDGETED` and `AVAILABLE` broke mid-word on a phone and drew as
             `BUDGETE / D`. The accessibility label carries the word, so a
-            screen reader still hears "Assigned" where an eye sees an
-            envelope.
+            screen reader still hears "Assigned" where an eye sees a tick.
 
             …and since 2026-09-18 so does a TIP: hover one on the Mac, tap one
             on a phone, and it says which column it is. The word was reaching
             everybody except the people looking straight at it.
 
-            ASSIGNED, not "budgeted", for the envelope. It is what the bar at
-            the top of this screen calls the same number and what Sean calls
-            it; the stored field is `budget` and always was, and a column head
-            is not the place to make anyone care about that.
+            COLOURED, and named by Sean on 2026-09-21: "the icon for needed
+            should be a yellow flag, assigned is a green check mark, spent is
+            a red $, and available is a green $." Which makes the last two one
+            shape in two colours — the reverse of how these four were first
+            drawn, where every mark had to be a different SHAPE because
+            colour was not carrying anything. It works because those two are
+            the halves of one idea, what went out and what is left, and
+            because the colours are this app's existing three: gold for
+            asking, `positive` for money there, `danger` for money gone.
+
+            The marks are FIXED colours over numbers that change colour —
+            `lineTone` paints a row's figures yellow, red, green or grey. A
+            head saying what a column IS, above numbers saying how that
+            column is doing, is the distinction to keep if either moves.
+
+            ASSIGNED, not "budgeted". It is what the bar at the top of this
+            screen calls the same number and what Sean calls it; the stored
+            field is `budget` and always was, and a column head is not the
+            place to make anyone care about that.
           */}
           <Tip style={styles.colLabel} text="Needs" testID="col-needs">
             <FlagIcon />
           </Tip>
           <Tip style={styles.colLabel} text="Assigned" testID="col-budgeted">
-            <EnvelopeIcon />
+            <CheckIcon />
           </Tip>
           <Tip style={styles.colLabel} text="Spent" testID="col-spent">
-            <ReceiptIcon />
+            <DollarIcon color={T.danger} />
           </Tip>
           <Tip style={styles.colLabel} text="Available" testID="col-available">
-            <CoinIcon />
+            <DollarIcon color={T.positive} />
           </Tip>
         </View>
       )}

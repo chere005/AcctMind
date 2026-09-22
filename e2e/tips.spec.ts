@@ -112,3 +112,36 @@ test('a number says which column it is under, and still opens the pad', async ({
   await page.getByTestId('line-spent-l1').hover();
   await expect(page.getByTestId('line-spent-l1').locator('..')).toContainText('Spent');
 });
+
+test('each column mark is the colour Sean named for it', async ({ page }) => {
+  /*
+   * Sean, 2026-09-21: "the icon for needed should be a yellow flag,
+   * assigned is a green check mark, spent is a red $, and available is a
+   * green $."
+   *
+   * Worth a check rather than a look, because the last two are THE SAME
+   * SHAPE and the colour is the only thing telling them apart — these four
+   * were drawn to be distinguishable by silhouette alone, and that is no
+   * longer true. A `DollarIcon` wired to the wrong colour draws a Spent
+   * column that reads as Available and nothing else on the screen would say
+   * so.
+   *
+   * The literals are `T` (theme.ts): gold, positive, danger. Written out
+   * rather than imported because the suite does not reach into app source —
+   * and a test that took the colour from the same constant the screen took
+   * it from would agree with any value at all.
+   */
+  await withStore(page, STORE());
+  await page.getByTestId('tab-budget').click();
+
+  const inkOf = (id: string) => page.locator(`[data-testid="${id}"] svg path`).first()
+    .evaluate((el) => el.getAttribute('stroke') ?? el.getAttribute('fill'));
+
+  expect((await inkOf('col-needs'))?.toLowerCase()).toBe('#f0b429');
+  expect((await inkOf('col-budgeted'))?.toLowerCase()).toBe('#30d158');
+  expect((await inkOf('col-spent'))?.toLowerCase()).toBe('#ff453a');
+  expect((await inkOf('col-available'))?.toLowerCase()).toBe('#30d158');
+  // The pair that share a shape do NOT share a colour, said directly: the
+  // assertions above would both pass if someone made them one constant.
+  expect(await inkOf('col-spent')).not.toBe(await inkOf('col-available'));
+});

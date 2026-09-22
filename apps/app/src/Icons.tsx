@@ -188,6 +188,16 @@ export function HammerIcon({ color = T.dim, size = 14 }: { color?: string; size?
  *
  * So: four marks, each about what its column MEANS rather than what it is
  * called, and each legible at 13 points where the words were not.
+ *
+ * AND COLOURED, from 2026-09-21 — Sean: "the icon for needed should be a
+ * yellow flag, assigned is a green check mark, spent is a red $, and
+ * available is a green $." Which is a change in KIND as much as in palette.
+ * These four were drawn to be told apart by SHAPE alone, because colour was
+ * carrying nothing; now the last two are one shape in two colours, and the
+ * colour is what says which. It holds because Spent and Available are the
+ * two halves of one idea — what went out, what is left — and because gold,
+ * `positive` and `danger` already mean asking, money there and money gone
+ * everywhere else in this app.
  * ------------------------------------------------------------------ */
 
 /**
@@ -198,27 +208,13 @@ export function HammerIcon({ color = T.dim, size = 14 }: { color?: string; size?
  * is what the colour dots beside a category name already are. A flag has a
  * diagonal nobody else here has, so it is told apart by silhouette rather
  * than by detail — the only thing that survives at this size.
- */
-/**
- * Bring this UP to what has moved — the pick bar's third button.
  *
- * A plain arrow rather than a copy of `ReceiptIcon`, which is what the SPENT
- * column wears. The button is not "spent"; it is "make assigned equal it",
- * and drawing it with the column's own mark would read as a filter.
+ * GOLD, and by default rather than at the call site — Sean, 2026-09-21:
+ * "the icon for needed should be a yellow flag." This mark means one
+ * thing wherever it is drawn, the column head and the pick bar's `= ⚑`
+ * alike, so the colour travels with it.
  */
-export function UpArrowIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 20V5" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-      <Path
-        d="M5.5 11.5 12 5l6.5 6.5"
-        stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
-export function FlagIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+export function FlagIcon({ color = T.gold, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path d="M5.5 21V3.5" stroke={color} strokeWidth={2} strokeLinecap="round" />
@@ -231,58 +227,65 @@ export function FlagIcon({ color = T.dim, size = 14 }: { color?: string; size?: 
 }
 
 /**
- * Budgeted — an envelope, which is where the whole method comes from.
+ * Assigned — a TICK. The money you decided about.
  *
- * Kept from the first pass: a wide rectangle with a V in it is unlike
- * anything else in this row at any size.
+ * Sean, 2026-09-21: "assigned is a green check mark." It was an envelope
+ * from 2026-09-15, on the reasoning that the envelope is where the whole
+ * method comes from; a tick says the simpler thing, which is that this line
+ * has been dealt with. GREEN by default because that is the only thing it
+ * ever means here — the colour is the label as much as the shape is.
  */
-export function EnvelopeIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M3 6h18v12H3z" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-      <Path d="m3.5 6.5 8.5 6.5 8.5-6.5" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-    </Svg>
-  );
-}
-
-/**
- * Spent — a RECEIPT. Money that has already gone, and the paper that says so.
- *
- * Third attempt. An up-arrow competed with the chevron on the category
- * heading two lines above it; a shopping bag, blown up, read as a TRASH CAN —
- * which is the worst possible confusion to put one column away from a delete
- * button. A receipt's torn bottom edge is a shape nothing else here has.
- */
-export function ReceiptIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+export function CheckIcon({ color = T.positive, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
       <Path
-        d="M5.5 3h13v18l-2.2-1.6-2.2 1.6-2.1-1.6L9.9 21l-2.2-1.6L5.5 21z"
-        stroke={color} strokeWidth={2} strokeLinejoin="round"
+        d="M4.5 12.5 9.5 17.5 19.5 6.5"
+        stroke={color} strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"
       />
-      <Path d="M9 8h6M9 12h6" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
 
 /**
- * Available — a COIN. What is still there.
+ * Money — a dollar sign, in whatever colour the column means.
  *
- * Third attempt here too. A wallet was a rounded rectangle with a dot and so
- * was indistinguishable from the envelope beside it; a stack of coins, blown
- * up, was the standard DATABASE cylinder. A ring with a bar through it is
- * round where its three neighbours are angular, which is the only thing that
- * survives at 14 points — and it is the one shape here that is a coin whether
- * or not you work out the bar is a dollar sign.
+ * Sean, 2026-09-21: "spent is a red $, and available is a green $." So this
+ * is the one mark used twice, and COLOUR is what separates the two columns
+ * rather than shape — which is a deliberate reversal of how the four marks
+ * were drawn in September ("a ring is round where its three neighbours are
+ * angular, which is the only thing that survives at 14 points"). It holds
+ * here because the pair are the two halves of one idea: what went out, and
+ * what is left. No default: a `$` with no colour decided has not been told
+ * which of the two it is.
  */
-export function CoinIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+export function DollarIcon({ color, size = 14 }: { color: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Circle cx={12} cy={12} r={8.5} stroke={color} strokeWidth={2} />
-      <Path d="M12 7.5v9" stroke={color} strokeWidth={2} strokeLinecap="round" />
+      <Path d="M12 3v18" stroke={color} strokeWidth={2} strokeLinecap="round" />
       <Path
-        d="M14.2 10a2.4 2.4 0 0 0-2.2-1.2c-1.4 0-2.4.8-2.4 1.9s1 1.6 2.4 1.6 2.4.5 2.4 1.6-1 1.9-2.4 1.9A2.4 2.4 0 0 1 9.8 14"
-        stroke={color} strokeWidth={1.7} strokeLinecap="round"
+        d="M16 7.5a3.2 3.2 0 0 0-3.2-1.8h-1c-1.9 0-3.3 1.2-3.3 2.9s1.4 2.6 3.3 2.6h1.4c1.9 0 3.3 1 3.3 2.7s-1.4 2.9-3.3 2.9h-1A3.2 3.2 0 0 1 8 15.4"
+        stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
+ * Bring this UP to what has moved — the pick bar's third button.
+ *
+ * A plain arrow rather than a copy of the SPENT column's own mark. The
+ * button is not "spent"; it is "make assigned equal it", and drawing it with
+ * the column's mark would read as a filter. It is also the one of the three
+ * assign buttons with no column to borrow from, which is why it stays the
+ * bar's grey while the flag beside it is the column's gold.
+ */
+export function UpArrowIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 20V5" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      <Path
+        d="M5.5 11.5 12 5l6.5 6.5"
+        stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
       />
     </Svg>
   );
