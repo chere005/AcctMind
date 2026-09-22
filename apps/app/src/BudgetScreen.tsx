@@ -129,7 +129,7 @@ export function BudgetScreen({
   txns, categories, lines, budgets, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
   onDeleteCategory, onMoveLine, onAssignMany, onDeleteLines,
-  budgetMonth, onBudgetMonth, menu,
+  budgetMonth, onBudgetMonth, menu, undo,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
@@ -149,6 +149,16 @@ export function BudgetScreen({
   budgetMonth: string;
   /** The cog and its menu — App builds it once for both screens. */
   menu?: ReactNode;
+  /**
+   * The Undo button, LEFT of the pencil — Sean, 2026-09-21.
+   *
+   * A node, for the same reason `menu` is one: what it undoes is the
+   * LEDGER, not this screen, and only App holds the store it takes back.
+   * Threading the history through here so the screen could assemble the
+   * same button twice is how two Undos end up disagreeing about whether
+   * there is anything to undo.
+   */
+  undo?: ReactNode;
   onBudgetMonth: (month: string) => void;
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
@@ -479,6 +489,8 @@ export function BudgetScreen({
         title="Budget"
         titleTestID="budget-title"
         controls={
+          <>
+          {undo}
           <CircleBtn
             on={edit}
             onPress={() => (edit ? leaveEdit() : setEdit(true))}
@@ -487,6 +499,7 @@ export function BudgetScreen({
           >
             <PencilIcon color={edit ? '#ffffff' : T.text} />
           </CircleBtn>
+          </>
         }
         picker={
           <SectionPick

@@ -502,6 +502,77 @@ export function tombstoneLines(store: Store, ids: readonly string[], now: number
 }
 
 /**
+ * Put the ledger back the way it was, as an EDIT rather than a rewind.
+ *
+ * Sean, 2026-09-21: an "Undo last action" button beside the pencil. What
+ * `before` is, is the store as it stood when the last `commit` was made;
+ * what this returns is a store holding those records again.
+ *
+ * NOT `before` ITSELF, and that is the whole of this function. Restoring the
+ * snapshot wholesale works perfectly on this device and is undone by the
+ * next merge: the record it puts back carries the OLD `updated`, the other
+ * device is holding the newer version, and `pickTxn` keeps the newer one.
+ * Undo a delete on the Mac and the phone quietly deletes it again — which
+ * is the shape of bug this repo has already paid for once, in `tombstone`
+ * (see its note on ties). So every record that actually differs is written
+ * back with a FRESH clock, and the undo travels like any other edit.
+ *
+ * A record that exists NOW and not in the snapshot was made by the action
+ * being undone, so it is TOMBSTONED rather than dropped — dropping it works
+ * on this device and comes straight back from any other, for exactly the
+ * reason `tombstone` exists.
+ *
+ * A record that is unchanged is left alone, clock and all. Touching every
+ * record in the store would make one undo look like four hundred edits to
+ * every other device, and would win every merge race for rows nobody
+ * touched.
+ *
+ * `prune` can drop an old tombstone that the snapshot still holds; such a
+ * record is appended back, touched, rather than being silently lost.
+ */
+export function undoTo(current: Store, before: Store, now: number): Store {
+  return {
+    ...current,
+    txns: restore(current.txns, before.txns, now),
+    accounts: restore(current.accounts, before.accounts, now),
+    categories: restore(current.categories, before.categories, now),
+    lines: restore(current.lines, before.lines, now),
+    budgets: restore(current.budgets, before.budgets, now),
+  };
+}
+
+/** One collection, put back. See `undoTo` for every decision here. */
+function restore<R extends Record_>(now_: readonly R[], then: readonly R[], now: number): R[] {
+  const was = new Map(then.map((r) => [r.id, r]));
+  const out = now_.map((r) => {
+    const old = was.get(r.id);
+    was.delete(r.id);
+    // Made by the action being undone: a tombstone, not a removal.
+    if (old === undefined) return r.deleted === true ? r : tombstone(r, now);
+    return same(old, r) ? r : touch(old, now);
+  });
+  // Anything the snapshot had that the store no longer does — `prune` is the
+  // only thing that removes a row, so this is an expired tombstone.
+  for (const old of was.values()) out.push(touch(old, now));
+  return out;
+}
+
+/**
+ * Are these the same record, ignoring the clock?
+ *
+ * `updated` is excluded deliberately: it is what this comparison exists to
+ * DECIDE, and including it would make every record differ from itself the
+ * moment anything else in the store changed.
+ */
+function same<R extends Record_>(a: R, b: R): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)].filter((k) => k !== 'updated'));
+  for (const k of keys) {
+    if ((a as Record<string, unknown>)[k] !== (b as Record<string, unknown>)[k]) return false;
+  }
+  return true;
+}
+
+/**
  * A store guaranteed to have somewhere to put a transaction.
  *
  * The invariant every screen depends on: there is ALWAYS at least one live

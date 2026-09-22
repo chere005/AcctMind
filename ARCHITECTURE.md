@@ -59,6 +59,13 @@ undo reads as the app ignoring you. Its space is reserved in every order and
 every mode, so neither switching sort nor opening the pencil ever slides a
 name sideways.
 
+**Undo** is the arrow left of the pencil, on both tabs. ONE step — the last
+change, whatever it was and whichever tab made it — and it is a set of edits
+rather than a rewind: a record put back carries a fresh merge clock, so an
+undone delete does not delete itself again the next time the phone and the
+Mac talk. It goes dead the moment another device's change arrives, because
+undoing across somebody else's edit would take that with it.
+
 ### Budget
 
 **Budget** is two levels. A **category** is a heading with a name and a colour

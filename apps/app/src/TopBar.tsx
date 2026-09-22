@@ -77,11 +77,20 @@ export function TopBar({ title, titleTestID, controls, picker, menu }: {
  * with no word anywhere near it, and the word existed all along — it was
  * simply only being told to the people who could not see the mark.
  */
-export function CircleBtn({ glyph, label, onPress, on = false, testID, children }: {
+export function CircleBtn({ glyph, label, onPress, on = false, off = false, testID, children }: {
   glyph?: string;
   label: string;
   onPress: () => void;
   on?: boolean;
+  /**
+   * Nothing for this control to do right now — Undo with an empty history.
+   *
+   * Dimmed AND disabled, which is this app's standing answer wherever it
+   * comes up (the pick bar's Delete says the same): a live control that
+   * does nothing is the one that gets pressed twice. The TIP still works,
+   * because "why is this greyed out" is exactly when the word helps.
+   */
+  off?: boolean;
   testID?: string | undefined;
   children?: ReactNode;
 }) {
@@ -89,16 +98,17 @@ export function CircleBtn({ glyph, label, onPress, on = false, testID, children 
   return (
     <Pressable
       onPress={onPress}
+      disabled={off}
       onHoverIn={tip.hover.onHoverIn}
       onHoverOut={tip.hover.onHoverOut}
       style={styles.hit}
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: on }}
+      accessibilityState={{ selected: on, disabled: off }}
       testID={testID}
     >
       <TipBubble text={label} shown={tip.shown} />
-      <View style={[styles.ring, on && styles.ringOn]}>
+      <View style={[styles.ring, on && styles.ringOn, off && styles.ringOff]}>
         {/* Three characters do not fit a 32pt circle at a single glyph's
             size — `.00` is a label, not an icon, and gets the smaller face. */}
         {children ?? (
@@ -147,6 +157,7 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
     backgroundColor: T.card, alignItems: 'center', justifyContent: 'center',
   },
+  ringOff: { opacity: 0.4 },
   ringOn: { backgroundColor: T.accent, borderColor: T.accent },
   glyph: { color: T.text, fontSize: 15, fontWeight: '700' },
   glyphSmall: { fontSize: 12, letterSpacing: -0.2 },

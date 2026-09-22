@@ -129,6 +129,30 @@ export function ImportIcon({ color = T.text, size = 15 }: { color?: string; size
 }
 
 /**
+ * Undo: an arrow curving back on itself — Sean, 2026-09-21.
+ *
+ * The standard shape, and deliberately so: this is the one control in the
+ * bar whose meaning a person already knows from every other app, and an
+ * invention here would cost that for nothing. A LEFT-pointing head on an
+ * arc over the top, which is what separates it from a redo at 18 points —
+ * the arc alone reads the same both ways round.
+ */
+export function UndoIcon({ color = T.text, size = 17 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 9h9.5a5.5 5.5 0 0 1 0 11H8"
+        stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      />
+      <Path
+        d="M8 4.5 3.5 9 8 13.5"
+        stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+/**
  * Settings: a cog — Sean, 2026-09-21, replacing the hamburger he asked for
  * half a minute earlier. A hamburger says "more of the same list"; a cog
  * says "things about the app", which is what is behind it.

@@ -9,10 +9,10 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  STORE_VERSION, addTxn, budgetIn, emptyStore, live, normalizeTxn, parseStore, removeTxn,
-  serialize, tombstoneLines, tombstoneMany, updateTxn,
+  STORE_VERSION, addTxn, budgetIn, emptyStore, live, mergeStores, normalizeTxn, parseStore,
+  removeTxn, serialize, tombstone, tombstoneLines, tombstoneMany, undoTo, updateTxn,
 } from '../src/index';
-import type { Txn } from '../src/index';
+import type { Store, Txn } from '../src/index';
 
 const txn = (over: Partial<Txn> = {}): Txn => ({
   id: 'a', name: 'Coffee', description: '', amount: -450,
@@ -508,5 +508,108 @@ describe('tombstoneLines — the budget bar\'s Delete', () => {
   it('returns the very same store for an empty selection', () => {
     const before = store();
     expect(tombstoneLines(before, [], 5000)).toBe(before);
+  });
+});
+
+describe('undoTo — the top bar\'s Undo', () => {
+  const base = (): Store => ({
+    ...emptyStore(),
+    txns: [txn({ id: 'a' }), txn({ id: 'b', name: 'Bus', amount: -200 })],
+  });
+
+  it('puts an edited record back, with a FRESH clock and not the old one', () => {
+    const before = base();
+    const after = updateTxn(before, { ...before.txns[0]!, name: 'Tea', updated: 2000 });
+    const out = undoTo(after, before, 9000);
+
+    const back = out.txns.find((t) => t.id === 'a')!;
+    expect(back.name).toBe('Coffee');
+    // NOT 1000, which is what the snapshot holds. An undo carrying the old
+    // clock loses the next merge to the very edit it was undoing.
+    expect(back.updated).toBeGreaterThanOrEqual(9000);
+  });
+
+  it('leaves a record nobody touched exactly as it is', () => {
+    const before = base();
+    const after = updateTxn(before, { ...before.txns[0]!, name: 'Tea', updated: 2000 });
+    const out = undoTo(after, before, 9000);
+
+    // Clock and all. Touching every row would make one undo look like the
+    // whole ledger changing to every other device, and would win every
+    // merge race for rows nobody went near.
+    expect(out.txns.find((t) => t.id === 'b')).toEqual(before.txns[1]);
+  });
+
+  it('TOMBSTONES what the action created, rather than dropping it', () => {
+    const before = base();
+    const after = addTxn(before, txn({ id: 'c', name: 'New', created: 3000, updated: 3000 }));
+    const out = undoTo(after, before, 9000);
+
+    const gone = out.txns.find((t) => t.id === 'c')!;
+    // Still there, marked dead. Dropping the row works perfectly here and
+    // comes straight back from any device that already has it.
+    expect(gone).toBeDefined();
+    expect(gone.deleted).toBe(true);
+    expect(gone.updated).toBeGreaterThanOrEqual(9000);
+    expect(live(out.txns).map((t) => t.id)).toEqual(['a', 'b']);
+  });
+
+  it('SURVIVES a merge with a device that still holds the delete', () => {
+    /*
+     * The reason this is `undoTo` and not `setPhase(snapshot)`.
+     *
+     * Restoring the snapshot wholesale puts the row back with its ORIGINAL
+     * clock. The other device is holding a tombstone stamped later, the
+     * merge keeps the newer record, and the row a person just undid quietly
+     * disappears again with nothing anywhere reporting a failure.
+     */
+    const before = base();
+    const deleted = updateTxn(before, tombstone(before.txns[0]!, 5000));
+    const undone = undoTo(deleted, before, 9000);
+
+    // The other device never heard about the undo and still has the delete.
+    const merged = mergeStores(undone, deleted);
+    expect(live(merged.txns).map((t) => t.id)).toEqual(['a', 'b']);
+    // …and in the other order, which a merge must not care about.
+    expect(live(mergeStores(deleted, undone).txns).map((t) => t.id)).toEqual(['a', 'b']);
+  });
+
+  it('reaches every collection, not just the ledger', () => {
+    const line = {
+      id: 'l1', name: 'Groceries', category: 'c1', budget: 0, needs: 0,
+      snoozed: false, order: 0, created: 1, updated: 1,
+    };
+    const before: Store = { ...emptyStore(), lines: [line] };
+    const after: Store = {
+      ...before,
+      lines: [{ ...line, name: 'Food', updated: 2000 }],
+      budgets: [{ id: 'm:2026-09|l1', set: 'm:2026-09', line: 'l1', amount: 500, created: 2, updated: 2 }],
+    };
+    const out = undoTo(after, before, 9000);
+
+    expect(out.lines[0]?.name).toBe('Groceries');
+    // The amount was written by the action being undone, so it goes the way
+    // a created record goes.
+    expect(out.budgets[0]?.deleted).toBe(true);
+  });
+
+  it('does not re-tombstone something already dead', () => {
+    const before = base();
+    const after = addTxn(before, txn({ id: 'c', deleted: true, created: 3000, updated: 3000 }));
+    const out = undoTo(after, before, 9000);
+    // Nothing to undo about a row that is already a tombstone — bumping its
+    // clock would be an edit nobody made, travelling to every device.
+    expect(out.txns.find((t) => t.id === 'c')?.updated).toBe(3000);
+  });
+
+  it('brings back a row the store no longer holds at all', () => {
+    // `prune` is the only thing that removes a record, so a snapshot can
+    // outlive an expired tombstone. Losing it silently would be the one
+    // outcome an undo must never have.
+    const before = base();
+    const after: Store = { ...before, txns: [before.txns[1]!] };
+    const out = undoTo(after, before, 9000);
+    expect(out.txns.map((t) => t.id).sort()).toEqual(['a', 'b']);
+    expect(out.txns.find((t) => t.id === 'a')?.updated).toBeGreaterThanOrEqual(9000);
   });
 });

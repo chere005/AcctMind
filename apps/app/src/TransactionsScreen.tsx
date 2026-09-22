@@ -69,6 +69,8 @@ type Props = {
    * twice is how two menus end up disagreeing.
    */
   menu?: ReactNode;
+  /** The Undo button, left of the pencil — App builds it for both screens. */
+  undo?: ReactNode;
   /** The accounts, in order. There is always at least one — see ensureAccount. */
   accounts: readonly Account[];
   /** How the rows are ordered inside each account. */
@@ -109,7 +111,7 @@ type Props = {
 };
 
 export function TransactionsScreen({
-  txns, onAdd, onAction, onDevices, peers = 0, menu, accounts,
+  txns, onAdd, onAction, onDevices, peers = 0, menu, undo, accounts,
   sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile,
   onInline, onDate, onCleared, onDeleteMany,
 }: Props) {
@@ -310,8 +312,13 @@ export function TransactionsScreen({
         titleTestID="title"
         controls={
           <>
-            {/* The pencil. First, because it is the control that changes what
-                every other row does. */}
+            {/* UNDO, first — Sean, 2026-09-21: "to the left of the edit
+                pencil icon". It is the one control here that is about the
+                ledger rather than about the screen, which is why App builds
+                it and both tabs are handed the same one. */}
+            {undo}
+            {/* The pencil, because it is the control that changes what every
+                other row does. */}
             {onAction !== undefined && (
               <CircleBtn
                 on={edit}

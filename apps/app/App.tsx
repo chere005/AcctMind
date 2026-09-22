@@ -27,7 +27,7 @@ import {
   live, makeTxn, moveLineTo, moveTxnTo,
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
-  REORDER_GAP, assignMany, budgetCsv, budgetIn, carriedInto, linesIn, monthOf,
+  REORDER_GAP, assignMany, budgetCsv, undoTo, budgetIn, carriedInto, linesIn, monthOf,
   monthSet, today, tombstone, tombstoneLines, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
   type AssignMode, type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
@@ -44,6 +44,8 @@ import { BudgetScreen, type Anchor, type LineField } from './src/BudgetScreen';
 import { AmountPad } from './src/AmountPad';
 import { DayPicker } from './src/DayPicker';
 import { Manage } from './src/Manage';
+import { CircleBtn } from './src/TopBar';
+import { UndoIcon } from './src/Icons';
 import { Tabs, type Tab } from './src/Tabs';
 import { TransactionsScreen, type RowAction } from './src/TransactionsScreen';
 import { load, save } from './src/persist';
@@ -58,6 +60,20 @@ type Phase =
 
 export default function App() {
   const [phase, setPhase] = useState<Phase>({ k: 'loading' });
+  /**
+   * The ledger as it stood before the last change — Undo's one step.
+   *
+   * Sean, 2026-09-21: an "Undo last action" button beside the pencil. ONE
+   * step, which is what he asked for: `commit` is the only path that
+   * changes the store, so remembering the store it was handed is the whole
+   * of the bookkeeping.
+   *
+   * It is dropped the moment a merge lands from iCloud or another device on
+   * the wifi. Undoing across somebody else's change would take their edit
+   * with it, silently, and this is the only place that knows the two
+   * happened in that order.
+   */
+  const [undo, setUndo] = useState<Store | null>(null);
   const [adding, setAdding] = useState(false);
   /** The row the form is editing, or null when it is adding a new one. */
   const [editing, setEditing] = useState<Txn | null>(null);
@@ -244,6 +260,9 @@ export default function App() {
         setTooBig(out.tooBig);
         if (!out.changedLocally) return;
         storeRef.current = out.store;
+        // Their change landed on top of ours; ours is no longer the last
+        // thing that happened here. See `undo`.
+        setUndo(null);
         setPhase({ ...p, store: out.store });
         save(out.store).catch((e: unknown) => setSaveError(String(e)));
       });
@@ -262,6 +281,7 @@ export default function App() {
     current: () => storeRef.current,
     merged: (store) => {
       storeRef.current = store;
+      setUndo(null);
       setPhase((p) => (p.k === 'ready' ? { ...p, store } : p));
       save(store).catch((e: unknown) => setSaveError(String(e)));
     },
@@ -283,9 +303,21 @@ export default function App() {
    * add form stayed open, because the `setAdding(false)` queued alongside it
    * was thrown away. `e2e/add.spec.ts` holds the door shut on it.
    */
-  const commit = useCallback((current: Extract<Phase, { k: 'ready' }>, next: Store) => {
+  const commit = useCallback((
+    current: Extract<Phase, { k: 'ready' }>,
+    next: Store,
+    /**
+     * Is this a change Undo should offer to take back?
+     *
+     * False for the undo ITSELF, which is what makes the button one-shot
+     * rather than a toggle: pressing it again would otherwise redo the
+     * thing you just undid, from a control whose label says Undo.
+     */
+    undoable = true,
+  ) => {
     // Before setPhase, and before any await: see storeRef's note.
     storeRef.current = next;
+    setUndo(undoable ? current.store : null);
     setPhase({ ...current, store: next });
     save(next)
       .then(() => setSaveError(null))
@@ -376,6 +408,35 @@ export default function App() {
     void saveTextFile(name, budgetCsv(rows)).then(say).catch(() => say('Could not export'));
   }, [phase, prefs.budgetMonth, say]);
 
+  /**
+   * UNDO, built here and handed to both tabs.
+   *
+   * One control rather than one per screen, for the reason the cog is one:
+   * it is about the LEDGER, not about the screen you happen to be on, and
+   * two copies of it is two places for "is there anything to undo" to
+   * disagree. Left of the pencil, which is where Sean asked for it.
+   *
+   * Drawn always and DISABLED when there is nothing to take back — the
+   * app's standing answer (see the pick bar's Delete): a live control that
+   * does nothing is the one that gets pressed twice.
+   */
+  const undoBtn = (
+    <CircleBtn
+      onPress={() => {
+        if (phase.k !== 'ready' || undo === null) return;
+        // `undoTo`, not the snapshot itself. Core's note says why: a record
+        // put back with its old clock loses the next merge to the very edit
+        // being undone, so an undone delete deletes itself again.
+        commit(phase, undoTo(phase.store, undo, Date.now()), false);
+      }}
+      off={undo === null || phase.k !== 'ready'}
+      label="Undo last action"
+      testID="undo-button"
+    >
+      <UndoIcon color={undo === null ? T.faint : T.text} />
+    </CircleBtn>
+  );
+
   const appMenu = (
     <AppMenu
       onImport={() => setImporting(true)}
@@ -450,6 +511,7 @@ export default function App() {
                 budgetMonth={prefs.budgetMonth}
                 onBudgetMonth={(m: string) => setPref('budgetMonth', m)}
                 menu={appMenu}
+                undo={undoBtn}
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
@@ -592,6 +654,7 @@ export default function App() {
               onDevices={peer.supported() ? () => setShowDevices(true) : undefined}
               peers={peers}
               menu={appMenu}
+              undo={undoBtn}
               accounts={live(phase.store.accounts)}
               sort={prefs.sort}
               onSort={(m) => setPref('sort', m)}
