@@ -37,7 +37,6 @@ import { AppMenu } from './src/AppMenu';
 import { Import } from './src/Import';
 import { saveTextFile } from './src/savefile';
 import * as peer from './src/peer';
-import * as sync from './src/sync';
 import * as shared from './src/icloudfile';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
@@ -136,7 +135,6 @@ export default function App() {
   /** A write that did not land. Shown, never swallowed. */
   const [saveError, setSaveError] = useState<string | null>(null);
   /** The ledger outgrew iCloud's megabyte. Also shown, for the same reason. */
-  const [tooBig, setTooBig] = useState(false);
   const [showDevices, setShowDevices] = useState(false);
   /** Devices connected over the local network right now. */
   const [peers, setPeers] = useState(0);
@@ -274,49 +272,40 @@ export default function App() {
       // from duplicating a frame already sent.
       peer.publish(r.store);
 
-      const out = await sync.reconcile(r.store);
-      if (!running) return;
-      setTooBig(out.tooBig);
-      if (out.changedLocally) {
-        storeRef.current = out.store;
-        setPhase({ k: 'ready', store: out.store, dropped: r.dropped });
-        // A merge result is only ours once it is on the disk. Saving here is
-        // what stops the next launch starting from the pre-merge copy and
-        // re-doing the whole reconciliation.
-        save(out.store).catch((e: unknown) => setSaveError(String(e)));
-        peer.publish(out.store);
-      }
-      // …and the shared FILE, last of the three. Same reason iCloud's
-      // key-value reconcile is after the first paint: a local-first app
-      // must not wait on a disk it does not own before drawing the ledger
-      // it does.
+      // …and the shared FILE. After the first paint, deliberately: a
+      // local-first app must not wait on a disk it does not own before
+      // drawing the ledger it does.
       if (running) void reconcileShared();
     });
     return () => { running = false; };
   }, [reconcileShared]);
 
 
-  // Another device wrote. The notification carries the new value, so no
-  // second round trip — and no window in which a fresh pull could return
-  // something older than what woke us.
-  useEffect(() => sync.onRemoteChange((remote) => {
-    setPhase((p) => {
-      // Never reconcile on top of a store we could not read. The local copy
-      // is the thing in doubt; merging into it would launder the damage.
-      if (p.k !== 'ready') return p;
-      void sync.reconcile(p.store, remote).then((out) => {
-        setTooBig(out.tooBig);
-        if (!out.changedLocally) return;
-        storeRef.current = out.store;
-        // Their change landed on top of ours; ours is no longer the last
-        // thing that happened here. See `undo`.
-        setUndo(null);
-        setPhase({ ...p, store: out.store });
-        save(out.store).catch((e: unknown) => setSaveError(String(e)));
-      });
-      return p;
-    });
-  }), []);
+  /*
+   * THE iCLOUD KEY-VALUE TRANSPORT IS GONE — 2026-09-22.
+   *
+   * It reconciled here and published on every commit from the day sync was
+   * written, and it was never once built: the entitlement it needs was off
+   * in every lane until 2026-09-21. The morning it was finally turned on it
+   * did two things, and both were bad.
+   *
+   * It CANNOT CARRY THIS LEDGER. The store caps at one megabyte and Sean's
+   * measured 1,260,619 bytes — 1,948 transactions back to August 2024 —
+   * with pruning no help, every tombstone being younger than the 90-day
+   * TTL. Every publish would have failed, for ever, raising the too-big
+   * banner and syncing nothing.
+   *
+   * And it RESURRECTED WHAT IT COULD carry. A phone holding two kilobytes
+   * of August test rows published them, the phone was wiped and
+   * reinstalled to take the Mac's ledger instead, and iCloud handed the
+   * two kilobytes straight back — so the merge that was meant to adopt
+   * 1,948 rows adopted 1,955. A transport that can only move the data you
+   * are trying to get rid of is worse than no transport.
+   *
+   * The shared FILE has no such cap and is the one every surface can
+   * reach, including the Tauri Mac app, which has no native modules at
+   * all. See src/icloudfile.ts and core/src/ubiquity.ts.
+   */
 
   /**
    * The local-network link.
@@ -373,7 +362,6 @@ export default function App() {
     // Publishing is separate from saving, and failing at it is not failing to
     // save: the transaction is safely on this device either way. Only the
     // sharing of it is in doubt, so it gets its own, quieter banner.
-    void sync.publish(next).then((ok) => setTooBig(!ok && sync.available()));
     // And the wrist, which is a separate link on a separate transport: the
     // And any device on this wifi. Four transports now, none of which is
     // allowed to break when another is unavailable.
@@ -548,13 +536,6 @@ export default function App() {
             {/* Export's receipt — the file was handed over or copied, and on
                 both paths the only evidence is that something left the app. */}
             {note !== null && <Banner testID="note" tone="warn" text={note} />}
-            {tooBig && (
-              <Banner
-                testID="toobig-banner"
-                tone="warn"
-                text="Saved on this device, but too large for iCloud — your other devices will not see it."
-              />
-            )}
             {tab === 'budget' && (
               <BudgetScreen
                 txns={live(phase.store.txns)}

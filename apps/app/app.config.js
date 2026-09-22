@@ -37,12 +37,13 @@ const baseUrl = process.env.ACCTMIND_BASE_URL || '/AcctMind';
  * (proven, not assumed: a Release build with these entitlements mints
  * `iOS Team Provisioning Profile: com.seancheren.acctmind` and succeeds).
  *
- * TWO iCloud SERVICES, for two different jobs:
+ * ONE iCloud SERVICE. There were two for a day: the key-value store went
+ * on 2026-09-21 and came off on the 22nd, having never been built before
+ * and having failed at both of its jobs the moment it was — it cannot hold
+ * a 1.26 MB ledger, and the two kilobytes it COULD hold were a wiped
+ * phone's old test rows, which it handed straight back. See App.tsx.
  *
- *   KEY–VALUE is the phone-to-phone path that already exists. A megabyte,
- *   one blob, delivered by Apple with no file for anyone to open.
- *
- *   CLOUD DOCUMENTS is the new one — Sean, 2026-09-21, choosing it over
+ *   CLOUD DOCUMENTS is what is left — Sean, 2026-09-21, choosing it over
  *   CloudKit: "store file in an iCloud Drive container both read". A real
  *   file in a real folder, which is the whole point: the Tauri Mac app
  *   reads `~/Library/Mobile Documents/iCloud~com~seancheren~acctmind/` as
@@ -80,8 +81,6 @@ const signing = {
   ...(wantsICloud
     ? {
         entitlements: {
-          'com.apple.developer.ubiquity-kvstore-identifier':
-            '$(TeamIdentifierPrefix)$(CFBundleIdentifier)',
           'com.apple.developer.icloud-container-identifiers': [ICLOUD_CONTAINER],
           'com.apple.developer.icloud-services': ['CloudDocuments'],
           'com.apple.developer.ubiquity-container-identifiers': [ICLOUD_CONTAINER],
