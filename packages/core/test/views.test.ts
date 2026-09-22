@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALL_TIME, assignMany, assignedBefore, budgetId, budgetIn, budgetSetIn, monthOf, monthSet,
-  putBudget, setMonth, viewSet, viewsOf,
-  type BudgetAmount, type Line, type Store, type View,
+  putBudget, setMonth,
+  type BudgetAmount, type Line, type Store,
 } from '../src/index';
 
 const line = (id: string, budget: number): Line => ({
@@ -11,16 +11,14 @@ const line = (id: string, budget: number): Line => ({
 const amount = (set: string, lineId: string, n: number, extra: Partial<BudgetAmount> = {}): BudgetAmount => ({
   id: budgetId(set, lineId), created: 0, updated: 0, set, line: lineId, amount: n, ...extra,
 });
-const store = (lines: Line[], budgets: BudgetAmount[] = [], views: View[] = []): Store => ({
-  v: 4, txns: [], accounts: [], categories: [], lines, views, budgets,
+const store = (lines: Line[], budgets: BudgetAmount[] = []): Store => ({
+  v: 4, txns: [], accounts: [], categories: [], lines, budgets,
 });
 
 describe('set keys', () => {
-  it('names a month and a view apart, and neither is All Time', () => {
+  it('names a month, and a month is never All Time', () => {
     expect(monthSet('2026-09')).toBe('m:2026-09');
-    expect(viewSet('v7')).toBe('v:v7');
     expect(monthSet('2026-09')).not.toBe(ALL_TIME);
-    expect(viewSet('v7')).not.toBe(ALL_TIME);
   });
 
   it('takes the month off a day without parsing it as a date', () => {
@@ -32,7 +30,7 @@ describe('set keys', () => {
 
   it('derives the id from the pair, so two devices converge on one record', () => {
     expect(budgetId(monthSet('2026-09'), 'l1')).toBe('m:2026-09|l1');
-    expect(budgetId('v:abc', 'l1')).not.toBe(budgetId('v:abd', 'l1'));
+    expect(budgetId(monthSet('2026-09'), 'l1')).not.toBe(budgetId(monthSet('2026-10'), 'l1'));
   });
 });
 
@@ -61,31 +59,31 @@ describe('what a set holds', () => {
     expect(budgetIn(s, ALL_TIME, s.lines[0]!)).toBe(5000);
   });
 
-  it('a named view still falls back to the line', () => {
-    // A view has no calendar under it, so there is no unassigned month to be
-    // honest about — starting from what the line normally holds is the point
-    // of being able to ask what if.
-    const s = store([line('l1', 5000)]);
-    expect(budgetIn(s, viewSet('v7'), s.lines[0]!)).toBe(5000);
-    expect(budgetSetIn(s, viewSet('v7'), 'l1')).toBeNull();
-  });
-
-  it('a named view is its own set, unaffected by any month', () => {
+  it("a leftover named-view row reads as nothing, and touches no month", () => {
+    /*
+     * Named views were dropped on 2026-09-21 and a device that made one
+     * still has its `v:` rows. Nothing asks for that set any more, so what
+     * is pinned here is the SAFE way for it to be wrong: a `v:` set reads
+     * zero, exactly like an unassigned month, rather than falling back to
+     * the line as it used to — a fallback would make a deleted feature's
+     * leftovers look like a funded budget.
+     *
+     * And the row is inert in the other direction too: the month beside it
+     * answers with its own amount and neither knows about the other.
+     */
     const s = store(
       [line('l1', 5000)],
-      [amount(monthSet('2026-09'), 'l1', 100), amount(viewSet('v7'), 'l1', 900)],
+      [amount(monthSet('2026-09'), 'l1', 100), amount('v:v7', 'l1', 900)],
     );
-    expect(budgetIn(s, viewSet('v7'), s.lines[0]!)).toBe(900);
+    expect(budgetIn(s, 'v:v7', s.lines[0]!)).toBe(900);
     expect(budgetIn(s, monthSet('2026-09'), s.lines[0]!)).toBe(100);
+    expect(budgetIn(store([line('l1', 5000)]), 'v:v7', s.lines[0]!)).toBe(0);
   });
 
   it('a deleted amount reads as never assigned, not as the amount it held', () => {
     const s = store([line('l1', 5000)], [amount(monthSet('2026-09'), 'l1', 100, { deleted: true })]);
     expect(budgetIn(s, monthSet('2026-09'), s.lines[0]!)).toBe(0);
     expect(budgetSetIn(s, monthSet('2026-09'), 'l1')).toBeNull();
-    // A view’s tombstone still falls back, the same way its absence does.
-    const v = store([line('l1', 5000)], [amount(viewSet('v7'), 'l1', 100, { deleted: true })]);
-    expect(budgetIn(v, viewSet('v7'), v.lines[0]!)).toBe(5000);
   });
 
   it('a set may hold zero, which is not the same as holding nothing', () => {
@@ -98,8 +96,10 @@ describe('what a set holds', () => {
 describe('setMonth', () => {
   it('reads a month set’s month, and nothing else’s', () => {
     expect(setMonth(monthSet('2026-09'))).toBe('2026-09');
-    expect(setMonth(viewSet('v7'))).toBeNull();
     expect(setMonth(ALL_TIME)).toBeNull();
+    // And a leftover `v:` row is not a month, which is what keeps it out of
+    // `assignedBefore` and so out of what a month carries in.
+    expect(setMonth('v:v7')).toBeNull();
   });
 });
 
@@ -129,7 +129,7 @@ describe('assignedBefore — what carries into a month', () => {
   it('is deaf to other lines, other kinds of set, and tombstones', () => {
     const s = store([line('l1', 0)], [
       amount(monthSet('2026-08'), 'l2', 111),
-      amount(viewSet('v7'), 'l1', 222),
+      amount('v:v7', 'l1', 222),
       amount(ALL_TIME, 'l1', 333),
       amount(monthSet('2026-08'), 'l1', 444, { deleted: true }),
       amount(monthSet('2026-08'), 'l1', 10),
@@ -141,17 +141,6 @@ describe('assignedBefore — what carries into a month', () => {
 
   it('a month that carried nothing in carries nothing', () => {
     expect(assignedBefore(store([line('l1', 5000)]), '2026-09', 'l1')).toBe(0);
-  });
-});
-
-describe('viewsOf', () => {
-  const v = (id: string, name: string, order: number, dead = false): View => ({
-    id, created: 0, updated: 0, name, order, ...(dead ? { deleted: true as const } : {}),
-  });
-
-  it('is ordered, and leaves the dead out', () => {
-    const s = store([], [], [v('b', 'B', 1), v('a', 'A', 0), v('z', 'Z', 2, true)]);
-    expect(viewsOf(s).map((x) => x.name)).toEqual(['A', 'B']);
   });
 });
 

@@ -11,7 +11,7 @@ import type { Category, CsvRow, Line, Store, Txn } from '../src/index';
 const ACCT = { id: 'a1', name: 'Sean', color: '#4c8bf0', order: 0, created: 1, updated: 1 };
 
 const store = (txns: Txn[] = [], extra: Partial<Store> = {}): Store => ({
-  v: STORE_VERSION, txns, accounts: [ACCT], categories: [], lines: [], views: [], budgets: [], ...extra,
+  v: STORE_VERSION, txns, accounts: [ACCT], categories: [], lines: [], budgets: [], ...extra,
 });
 
 const txn = (over: Partial<Txn> = {}): Txn => ({

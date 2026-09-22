@@ -46,7 +46,7 @@ const STORE = () => JSON.stringify({
     id: 'l1', name: 'Groceries', category: 'c1', budget: 0, needs: 0,
     snoozed: false, order: 0, created: 1, updated: 1,
   }],
-  views: [], budgets: [monthBudget('l1', 25000)],
+  budgets: [monthBudget('l1', 25000)],
   txns: [{
     id: 't1', name: 'Coffee', description: '', amount: -450, date: `${month()}-15`,
     account: 'a1', category: 'l1', order: 0, created: 1, updated: 1,

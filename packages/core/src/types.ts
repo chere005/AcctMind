@@ -170,26 +170,23 @@ export type DraftErrors = Partial<Record<keyof Draft, string>>;
  * able to reach them all at once.
  */
 /**
- * A named budget view — one alternative set of budgeted amounts.
+ * One line's budgeted amount in one MONTH.
  *
- * It holds no amounts of its own: those are `BudgetAmount` records keyed by
- * `viewSet(id)`, so adding a view is cheap and deleting one leaves its
- * amounts to be ignored rather than hunted down.
- */
-export type View = Record_ & {
-  name: string;
-  order: number;
-};
-
-/**
- * One line's budgeted amount inside one SET — a month, or a named view.
+ * The All Time set is `Line.budget` and has no records here; see views.ts
+ * for the key grammar and for why this is a record per amount rather than a
+ * map per set.
  *
- * The All Time set is `Line.budget` and has no records here; see views.ts for
- * the key grammar and for why this is a record per amount rather than a map
- * per set.
+ * There were NAMED VIEWS too, from 2026-09-16 to 2026-09-21 — a `View`
+ * record and amounts keyed `v:<id>`. Sean took the dropdown that reached
+ * them out ("get rid of the view dropdown and all time") and then the
+ * concept ("drop named views"), so the record type is gone and `set` is
+ * always a month now. A device that made one still has its rows in this
+ * array: nothing reads them, nothing writes them, and they are left alone
+ * rather than deleted by a migration, because dropping records on load is
+ * how a bookkeeping change becomes lost money.
  */
 export type BudgetAmount = Record_ & {
-  /** 'm:YYYY-MM' or 'v:<viewId>'. Never 'all'. */
+  /** 'm:YYYY-MM'. Never 'all'. */
   set: string;
   /** The line this budgets. */
   line: string;
@@ -205,10 +202,15 @@ export type Store = {
   lines: Line[];
   /**
    * ADDITIVE, and defaulted rather than migrated — the same bargain `needs`
-   * and `snoozed` made. A store written before views simply has none, which
-   * is what an empty array means, so there is no v5.
+   * and `snoozed` made. A store written before this existed simply has none,
+   * which is what an empty array means, so there is no v5.
+   *
+   * A `views` array sat beside it for five days and is gone with the feature
+   * (2026-09-21). STILL v4, for the same reason it was v4 when the array
+   * arrived: a saved file carrying the key parses exactly as before — the
+   * key is simply not read — and a version bump would make every device
+   * think its data needed migrating when nothing about it did.
    */
-  views: View[];
   budgets: BudgetAmount[];
 };
 

@@ -1,20 +1,27 @@
 /**
- * VIEWS — which budget set the Budget tab is reading, and how a set is named.
+ * BUDGET SETS — which amounts the Budget tab is reading, and how a set is
+ * named.
  *
- * Sean, 2026-09-16: a `View:` dropdown over the budget with Month, All Time,
- * and New View; "in this view, budget changes are unique to that view only",
- * and of Month: "the budget set for that particular month.. each month is
- * basically its own view".
- *
- * So a VIEW IS A BUDGET SET, and a set is named by a KEY:
+ * Sean, 2026-09-16, of a month: "the budget set for that particular month..
+ * each month is basically its own view". A set is named by a KEY:
  *
  *   'all'           All Time — the amounts on the lines themselves
  *   'm:YYYY-MM'     one month, each its own set
- *   'v:<id>'        a named view
+ *
+ * WHAT IS GONE, and it is most of why this file was called `views`. There
+ * was a `View:` dropdown over the budget from 2026-09-16 — Month, All Time,
+ * and New View, "in this view, budget changes are unique to that view only"
+ * — with named views keyed `v:<id>` and a `View` record behind each one.
+ * Sean removed the dropdown on 2026-09-21 ("always have a month selected")
+ * and then the feature ("drop named views"). The screen reads a month and
+ * nothing else; `ALL_TIME` stays because `Line.budget` is a real stored
+ * number that this key names, and a device that made a named view keeps its
+ * `v:` rows in `budgets` where nothing reads them — see BudgetAmount on why
+ * they are left rather than migrated away.
  *
  * WHY THE LINE KEEPS ITS OWN `budget`. The All Time set is `Line.budget`,
- * untouched, so nothing that exists migrates and a store that never opens the
- * dropdown behaves exactly as it did. Every other set is `BudgetAmount`
+ * untouched, so nothing that exists migrates and a store written before any
+ * of this behaves exactly as it did. Every other set is `BudgetAmount`
  * records layered over it.
  *
  * WHY A RECORD PER (SET, LINE) rather than a map per set. The merge's whole
@@ -40,11 +47,6 @@
  * money cannot roll forward out of a month that was never assigned anything,
  * but under the fallback every month had been.
  *
- * A NAMED VIEW STILL FALLS BACK, and that is not an inconsistency. A view is
- * one what-if budget with no calendar under it, so there is no "unassigned
- * month" to be honest about; starting it from what the lines normally hold is
- * the whole point of being able to ask what if.
- *
  * WHAT CARRIES. Sean, same day: "assignments that aren't spent by the end of
  * the month carry over." A line's available in a month is therefore not its
  * own arithmetic but a running one — everything assigned to it up to and
@@ -53,14 +55,13 @@
  */
 import { assignedFor, type AssignMode } from './budget';
 import { touch } from './merge';
-import type { BudgetAmount, Line, Txn, View } from './types';
+import type { BudgetAmount, Line, Txn } from './types';
 
 /* The helpers take the COLLECTION they read, not the whole Store — a screen
  * holds `budgets` as a prop and should not have to hold a Store to ask what a
  * line is budgeted. A Store satisfies both shapes structurally, so every
  * caller that has one still passes it whole. */
 type HasBudgets = { budgets: readonly BudgetAmount[] };
-type HasViews = { views: readonly View[] };
 
 /** The All Time set: the amounts written on the lines themselves. */
 export const ALL_TIME = 'all';
@@ -75,11 +76,6 @@ export function setMonth(set: string): string | null {
   return set.startsWith('m:') ? set.slice(2) : null;
 }
 
-/** The set key for a named view. */
-export function viewSet(id: string): string {
-  return `v:${id}`;
-}
-
 /** `YYYY-MM` for a `YYYY-MM-DD` day, or for a Date's local calendar month. */
 export function monthOf(day: string): string {
   return day.slice(0, 7);
@@ -88,30 +84,31 @@ export function monthOf(day: string): string {
 /**
  * The id a (set, line) amount has, derived so two devices agree.
  *
- * `|` cannot appear in either half: a set key is 'all', 'm:' + a date, or
- * 'v:' + an id, and ids are generated from the same alphabet everywhere.
+ * `|` cannot appear in either half: a set key is 'all' or 'm:' + a date,
+ * and ids are generated from the same alphabet everywhere.
  */
 export function budgetId(set: string, line: string): string {
   return `${set}|${line}`;
 }
 
-/** Live views, in order. */
-export function viewsOf(store: HasViews): View[] {
-  return store.views.filter((v) => !v.deleted).slice().sort((a, b) => a.order - b.order);
-}
-
 /**
  * What this line is budgeted in this set.
  *
- * All Time reads the line. A MONTH reads its own record and nothing else — an
- * unassigned month is assigned zero. A named view reads its own record and
- * falls back to the line. See the head comment for why the two differ.
+ * All Time reads the line. A MONTH reads its own record and nothing else —
+ * an unassigned month is assigned ZERO, which is the whole of "assigned by
+ * month" (see the head comment for what the old fallback cost).
+ *
+ * The third case went with named views on 2026-09-21: a `v:` set read its
+ * own record and fell back to the line, because a what-if budget with no
+ * calendar under it has no unassigned month to be honest about. There are
+ * no such sets to ask about any more, and a leftover `v:` row that somehow
+ * reached this now reads as an unassigned month — zero — which is the safe
+ * way for it to be wrong.
  */
 export function budgetIn(store: HasBudgets, set: string, line: Line): number {
   if (set === ALL_TIME) return line.budget;
   const row = store.budgets.find((b) => b.id === budgetId(set, line.id) && !b.deleted);
-  if (row !== undefined) return row.amount;
-  return setMonth(set) === null ? line.budget : 0;
+  return row?.amount ?? 0;
 }
 
 /**

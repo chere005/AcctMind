@@ -1015,7 +1015,8 @@ function LineRow({
    * What this line is budgeted IN THE ACTIVE SET.
    *
    * Passed in rather than read off the line, because `line.budget` is only
-   * the All Time answer — a month or a named view has its own (core/views.ts).
+   * the All Time answer, which nothing draws — the MONTH has its own record
+   * (core/views.ts), and that is what a row shows.
    */
   budgeted: number;
   /**

@@ -88,9 +88,10 @@ two views of one stored number.
 side of the month name step through the year; what a line is assigned is
 stored per month, so September's plan is not October's, and what a month
 leaves unspent carries into the next one. There was a `View:` dropdown here
-offering All Time and named what-if views until 2026-09-21; it is gone
-("always have a month selected"). The sets it wrote still exist in the data
-and nothing was deleted — there is simply one way in.
+until 2026-09-21, offering All Time and **named what-if views**; both are
+gone — "always have a month selected", then "drop named views". No record
+was deleted for it: a file written when views existed loads unchanged, its
+amounts are simply never read again, and the store is still v4.
 
 **Lines are selectable**, the same round tick the ledger's rows wear, with a
 bar at the foot of the screen saying how many. No sum: a budget selection is

@@ -39,7 +39,6 @@ const STORE = JSON.stringify({
     { id: 'b1l', name: 'Cinema', category: 'B', budget: 3000, needs: 0, snoozed: false, order: 10, created: 1, updated: 1 },
     { id: 'b2l', name: 'Games', category: 'B', budget: 4000, needs: 0, snoozed: false, order: 20, created: 1, updated: 1 },
   ],
-  views: [],
   budgets: [],
 });
 

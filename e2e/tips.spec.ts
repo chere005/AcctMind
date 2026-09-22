@@ -33,7 +33,6 @@ const STORE = () => JSON.stringify({
     id: 'l1', name: 'Groceries', category: 'c1', budget: 0, needs: 30000,
     snoozed: false, order: 0, created: 1, updated: 1,
   }],
-  views: [],
   budgets: [monthBudget('l1', 25000)],
 });
 

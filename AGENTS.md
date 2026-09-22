@@ -61,12 +61,18 @@ learned goes in the commit that learns it.
 
 - **The Budget tab reads ONE MONTH, and there is no way to ask for
   another.** Sean, 2026-09-21: "get rid of the view dropdown and all time…
-  always have a month selected." `ViewPick.tsx` and the `budgetView` pref
-  are gone; the set is `monthSet(prefs.budgetMonth)` and nothing else
-  computes one. `ALL_TIME` and `viewSet` still EXIST in core, because
-  `budgetIn` reads what earlier versions wrote there and no record was
-  tombstoned — but nothing in the app reaches them, and a new code path that
-  does is re-opening a decision rather than fixing a gap.
+  always have a month selected", then "drop named views". `ViewPick.tsx`,
+  the `budgetView` pref, the `View` record and `viewSet`/`viewsOf` are all
+  gone; the set is `monthSet(prefs.budgetMonth)` and nothing else computes
+  one. `ALL_TIME` stays, because `Line.budget` is a real stored number that
+  key names.
+
+  **Nothing was migrated away, and that is the rule rather than the
+  leftover.** A file written while views existed still loads, still reports
+  zero dropped rows, and keeps its `v:` budget amounts where nothing reads
+  them — the store is still v4. This device is the only copy (see above);
+  dropping records because a feature went is how a bookkeeping change
+  becomes lost money. `store.test.ts` pins all four halves of that.
 
 - **The drop rule is CANON, byte for byte.** `packages/core/src/rowslots.ts`
   is `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes

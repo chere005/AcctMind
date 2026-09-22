@@ -36,7 +36,7 @@ const STORE = JSON.stringify({
     { id: 'C', name: 'Cash', color: '#f0b429', order: 1, created: 1, updated: 1 },
     { id: 'B', name: 'Savings', color: '#66d695', order: 2, created: 1, updated: 1 },
   ],
-  categories: [], lines: [], views: [], budgets: [],
+  categories: [], lines: [], budgets: [],
   txns: [
     { id: 'a1', name: 'Coffee', description: '', amount: -450, date: '2026-08-20', account: 'A', category: null, order: 40, created: 1, updated: 1 },
     { id: 'a2', name: 'Lunch', description: '', amount: -1250, date: '2026-08-19', account: 'A', category: null, order: 30, created: 2, updated: 2 },

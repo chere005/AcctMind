@@ -9,8 +9,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  STORE_VERSION, addTxn, emptyStore, live, normalizeTxn, parseStore, removeTxn, serialize,
-  tombstoneMany, updateTxn,
+  STORE_VERSION, addTxn, budgetIn, emptyStore, live, normalizeTxn, parseStore, removeTxn,
+  serialize, tombstoneLines, tombstoneMany, updateTxn,
 } from '../src/index';
 import type { Txn } from '../src/index';
 
@@ -413,5 +413,100 @@ describe('tombstoneMany — the pick bar\'s Delete', () => {
     const before = store();
     tombstoneMany(before, ['a'], 5000);
     expect(live(before.txns).map((t) => t.id)).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('a file written while NAMED VIEWS existed', () => {
+  /*
+   * They lived from 2026-09-16 to 2026-09-21 — a `views` array of records,
+   * and budget amounts keyed `v:<id>`. Sean: "drop named views."
+   *
+   * The feature going away must not cost anybody a load. This is the whole
+   * of what a device that used one is owed: the file opens, nothing is
+   * reported as damaged, and every record that is still about something
+   * comes through untouched.
+   */
+  const OLD = JSON.stringify({
+    v: 4,
+    accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 1, updated: 1 }],
+    categories: [{ id: 'c1', name: 'Food', color: '#66d695', order: 0, created: 1, updated: 1 }],
+    lines: [{
+      id: 'l1', name: 'Groceries', category: 'c1', budget: 700, needs: 0,
+      snoozed: false, order: 0, created: 1, updated: 1,
+    }],
+    views: [{ id: 'v7', name: 'What if', order: 0, created: 1, updated: 1 }],
+    budgets: [
+      { id: 'm:2026-09|l1', set: 'm:2026-09', line: 'l1', amount: 500, created: 1, updated: 1 },
+      { id: 'v:v7|l1', set: 'v:v7', line: 'l1', amount: 900, created: 1, updated: 1 },
+    ],
+    txns: [],
+  });
+
+  it('opens, and reports nothing as damaged', () => {
+    const out = parseStore(OLD);
+    expect(out.ok).toBe(true);
+    // ZERO. The `views` array is not read any more, and a key nobody reads
+    // is not a bad row — a count here would put "1 saved row could not be
+    // read" in front of someone whose data is perfectly fine.
+    if (out.ok) expect(out.dropped).toBe(0);
+  });
+
+  it('keeps every record that is still about something', () => {
+    const out = parseStore(OLD);
+    if (!out.ok) throw new Error(out.error);
+    expect(out.store.lines[0]?.budget).toBe(700);
+    expect(budgetIn(out.store, 'm:2026-09', out.store.lines[0]!)).toBe(500);
+  });
+
+  it('keeps the view\'s own amounts too, rather than deleting them on load', () => {
+    // Inert, not destroyed. Dropping records because a feature went is how
+    // a bookkeeping change becomes lost money, and this store is the only
+    // copy there is.
+    const out = parseStore(OLD);
+    if (!out.ok) throw new Error(out.error);
+    expect(out.store.budgets.find((b) => b.set === 'v:v7')?.amount).toBe(900);
+  });
+
+  it('does not write the views back out', () => {
+    const out = parseStore(OLD);
+    if (!out.ok) throw new Error(out.error);
+    const again = serialize(out.store);
+    expect(again).not.toContain('"views"');
+    expect(again).not.toContain('What if');
+    // And what it wrote loads as itself — the round trip a save depends on.
+    const back = parseStore(again);
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.store).toEqual(out.store);
+  });
+});
+
+describe('tombstoneLines — the budget bar\'s Delete', () => {
+  const store = () => ({
+    ...emptyStore(),
+    lines: [
+      { id: 'l1', name: 'A', category: 'c1', budget: 0, needs: 0, snoozed: false, order: 0, created: 1, updated: 1 },
+      { id: 'l2', name: 'B', category: 'c1', budget: 0, needs: 0, snoozed: false, order: 1, created: 1, updated: 1 },
+    ],
+    txns: [txn({ id: 't1', category: 'l1' })],
+  });
+
+  it('tombstones what was picked, on one clock, and leaves the rest', () => {
+    const next = tombstoneLines(store(), ['l1'], 5000);
+    expect(next.lines.find((l) => l.id === 'l1')?.deleted).toBe(true);
+    expect(next.lines.find((l) => l.id === 'l1')?.updated).toBe(5000);
+    expect(next.lines.find((l) => l.id === 'l2')?.deleted).toBeUndefined();
+  });
+
+  it('leaves the transactions filed against them ALONE', () => {
+    // `onDeleteLine` repeated, not reinterpreted: deleting one line has
+    // never re-filed its spending, and a bulk delete that did would make
+    // "delete four" mean something the single delete does not.
+    const next = tombstoneLines(store(), ['l1'], 5000);
+    expect(next.txns[0]?.category).toBe('l1');
+  });
+
+  it('returns the very same store for an empty selection', () => {
+    const before = store();
+    expect(tombstoneLines(before, [], 5000)).toBe(before);
   });
 });

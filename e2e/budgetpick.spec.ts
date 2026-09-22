@@ -47,7 +47,6 @@ const STORE = () => JSON.stringify({
     { id: 't1', name: 'Shop', amount: -12000, date: today(), account: 'a1', category: 'l1', order: 2, created: 1, updated: 1 },
     { id: 't2', name: 'Latte', amount: -1000, date: today(), account: 'a1', category: 'l2', order: 1, created: 1, updated: 1 },
   ],
-  views: [],
   budgets: [monthBudget('l1', 5000), monthBudget('l2', 2500), monthBudget('l3', 120000)],
 });
 
@@ -212,7 +211,7 @@ test('the No Category row has no selector, because there is no record', async ({
     categories: [{ id: 'c1', name: 'Food', color: '#66d695', order: 0, created: 1, updated: 1 }],
     lines: [{ id: 'l1', name: 'Groceries', category: 'c1', budget: 0, needs: 0, snoozed: false, order: 0, created: 1, updated: 1 }],
     txns: [{ id: 't9', name: 'Unfiled', amount: -500, date: today(), account: 'a1', category: null, order: 1, created: 1, updated: 1 }],
-    views: [], budgets: [],
+    budgets: [],
   }));
   await page.getByTestId('tab-budget').click();
   await expect(page.getByTestId('line-row-none')).toBeVisible();
@@ -243,7 +242,7 @@ test('the count is still READABLE with the three buttons beside it', async ({ pa
       id: `l${i}`, name: `Line ${i}`, category: 'c1', budget: 0, needs: 0,
       snoozed: false, order: i, created: 1, updated: 1,
     })),
-    txns: [], views: [], budgets: [],
+    txns: [], budgets: [],
   }));
   await page.getByTestId('tab-budget').click();
   await page.getByTestId('budget-picked-all').click();
