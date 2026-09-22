@@ -27,7 +27,7 @@ import {
   live, makeTxn, moveLineTo, moveTxnTo,
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
-  REORDER_GAP, assignMany, budgetCsv, undoTo, budgetIn, carriedInto, linesIn, monthOf,
+  REORDER_GAP, assignMany, budgetCsv, planSync, serialize, undoTo, budgetIn, carriedInto, linesIn, monthOf,
   monthSet, today, tombstone, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
   type AssignMode, type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
@@ -38,6 +38,7 @@ import { Import } from './src/Import';
 import { saveTextFile } from './src/savefile';
 import * as peer from './src/peer';
 import * as sync from './src/sync';
+import * as shared from './src/icloudfile';
 import { AddTransaction } from './src/AddTransaction';
 import { Devices } from './src/Devices';
 import { BudgetScreen, type Anchor, type LineField } from './src/BudgetScreen';
@@ -182,6 +183,47 @@ export default function App() {
    */
   const storeRef = useRef<Store | null>(null);
 
+  /**
+   * THE SHARED FILE in iCloud Drive — the transport the Tauri Mac app can
+   * reach (Sean, 2026-09-21: "store file in an iCloud Drive container both
+   * read").
+   *
+   * It is `planSync` and nothing else, which is the whole reason this is
+   * six lines rather than a module: that function already took the remote
+   * as a STRING, so a third transport needed no new rule about merging,
+   * pruning or when to publish. What differs between the three is only
+   * where the bytes come from.
+   *
+   * `storeRef`, not `phase`: a reconcile can land while a peer frame is
+   * being merged, and the ref is the ledger as it stands at that instant —
+   * see the note on storeRef for the data loss reading state would cause.
+   */
+  const reconcileShared = useCallback(async () => {
+    const local = storeRef.current;
+    if (local === null) return;
+    if (!(await shared.available())) return;
+    const plan = planSync(local, await shared.pull(), Date.now());
+    if (plan.save) {
+      storeRef.current = plan.store;
+      // Their change landed on top of ours; ours is no longer the last
+      // thing that happened here. See `undo`.
+      setUndo(null);
+      setPhase((p) => (p.k === 'ready' ? { ...p, store: plan.store } : p));
+      save(plan.store).catch((e: unknown) => setSaveError(String(e)));
+    }
+    if (plan.publish !== null) void shared.push(plan.publish);
+  }, []);
+
+  /**
+   * And when another device writes it.
+   *
+   * The phone has a metadata query behind this; the Tauri shell has
+   * nothing to give and returns a no-op unsubscribe, which is correct for
+   * a window that is open exactly while it is being used.
+   */
+  useEffect(() => shared.onRemoteChange(() => { void reconcileShared(); }),
+            [reconcileShared]);
+
   useEffect(() => {
     let running = true;
     load().then(async (loaded) => {
@@ -244,9 +286,15 @@ export default function App() {
         save(out.store).catch((e: unknown) => setSaveError(String(e)));
         peer.publish(out.store);
       }
+      // …and the shared FILE, last of the three. Same reason iCloud's
+      // key-value reconcile is after the first paint: a local-first app
+      // must not wait on a disk it does not own before drawing the ledger
+      // it does.
+      if (running) void reconcileShared();
     });
     return () => { running = false; };
-  }, []);
+  }, [reconcileShared]);
+
 
   // Another device wrote. The notification carries the new value, so no
   // second round trip — and no window in which a fresh pull could return
@@ -327,9 +375,14 @@ export default function App() {
     // sharing of it is in doubt, so it gets its own, quieter banner.
     void sync.publish(next).then((ok) => setTooBig(!ok && sync.available()));
     // And the wrist, which is a separate link on a separate transport: the
-    // And any device on this wifi. Three transports, none of which is
+    // And any device on this wifi. Four transports now, none of which is
     // allowed to break when another is unavailable.
     peer.publish(next);
+    // The shared file. Written straight rather than through `planSync`: we
+    // have just decided what this device holds, so there is nothing to
+    // merge — and a read-merge-write here would race the very next commit.
+    // Anything another device put there arrives through `reconcileShared`.
+    void shared.push(serialize(next));
   }, []);
 
   const onSave = useCallback((draft: Draft) => {
