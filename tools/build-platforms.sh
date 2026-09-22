@@ -31,6 +31,31 @@ set -e
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
 APPDIR="apps/app"
+
+# ---------------------------------------------------------------- signing
+# THE TEAM AND THE iCLOUD FLAG, defaulted here rather than left to whatever
+# shell the lane happens to run in.
+#
+# `app.config.js` reads both at PREBUILD time and they are two separate
+# questions: APPLE_TEAM_ID signs, ACCTMIND_ICLOUD asks for the iCloud
+# entitlements. A prebuild that cannot see them produces an app with no
+# entitlements and no complaint — the build goes green and the phone
+# quietly has no sync, which is the failure mode this file exists to stop
+# happening twice.
+#
+# Hardcoded, like the phone UDIDs below, because this script builds ONE
+# app on ONE machine. `:=` leaves an environment value alone, so a run that
+# wants a different team still gets one.
+#
+# The flag was off everywhere until 2026-09-21. It could not be on: a free
+# personal team cannot use the iCloud capability at all and the build dies
+# before it compiles. The team is PAID now, and a Release build carrying
+# the key-value, CloudDocuments and container entitlements was watched
+# minting `iOS Team Provisioning Profile: com.seancheren.acctmind` and
+# succeeding — see app.config.js for what each entitlement is for.
+: "${APPLE_TEAM_ID:=2LGYTL3FSJ}"
+: "${ACCTMIND_ICLOUD:=1}"
+export APPLE_TEAM_ID ACCTMIND_ICLOUD
 DESKTOP_WS="@acctmind/desktop"
 
 # ------------------------------------------------------------------- argv

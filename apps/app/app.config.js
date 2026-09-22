@@ -28,12 +28,33 @@ const baseUrl = process.env.ACCTMIND_BASE_URL || '/AcctMind';
  * and enough to run on a device, on the Mac under "Designed for iPad", and on
  * the watch.
  *
- * ACCTMIND_ICLOUD=1 additionally requests the key-value-store entitlement
- * that sync needs — and that is where the tiers part company. **A personal
- * team cannot use the iCloud capability at all**; Xcode refuses to make a
- * profile, with "Personal development teams ... do not support the iCloud
- * capability", and the build fails before it compiles anything. It needs a
- * paid Apple Developer Program membership.
+ * ACCTMIND_ICLOUD=1 additionally requests the iCloud entitlements that sync
+ * needs — and that is where the tiers part company. **A personal team cannot
+ * use the iCloud capability at all**; Xcode refuses to make a profile, with
+ * "Personal development teams ... do not support the iCloud capability", and
+ * the build fails before it compiles anything. It needs a paid Apple
+ * Developer Program membership, which this team has been since 2026-09-21
+ * (proven, not assumed: a Release build with these entitlements mints
+ * `iOS Team Provisioning Profile: com.seancheren.acctmind` and succeeds).
+ *
+ * TWO iCloud SERVICES, for two different jobs:
+ *
+ *   KEY–VALUE is the phone-to-phone path that already exists. A megabyte,
+ *   one blob, delivered by Apple with no file for anyone to open.
+ *
+ *   CLOUD DOCUMENTS is the new one — Sean, 2026-09-21, choosing it over
+ *   CloudKit: "store file in an iCloud Drive container both read". A real
+ *   file in a real folder, which is the whole point: the Tauri Mac app
+ *   reads `~/Library/Mobile Documents/iCloud~com~seancheren~acctmind/` as
+ *   an ordinary path and needs no Apple framework, no entitlement and no
+ *   signature to do it. That is the only way the desktop shell — which is
+ *   the WEB bundle in a window, with none of this app's native modules —
+ *   can ever see the same ledger as the phone.
+ *
+ * `NSUbiquitousContainers` is what makes the folder VISIBLE in iCloud
+ * Drive rather than a hidden container only the app can find. Sean's data
+ * is his (see AGENTS.md); a sync folder he cannot open in Finder is a copy
+ * of his ledger he cannot get at without this app.
  *
  * They are separate flags because coupling them, which is what this file did
  * first, means a free team cannot build the app AT ALL — the entitlement
@@ -44,6 +65,16 @@ const baseUrl = process.env.ACCTMIND_BASE_URL || '/AcctMind';
  */
 const team = process.env.APPLE_TEAM_ID;
 const wantsICloud = process.env.ACCTMIND_ICLOUD === '1';
+/**
+ * The iCloud Drive folder every surface shares.
+ *
+ * `iCloud.` + the bundle id, which is Apple's convention and also the only
+ * spelling the Mac side can DERIVE rather than be told: the path is the
+ * identifier with every `.` turned into a `~`, so this constant and
+ * `~/Library/Mobile Documents/iCloud~com~seancheren~acctmind/` are the same
+ * fact written twice, and core's `ubiquityFolder` is what keeps them so.
+ */
+const ICLOUD_CONTAINER = 'iCloud.com.seancheren.acctmind';
 const signing = {
   ...(team ? { appleTeamId: team } : {}),
   ...(wantsICloud
@@ -51,6 +82,9 @@ const signing = {
         entitlements: {
           'com.apple.developer.ubiquity-kvstore-identifier':
             '$(TeamIdentifierPrefix)$(CFBundleIdentifier)',
+          'com.apple.developer.icloud-container-identifiers': [ICLOUD_CONTAINER],
+          'com.apple.developer.icloud-services': ['CloudDocuments'],
+          'com.apple.developer.ubiquity-container-identifiers': [ICLOUD_CONTAINER],
         },
       }
     : {}),
@@ -90,6 +124,31 @@ module.exports = {
        */
       buildNumber: '1',
       infoPlist: {
+        /*
+         * THE SHARED FOLDER, made visible.
+         *
+         * Without this key the ubiquity container is real and syncing and
+         * invisible: it lives under `~/Library/Mobile Documents/` on a Mac
+         * and nowhere at all in the Files app on a phone. With it, iCloud
+         * Drive shows a folder called AcctMind that Sean can open, copy out
+         * of and back up — which is the standing rule about whose data this
+         * is, applied to the copy sync makes.
+         *
+         * `NSUbiquitousContainerIsDocumentScopePublic` is the one that does
+         * that; the other two are what the folder is called and whether iOS
+         * may move it when the app is deleted.
+         */
+        ...(wantsICloud
+          ? {
+              NSUbiquitousContainers: {
+                [ICLOUD_CONTAINER]: {
+                  NSUbiquitousContainerIsDocumentScopePublic: true,
+                  NSUbiquitousContainerName: 'AcctMind',
+                  NSUbiquitousContainerSupportedFolderLevels: 'Any',
+                },
+              },
+            }
+          : {}),
         /*
          * Local-network sync, and the reason it needs no paid membership.
          *
