@@ -30,18 +30,19 @@ import {
   Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  ALL_TIME, LONG_PRESS_MS, availableOf, budgetIn, carriedInto, dropTarget, foldLevel,
-  formatAmount, lineTone, linesIn, monthOf, monthSet, slotEntries, total, unfiledSince,
-  viewSet, viewsOf,
-  type BudgetAmount, type Category, type Line, type LineTone, type Txn,
-  type View as BudgetView,
+  LONG_PRESS_MS, availableOf, budgetIn, carriedInto, dropTarget, foldLevel,
+  formatAmount, lineTone, linesIn, monthOf, monthSet, slotEntries, toggleSelected, total,
+  unfiledSince,
+  type AssignMode, type BudgetAmount, type Category, type Line, type LineTone, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
-import { CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, XIcon } from './Icons';
+import {
+  CoinIcon, EnvelopeIcon, FlagIcon, PencilIcon, ReceiptIcon, UpArrowIcon, XIcon,
+} from './Icons';
+import { PickBar } from './PickBar';
 import { useRowDrag, type RowDrag } from './rowdrag';
 import { SectionPick } from './SectionPick';
 import { Tip, TipBubble, useTip } from './Tip';
-import { ALL_VIEW, MONTH_VIEW, ViewPick } from './ViewPick';
 import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
@@ -125,25 +126,30 @@ const KEEP_FOCUS = {
 } as unknown as Record<string, unknown>;
 
 export function BudgetScreen({
-  txns, categories, lines, views, budgets, collapsed, onCollapsed, onManage, onAddLine,
+  txns, categories, lines, budgets, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
-  onDeleteCategory, onMoveLine,
-  budgetView, budgetMonth, onBudgetView, onBudgetMonth, onNewView, menu,
+  onDeleteCategory, onMoveLine, onAssignMany, onDeleteLines,
+  budgetMonth, onBudgetMonth, menu,
 }: {
   txns: readonly Txn[];
   categories: readonly Category[];
   lines: readonly Line[];
-  views: readonly BudgetView[];
   budgets: readonly BudgetAmount[];
-  /** 'all', 'month', or a view's id — see ViewPick. A device choice. */
-  budgetView: string;
-  /** `YYYY-MM`, the month the stepper is on. */
+  /**
+   * `YYYY-MM`, the month this screen is on. There is no other answer.
+   *
+   * Sean, 2026-09-21: "get rid of the view dropdown and all time… always
+   * have a month selected." The screen asked WHICH SET from 2026-09-16 to
+   * today — All Time, a month, or a named what-if view — and a budget kept a
+   * month at a time never has more than one answer to that question. What
+   * the dropdown bought was a way to read the whole ledger at once, which is
+   * what the ledger tab is; what it cost was a screen whose every figure
+   * meant something different depending on a control above it.
+   */
   budgetMonth: string;
   /** The cog and its menu — App builds it once for both screens. */
   menu?: ReactNode;
-  onBudgetView: (id: string) => void;
   onBudgetMonth: (month: string) => void;
-  onNewView: (name: string) => void;
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
   /** Open the category manager — where a category is MADE and coloured. */
@@ -177,6 +183,20 @@ export function BudgetScreen({
    * budget." A destination and a neighbour is the pair that can say both.
    */
   onMoveLine: (line: Line, category: string, beforeId: string | null) => void;
+  /**
+   * Assign to every picked line at once — the bar's three buttons.
+   *
+   * The screen hands down WHAT each line holds and what has moved through
+   * it, because only the screen knows which set is being read; core's
+   * `assignedFor` decides what the mode makes of that, and `assignMany`
+   * writes it. Nothing about the arithmetic is here.
+   */
+  onAssignMany: (
+    picks: readonly { line: Line; budgeted: number; spent: number }[],
+    mode: AssignMode,
+  ) => void;
+  /** The bar's Delete: one tombstone each, exactly as `onDeleteLine` makes one. */
+  onDeleteLines: (ids: readonly string[]) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -191,39 +211,43 @@ export function BudgetScreen({
   const [naming, setNaming] = useState<string | null>(null);
   /** Is a row mid-drag anywhere? Only the ScrollView needs to know. */
   const [dragging, setDragging] = useState(false);
+  /**
+   * The lines picked out — the ledger's selection, on this tab (Sean,
+   * 2026-09-21: "add the same selector for budget categories").
+   *
+   * LINES, not categories, and the three buttons are why: Needs, Assigned
+   * and Spent are columns a LINE has. A heading shows their sums, so
+   * "assign this heading what it needs" is a sentence about the rows under
+   * it either way — and picking the rows says which ones, where picking the
+   * heading could only ever mean all of them.
+   *
+   * Not tied to edit mode, exactly as the ledger's is not: the dot is drawn
+   * at all times, so there is never a selection you cannot see.
+   */
+  const [picked, setPicked] = useState<readonly string[]>([]);
 
   const leaveEdit = () => { setEdit(false); setNaming(null); };
 
   /**
-   * WHICH SET, and which transactions.
+   * WHICH SET, and which transactions. One answer to both: the month.
    *
-   * All Time reads the lines' own amounts and the whole ledger. Month reads
-   * that month's set and only the transactions that landed in it (Sean,
-   * 2026-09-16: "narrowing to a month limits the budget to that month and all
-   * transactions that land in that month are the ones included"). A named
-   * view reads its own set and keeps the stepper, so it is a what-if budget
-   * you can walk through the year with.
+   * This read a `budgetView` pref until 2026-09-21 and could be All Time,
+   * the month, or a named what-if view. Sean: "get rid of the view dropdown
+   * and all time… always have a month selected." So the set is derived from
+   * the stepper and nothing else, and the transactions are the ones that
+   * LANDED in that month (Sean, 2026-09-16: "narrowing to a month limits the
+   * budget to that month and all transactions that land in that month are
+   * the ones included").
    *
-   * A view chosen and then deleted falls back to MONTH — the pref holds an
-   * id and only this screen knows which ids still exist. It fell back to All
-   * Time until 2026-09-21; the month is what a device that has chosen nothing
-   * now opens on (see prefs.ts), and a fallback that disagrees with the
-   * default is a second answer to the same question.
+   * The other two sets still EXIST in core — `ALL_TIME` is where a line's
+   * own `budget` field lives and `viewSet` still keys what any named view
+   * was given. Nothing was tombstoned: this screen stopped offering a way
+   * in, which is a change to one control rather than to anybody's data.
    */
-  const knownViews = useMemo(() => viewsOf({ views }), [views]);
-  const picked =
-    budgetView === ALL_VIEW || budgetView === MONTH_VIEW
-      || knownViews.some((v) => v.id === budgetView)
-      ? budgetView
-      : MONTH_VIEW;
-  const hasMonth = picked !== ALL_VIEW;
-  const set =
-    picked === ALL_VIEW ? ALL_TIME
-      : picked === MONTH_VIEW ? monthSet(budgetMonth)
-        : viewSet(picked);
+  const set = monthSet(budgetMonth);
   const inScope = useMemo(
-    () => (hasMonth ? txns.filter((t) => monthOf(t.date) === budgetMonth) : txns),
-    [txns, hasMonth, budgetMonth],
+    () => txns.filter((t) => monthOf(t.date) === budgetMonth),
+    [txns, budgetMonth],
   );
   /** What this line is budgeted IN THIS SET — never `line.budget` directly. */
   const budgetOf = (l: Line) => budgetIn({ budgets }, set, l);
@@ -236,19 +260,17 @@ export function BudgetScreen({
    * assigned to it in September and before, plus everything it has ever
    * spent; this map is that history, and `availableOf` adds the month itself.
    *
-   * MONTH ONLY. All Time has no months to carry between, and a named view is
-   * one what-if budget with no calendar under it — carrying into either would
-   * be inventing a timeline neither has.
+   * Unconditional since 2026-09-21, and only because the screen is: it was
+   * skipped on All Time and on a named view, neither of which has a calendar
+   * to carry along. `carriedInto` still refuses both for that reason.
    *
    * A MAP rather than a filter per line: the spending half has to look at
    * every transaction older than this month, and doing that once per line
    * turns the whole ledger into an N×M scan on every keystroke of a rename.
    */
   const carried = useMemo(
-    () => (picked === MONTH_VIEW
-      ? carriedInto({ budgets }, budgetMonth, lines, txns)
-      : new Map<string, number>()),
-    [picked, txns, lines, budgets, budgetMonth],
+    () => carriedInto({ budgets }, budgetMonth, lines, txns),
+    [txns, lines, budgets, budgetMonth],
   );
   const carryOf = (l: Line) => carried.get(l.id) ?? 0;
 
@@ -286,8 +308,8 @@ export function BudgetScreen({
    * is the only reading of "how much is in the account" a past month has.
    */
   const held = useMemo(
-    () => (hasMonth ? total(txns.filter((t) => monthOf(t.date) <= budgetMonth)) : total(txns)),
-    [txns, hasMonth, budgetMonth],
+    () => total(txns.filter((t) => monthOf(t.date) <= budgetMonth)),
+    [txns, budgetMonth],
   );
   /**
    * AVAILABLE — what the accounts hold, less what this month assigned.
@@ -421,6 +443,36 @@ export function BudgetScreen({
   const canDrag = edit
     && (flatRows.filter((x) => x.kind === 'row').length > 1 || shown.length > 1);
 
+  /**
+   * WHAT `All` PICKS: every line drawn right now, folded ones included.
+   *
+   * `flatRows` leaves a shut category's lines out — it is the DRAG's list,
+   * and a row that renders nothing has no midpoint to drop against. A
+   * selection is a different question: folding a category away is not a
+   * statement about what you meant to select, and `All` skipping the four
+   * categories you happened to have closed would be a button that quietly
+   * did something else.
+   */
+  const visible = shown.flatMap((c) => linesOf(c.id).map((l) => l.id));
+
+  /**
+   * The three buttons, resolved against the LINES rather than against what
+   * is drawn.
+   *
+   * A picked line can be filtered out from under the selection by the
+   * category picker, and an id can name a line another device deleted.
+   * Both are skipped rather than counted — core's rule for a selection that
+   * outlives its rows (`selectedTotal`) — so the press does what it can and
+   * says nothing about what it could not.
+   */
+  const pickedLines = () => picked
+    .map((id) => lines.find((l) => l.id === id))
+    .filter((l): l is Line => l !== undefined);
+  const assignPicked = (mode: AssignMode) => onAssignMany(
+    pickedLines().map((l) => ({ line: l, budgeted: budgetOf(l), spent: spentOn(l.id) })),
+    mode,
+  );
+
   return (
     <View style={styles.fill}>
       <TopBar
@@ -483,39 +535,36 @@ export function BudgetScreen({
         </View>
       </BarRow>
 
-      {/* The view, and the month BESIDE it (Sean, 2026-09-21) rather than on
-          a row of its own: they are one question — which slice of the budget
-          am I looking at — and asking it on two lines cost a third of the
-          screen above the list. The stepper is absent entirely on All Time,
-          where there is no month to be on. Arrows either side of the month
-          rather than a picker: stepping to the one before or after is almost
-          always what is wanted, and a picker makes that two taps and a
-          decision. */}
+      {/* THE MONTH, and nothing beside it.
+          
+          It shared this row with a `View:` dropdown from 2026-09-16 until
+          2026-09-21, when Sean took the dropdown out: "always have a month
+          selected." What is left is the one control that was ever pressed —
+          arrows either side, because stepping to the month before or after
+          is almost always what is wanted and a picker makes that two taps
+          and a decision. */}
       <BarRow>
-        <ViewPick picked={picked} views={knownViews} onPick={onBudgetView} onNew={onNewView} />
-        {hasMonth && (
-          <View style={styles.monthRow}>
-            <Pressable
-              onPress={() => onBudgetMonth(stepMonth(budgetMonth, -1))}
-              style={styles.monthArrow}
-              accessibilityRole="button"
-              accessibilityLabel="Previous month"
-              testID="budget-month-prev"
-            >
-              <Text style={styles.monthArrowText}>‹</Text>
-            </Pressable>
-            <Text style={styles.monthName} testID="budget-month">{monthName(budgetMonth)}</Text>
-            <Pressable
-              onPress={() => onBudgetMonth(stepMonth(budgetMonth, 1))}
-              style={styles.monthArrow}
-              accessibilityRole="button"
-              accessibilityLabel="Next month"
-              testID="budget-month-next"
-            >
-              <Text style={styles.monthArrowText}>›</Text>
-            </Pressable>
-          </View>
-        )}
+        <View style={styles.monthRow}>
+          <Pressable
+            onPress={() => onBudgetMonth(stepMonth(budgetMonth, -1))}
+            style={styles.monthArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Previous month"
+            testID="budget-month-prev"
+          >
+            <Text style={styles.monthArrowText}>‹</Text>
+          </Pressable>
+          <Text style={styles.monthName} testID="budget-month">{monthName(budgetMonth)}</Text>
+          <Pressable
+            onPress={() => onBudgetMonth(stepMonth(budgetMonth, 1))}
+            style={styles.monthArrow}
+            accessibilityRole="button"
+            accessibilityLabel="Next month"
+            testID="budget-month-next"
+          >
+            <Text style={styles.monthArrowText}>›</Text>
+          </Pressable>
+        </View>
       </BarRow>
 
       <ScrollView
@@ -551,6 +600,8 @@ export function BudgetScreen({
             onDeleteLine={onDeleteLine}
             onSnoozeLine={onSnoozeLine}
             onDeleteCategory={onDeleteCategory}
+            picked={picked}
+            onPick={(id) => setPicked((ids) => toggleSelected(ids, id))}
             drag={drag}
             canDrag={canDrag}
             headIdx={headIdxOf(c.id)}
@@ -631,7 +682,94 @@ export function BudgetScreen({
           </View>
         )}
       </ScrollView>
+
+      {/*
+        THE PICK BAR, the ledger's own, at the foot and always drawn — Sean,
+        2026-09-21: "add the same selector for budget categories."
+
+        NO SUM, and that is his word too ("it doesn't show a sum though").
+        The ledger's selection is picked in order to add it up; this one is
+        picked in order to ASSIGN to it, and a fifth figure beside four
+        money columns would be one more number to read past. What sits in
+        `detail`'s place is the three buttons.
+
+        `= 0`, `= flag`, `= up arrow` — the flag and the arrow are the marks
+        the NEEDS and SPENT columns already wear (see the column heads), so
+        each button says which column it is levelling assigned against
+        without a word on it. `= 0` is the one with no column: it is the
+        number itself.
+      */}
+      <PickBar
+        prefix="budget-picked"
+        count={picked.length}
+        onAll={() => setPicked(visible)}
+        onClear={() => setPicked([])}
+        onDelete={() => onDeleteLines(picked)}
+        extras={(
+          <>
+            <AssignBtn
+              onPress={() => assignPicked('zero')}
+              label="Assign nothing"
+              off={picked.length === 0}
+              testID="budget-assign-zero"
+            >
+              <Text style={styles.assignZero}>0</Text>
+            </AssignBtn>
+            <AssignBtn
+              onPress={() => assignPicked('needs')}
+              label="Assign up to what is needed"
+              off={picked.length === 0}
+              testID="budget-assign-needs"
+            >
+              <FlagIcon />
+            </AssignBtn>
+            <AssignBtn
+              onPress={() => assignPicked('spent')}
+              label="Assign what was spent"
+              off={picked.length === 0}
+              testID="budget-assign-spent"
+            >
+              <UpArrowIcon />
+            </AssignBtn>
+          </>
+        )}
+      />
     </View>
+  );
+}
+
+/**
+ * One of the bar's three: an `=` and the thing being levelled to.
+ *
+ * Drawn as All and Clear are drawn — the same pill inside the same 44pt
+ * target — because it is the same kind of control at the same size, and a
+ * row of buttons that agree about their shape is a row you can aim at
+ * without reading. Disabled with nothing picked, for the reason Delete is:
+ * a live control that does nothing is the one that gets pressed twice.
+ */
+function AssignBtn({ onPress, label, testID, off, children }: {
+  onPress: () => void;
+  label: string;
+  testID: string;
+  /** Nothing is picked, so there is nothing for this to assign to. */
+  off: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={off}
+      style={styles.assignHit}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled: off }}
+      testID={testID}
+    >
+      <View style={[styles.assign, off && styles.assignOff]}>
+        <Text style={styles.assignEq}>=</Text>
+        {children}
+      </View>
+    </Pressable>
   );
 }
 
@@ -649,7 +787,7 @@ function CategorySection({
   category, rows, shut, onToggle, onFoldAll, onAdd, edit, naming, setNaming,
   spentOn, budgetOf, carryOf, set,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
-  onDeleteCategory, drag, canDrag, headIdx, emptyIdx, flatIdxOf,
+  onDeleteCategory, picked, onPick, drag, canDrag, headIdx, emptyIdx, flatIdxOf,
 }: {
   category: Category;
   rows: readonly Line[];
@@ -674,6 +812,9 @@ function CategorySection({
   onDeleteLine: (line: Line) => void;
   onSnoozeLine: (line: Line, next: boolean) => void;
   onDeleteCategory: (category: Category) => void;
+  /** The line ids picked out, screen-wide. */
+  picked: readonly string[];
+  onPick: (id: string) => void;
   /** The screen's one drag, over every drawn entry. */
   drag: RowDrag;
   /** Is there anywhere for a line to go? See the screen's `canDrag`. */
@@ -842,6 +983,8 @@ function CategorySection({
             carry={carryOf(l)}
             set={set}
             edit={edit}
+            picked={picked.includes(l.id)}
+            onPick={() => onPick(l.id)}
             naming={naming === l.id}
             onName={() => setNaming(l.id)}
             onNamed={(next) => {
@@ -863,8 +1006,8 @@ function CategorySection({
 }
 
 function LineRow({
-  line, spent, budgeted, carry, set, edit, naming, onName, onNamed, onEditAmount,
-  onDelete, onSnooze, grip, lifted, dy, fixed = false,
+  line, spent, budgeted, carry, set, edit, picked = false, onPick, naming, onName, onNamed,
+  onEditAmount, onDelete, onSnooze, grip, lifted, dy, fixed = false,
 }: {
   line: Line;
   spent: number;
@@ -886,6 +1029,9 @@ function LineRow({
   /** Which set the pad should write a change into. */
   set: string;
   edit: boolean;
+  /** Is this line picked out? Always false on the No Category row. */
+  picked?: boolean;
+  onPick?: (() => void) | undefined;
   naming: boolean;
   onName: () => void;
   onNamed: (next: string) => void;
@@ -914,6 +1060,7 @@ function LineRow({
       style={[
         styles.row,
         lifted && styles.rowLifted,
+        picked && styles.rowPicked,
         { transform: [{ translateY: dy }], zIndex: lifted ? 2 : 0 },
       ]}
       testID={`line-row-${line.id}`}
@@ -933,6 +1080,34 @@ function LineRow({
         is only ever seen when something has already gone wrong with it.
       */}
       <View style={styles.rowTop}>
+      {/*
+        THE SELECTOR, first on the line and drawn whether or not edit mode is
+        on — the ledger's dot, in the ledger's shape: ROUND, where the snooze
+        box below it is square. Two controls on one row that both tick need
+        to be told apart at a glance, and the same pair says the same thing
+        one tab over (see TransactionsScreen's `boxRound`).
+        
+        On the TOP line rather than beside the snooze box, because the
+        numbers line has 300 of a phone's 307 points spent on four money
+        columns — which is why the snooze box is absolutely positioned out
+        of the flow there. There is room up here, next to the name it picks.
+        
+        Never on the No Category row: there is no record to select.
+      */}
+      {fixed || onPick === undefined ? <View style={styles.pickCol} /> : (
+        <Pressable
+          onPress={onPick}
+          style={styles.pickCol}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: picked }}
+          accessibilityLabel={picked ? `${line.name} selected` : `Select ${line.name}`}
+          testID={`line-pick-${line.id}`}
+        >
+          <View style={[styles.box, styles.boxRound, picked && styles.boxPicked]}>
+            {picked && <Text style={styles.boxTick}>✓</Text>}
+          </View>
+        </Pressable>
+      )}
       {/*
         The grip, drawn faint and always occupying its space — hidden by
         OPACITY, not by being absent, so turning edit mode on does not slide
@@ -1289,28 +1464,33 @@ const GRIP = 16;
  */
 const COL = 72;
 const INDENT = 20 + SPACE.sm + 11 + SPACE.sm;
+/** The selector column, the ledger's width exactly (see its `pickCol`). */
+const PICK = 18;
 /**
- * How far a LINE sits in — the grip and the gap after it, and nothing else.
+ * How far a LINE sits in — the selector, the grip, and the gap after each.
  *
  * Sean, 2026-09-16: "move the budget items and their check marks further to
  * the left, closer to vertically aligned with the caret." So a line name
- * starts at 20, where the caret's own box ends, rather than at INDENT (47)
- * under the category NAME. The lines read as a column under the carets now
- * instead of under the headings' text.
+ * starts where the caret's own box ends rather than at INDENT (47) under the
+ * category NAME. The lines read as a column under the carets now instead of
+ * under the headings' text.
  *
- * 20 is as far left as they go while the grip stays drawn INSIDE the indent,
- * which is what keeps edit mode from sliding every name sideways. The snooze
- * box follows to the same x — it has to stay under the first letter of the
- * name above it — so the two move together, which is how Sean asked for them.
+ * DERIVED, and that is what matters here rather than the number it comes to.
+ * Both controls are drawn INSIDE the indent, so edit mode slides nothing
+ * sideways — and the SNOOZE BOX is positioned at this same x, because it has
+ * to sit under the first letter of the name above it (Sean, same day:
+ * "immediately under the M in Milk"). Adding the selector on 2026-09-21
+ * moved the name 22 points right; typing the old 20 in two places is how the
+ * box would have been left behind under nothing.
  */
-const LINE_INDENT = GRIP + SPACE.xs;
+const LINE_INDENT = PICK + SPACE.xs + GRIP + SPACE.xs;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
   total: { color: T.dim, fontSize: 15 },
   // Never shrinks: its arrows are 44pt targets and its name is tabular so
-  // that stepping through the year does not shuffle them. The view name
-  // beside it is what gives instead — see ViewPick's `row`.
+  // that stepping through the year does not shuffle them. It shared this row
+  // with a shrinkable view name until 2026-09-21 and has it to itself now.
   monthRow: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm, flexShrink: 0 },
   monthArrow: { minWidth: TAP, minHeight: TAP, alignItems: 'center', justifyContent: 'center' },
   monthArrowText: { color: T.accent, fontSize: 22, lineHeight: 24 },
@@ -1450,13 +1630,47 @@ const styles = StyleSheet.create({
     position: 'absolute', left: LINE_INDENT, top: 0, bottom: 0,
     width: 22, alignItems: 'flex-start', justifyContent: 'center',
   },
+  // The selector's column — the ledger's `pickCol` width, so a line and a
+  // transaction wear the same control at the same distance from the edge.
+  pickCol: { width: PICK, alignItems: 'center', justifyContent: 'center' },
   box: {
     width: 15, height: 15, borderRadius: 4,
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.dim,
     alignItems: 'center', justifyContent: 'center',
   },
   boxOn: { backgroundColor: T.dim, borderColor: T.dim },
+  // ROUND for the selector, square for snooze — the ledger's pair and its
+  // reason: two controls on one row that both tick have to be told apart
+  // before they are read.
+  boxRound: { borderRadius: 999 },
+  // ACCENT, where snooze is grey. Snoozed is a standing fact about the line;
+  // a selection is something you are doing right now, and the accent is this
+  // app's one colour for that.
+  boxPicked: { backgroundColor: T.accent, borderColor: T.accent },
   boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
+  // A picked line gets a tinted ground, the ledger's `rowPicked` exactly.
+  rowPicked: { backgroundColor: T.card },
+  // The bar's three, drawn as All and Clear are drawn: the same pill inside
+  // the same 44pt target, because hitSlop is a no-op on the web and a row of
+  // buttons that agree about their shape is a row you can aim at.
+  assignHit: { minHeight: TAP, justifyContent: 'center', flexShrink: 0 },
+  // TIGHTER than All and Clear, and that is a measurement rather than a
+  // taste: three of these plus All, Clear and Delete overran a 393-point
+  // phone by 49 points, and the bar's count is what gives — it gave down to
+  // `2…`. 5 either side of an `=` and a 14pt mark is as small as the pair
+  // reads at; the height is still TAP, which is the target.
+  assign: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    borderRadius: 999, paddingHorizontal: 5, paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
+  },
+  // Dimmed AND disabled with nothing picked — Delete's rule, for Delete's
+  // reason: a live control that does nothing is the one that gets pressed
+  // twice.
+  assignOff: { opacity: 0.4 },
+  assignEq: { color: T.dim, fontSize: 12, fontWeight: '600' },
+  // The one button whose right half is a NUMBER rather than a column's mark.
+  assignZero: { color: T.dim, fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
   sectionEmpty: { color: T.faint, fontSize: 14, paddingVertical: SPACE.sm, paddingLeft: LINE_INDENT },
   empty: {
     flexGrow: 1, alignItems: 'center', justifyContent: 'center',

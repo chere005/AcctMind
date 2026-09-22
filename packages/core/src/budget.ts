@@ -105,7 +105,18 @@ export const AMOUNT_OPS: readonly AmountOp[] = ['=', '+', '-'];
  * budget exists to show.
  */
 export function applyOp(current: number, op: AmountOp, typed: number): number | null {
-  const next = op === '=' ? typed : op === '+' ? current + typed : current - typed;
+  return usable(op === '=' ? typed : op === '+' ? current + typed : current - typed);
+}
+
+/**
+ * An amount, or null when it is not one this ledger can hold.
+ *
+ * Shared by every path that COMPUTES a budget rather than parsing one, so
+ * the refusal is the same sentence wherever it is made. Past `MAX_CENTS` the
+ * value stops being exactly representable and a budget that quietly loses
+ * precision is a budget that cannot be explained.
+ */
+function usable(next: number): number | null {
   if (!Number.isSafeInteger(next)) return null;
   if (Math.abs(next) > MAX_CENTS) return null;
   // The -0 guard money.ts explains: -0 is not 0 under Object.is and becomes 0
@@ -164,6 +175,60 @@ export function lineTone(
 export function stillNeeded(line: { budget: number; needs: number; snoozed: boolean }): number {
   if (line.snoozed || line.needs <= 0) return 0;
   return Math.max(0, line.needs - line.budget);
+}
+
+/* ------------------------------------------------------------------ *
+ * Assigning to MANY lines at once.
+ *
+ * Sean, 2026-09-21: the budget gets the ledger's selection, and "next to
+ * the all and clear buttons are '= 0' which sets the category to 0, '=
+ * flag icon' which adds however much to assigned to reach the amount
+ * needed, or '= up arrow' which brings the amount assigned to match the
+ * sum of the transactions."
+ *
+ * Three sentences about ASSIGNED, and every one of them is already a rule
+ * this file holds — which is why they are here rather than in the bar that
+ * draws them. `= flag` is `stillNeeded` added on. `= up arrow` is the
+ * budget that leaves nothing available, which is `budgetFor(0, spent)` with
+ * no carry. `= 0` is zero. Naming them here means the three buttons cannot
+ * disagree with the four columns above them about what a target is.
+ * ------------------------------------------------------------------ */
+
+/** Which of the three the bar pressed. */
+export type AssignMode = 'zero' | 'needs' | 'spent';
+
+export const ASSIGN_MODES: readonly AssignMode[] = ['zero', 'needs', 'spent'];
+
+/**
+ * What one line's ASSIGNED becomes, or null when that is not an amount.
+ *
+ * `budgeted` is what the line holds IN THE SET being looked at, never
+ * `line.budget` — a month has its own (views.ts), and a bulk assign that
+ * read the All Time number would quietly overwrite September with August's
+ * plan.
+ *
+ * `needs` ADDS and never takes away, which is what "adds however much to
+ * assigned to reach the amount needed" says: a line already funded past its
+ * target keeps what it has, and a line with no target — or a snoozed one,
+ * which is a line saying it is not asking — is left exactly as it is rather
+ * than being zeroed by a button nobody pressed for that. `stillNeeded` is
+ * the one place that rule lives, so the flag agrees with the yellow.
+ *
+ * `spent` is NEGATED, and that is the ledger's sign convention rather than a
+ * trick: money out is negative, so $30 spent is -3000 and the assignment
+ * that matches it is 3000. Filing income against a line therefore assigns a
+ * negative amount, which is the true statement about a line that has been
+ * paid INTO — see applyOp on why negatives are not clamped away.
+ */
+export function assignedFor(
+  mode: AssignMode,
+  line: { needs: number; snoozed: boolean },
+  budgeted: number,
+  spent: number,
+): number | null {
+  if (mode === 'zero') return 0;
+  if (mode === 'spent') return usable(budgetFor(0, spent));
+  return usable(budgeted + stillNeeded({ ...line, budget: budgeted }));
 }
 
 /**

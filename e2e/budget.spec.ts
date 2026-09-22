@@ -8,27 +8,41 @@
  * wired to plus, that the available field is wired to the inverse, that the
  * operator works from the value as it STOOD rather than compounding on every
  * keystroke, and that the list is still there behind the pad.
+ *
+ * WHERE IT LANDS is part of that wiring since 2026-09-21. Sean: "get rid of
+ * the view dropdown and all time... always have a month selected." The tab is
+ * on a month and there is no way to ask for another set, so an amount typed
+ * here goes into THIS MONTH's own record and never onto `line.budget`. That
+ * is why every assertion below reads `assignedIn` rather than the line: the
+ * line's number would answer the same for a pad writing into the wrong set,
+ * which is the one mistake this change could make.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { pickView, stored } from './helpers';
+import { assignedIn, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
+  // `budget` is the ALL TIME number. Nothing on screen draws it any more —
+  // it is here so one test can assert it was left alone. See the header.
   lines: { id: string; name: string; category: string; budget: number; deleted?: true }[];
 };
 
 const liveLines = (s: Stored) => s.lines.filter((l) => l.deleted !== true);
 
-/** A category with one line in it, budgeted at $250. Returns the line id. */
+/**
+ * A category with one line in it, assigned $250 THIS MONTH. Returns the line id.
+ *
+ * The month is not chosen here because there is nothing to choose: the tab
+ * opens on the current month and the stepper is the only way off it. This
+ * picked All Time first, so the assertions could read `line.budget` straight
+ * back; that view is gone and `line.budget` is a number nothing shows, so
+ * the $250 lands in the month's record and `assignedIn` is what reads it.
+ */
 async function seed(page: Page): Promise<string> {
   await page.goto('./');
   await expect(page.getByTestId('budget-title')).toBeVisible();
-  // ALL TIME, said out loud. Every assertion in this file reads
-  // `line.budget`, which is the all-time set's own number — the pad writes
-  // to whichever set is being LOOKED at, and the app opens on the current
-  // month since 2026-09-21. The tests below were silent about the view
-  // because the default used to be this one.
-  await pickView(page, 'all');
+  // The month the pad is about to write into, drawn and never absent.
+  await expect(page.getByTestId('budget-month')).toBeVisible();
   await page.getByTestId('section-pick').click();
   await page.getByTestId('section-manage').click();
   await page.getByTestId('manage-add').click();
@@ -124,7 +138,13 @@ test('= replaces the value', async ({ page }) => {
   await page.getByTestId('pad-amount-op-set').click();
   await page.getByTestId('pad-amount').fill('80');
   await commit(page);
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(8000);
+  expect(await assignedIn(page, line)).toBe(8000);
+  // IN THE MONTH, AND NOWHERE ELSE. `assignedIn` on its own stays green
+  // against a pad that writes both places, and writing `line.budget` is
+  // exactly what the All Time branch here used to do — so the number the
+  // screen no longer draws is asserted to have been left at zero.
+  const row = liveLines(await stored(page) as Stored).find((l) => l.id === line);
+  expect(row?.budget).toBe(0);
 });
 
 test('+ adds to what is already there', async ({ page }) => {
@@ -134,7 +154,7 @@ test('+ adds to what is already there', async ({ page }) => {
   await page.getByTestId('pad-amount').fill('20');
   await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
   await commit(page);
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(27000);
+  expect(await assignedIn(page, line)).toBe(27000);
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$270.00');
 });
 
@@ -147,7 +167,7 @@ test('− subtracts, and can take a line below zero', async ({ page }) => {
   await page.getByTestId('pad-amount').fill('300');
   await expect(page.getByTestId('pad-amount-result')).toHaveText('-$50.00');
   await commit(page);
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(-5000);
+  expect(await assignedIn(page, line)).toBe(-5000);
 });
 
 test('the operator works from where the value STOOD, not from each keystroke', async ({ page }) => {
@@ -171,7 +191,7 @@ test('editing AVAILABLE moves what is budgeted, and the two agree', async ({ pag
   await page.getByTestId('pad-amount').fill('300');
   await commit(page);
 
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(30000);
+  expect(await assignedIn(page, line)).toBe(30000);
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$300.00');
   await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$300.00');
 });
@@ -196,7 +216,7 @@ test('and with money already spent, the two still agree', async ({ page }) => {
   await page.getByTestId('pad-amount').fill('300');
   await commit(page);
 
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(31250);
+  expect(await assignedIn(page, line)).toBe(31250);
   await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$300.00');
 });
 
@@ -226,7 +246,7 @@ test('tapping away COMMITS — it is the other way out, not a cancel', async ({ 
   await page.getByTestId('pad-backdrop').click({ position: { x: 5, y: 5 } });
   await expect(page.getByTestId('pad-amount')).toBeHidden();
 
-  expect(liveLines(await stored(page) as Stored)[0]?.budget).toBe(30000);
+  expect(await assignedIn(page, line)).toBe(30000);
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$300.00');
 });
 
@@ -305,9 +325,12 @@ test('Needs is its own stored number, beside budgeted and not the same as it', a
 
   const s = await stored(page) as Stored & { lines: { id: string; needs: number }[] };
   const row = s.lines.find((l) => l.id === line);
+  // On the LINE, not in the month's record: a target is what the line is
+  // FOR, and it does not change because you stepped to October.
   expect(row?.needs).toBe(40000);
-  // And it did NOT move what was budgeted. Two stored numbers, not one.
-  expect(row?.budget).toBe(25000);
+  // And it did NOT move what is assigned. Two stored numbers, not one — and
+  // since 2026-09-21 not even in the same record.
+  expect(await assignedIn(page, line)).toBe(25000);
 });
 
 test('a line short of its target is yellow, and funding it turns it green', async ({ page }) => {

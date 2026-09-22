@@ -199,6 +199,25 @@ export function HammerIcon({ color = T.dim, size = 14 }: { color?: string; size?
  * diagonal nobody else here has, so it is told apart by silhouette rather
  * than by detail — the only thing that survives at this size.
  */
+/**
+ * Bring this UP to what has moved — the pick bar's third button.
+ *
+ * A plain arrow rather than a copy of `ReceiptIcon`, which is what the SPENT
+ * column wears. The button is not "spent"; it is "make assigned equal it",
+ * and drawing it with the column's own mark would read as a filter.
+ */
+export function UpArrowIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 20V5" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
+      <Path
+        d="M5.5 11.5 12 5l6.5 6.5"
+        stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
 export function FlagIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">

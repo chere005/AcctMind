@@ -8,23 +8,37 @@
  * a touch screen — which has no hover to give — by tapping.
  */
 import { expect, test } from '@playwright/test';
-import { pickView, withStore } from './helpers';
+import { monthBudget, withStore } from './helpers';
 
-const STORE = JSON.stringify({
+/**
+ * One line with money on it, so the Assigned column has a number to name.
+ *
+ * The $250 is a `budgets` record for THIS MONTH, and `line.budget` is left at
+ * zero deliberately. The Budget tab reads one month and nothing else since
+ * Sean took the View dropdown out (2026-09-21, "always have a month
+ * selected"), so `line.budget` is a number the screen never draws — a fixture
+ * that put the money there would make this test green against a row reading
+ * the wrong field, which is the shape of a check that cannot fail.
+ *
+ * A FUNCTION, not a constant: the set is `m:YYYY-MM` for today, and a worker
+ * that imports the file in one month and runs the test in the next would
+ * seed a month the tab is not looking at.
+ */
+const STORE = () => JSON.stringify({
   v: 4,
   txns: [],
   accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 1, updated: 1 }],
   categories: [{ id: 'c1', name: 'Frequent', color: '#66d695', order: 0, created: 1, updated: 1 }],
   lines: [{
-    id: 'l1', name: 'Groceries', category: 'c1', budget: 25000, needs: 30000,
+    id: 'l1', name: 'Groceries', category: 'c1', budget: 0, needs: 30000,
     snoozed: false, order: 0, created: 1, updated: 1,
   }],
   views: [],
-  budgets: [],
+  budgets: [monthBudget('l1', 25000)],
 });
 
 test('a column mark says which column it is, on hover and on tap', async ({ page }) => {
-  await withStore(page, STORE);
+  await withStore(page, STORE());
   await page.getByTestId('tab-budget').click();
 
   const mark = page.getByTestId('col-budgeted');
@@ -54,7 +68,7 @@ test('a column mark says which column it is, on hover and on tap', async ({ page
 test('a tapped tip goes away by itself', async ({ page }) => {
   // It has no dismiss and must not need one: a bubble that sat there until
   // something else was tapped would be a bubble covering the row under it.
-  await withStore(page, STORE);
+  await withStore(page, STORE());
   await page.getByTestId('tab-budget').click();
   const mark = page.getByTestId('col-spent');
   await mark.click();
@@ -65,7 +79,7 @@ test('a tapped tip goes away by itself', async ({ page }) => {
 test('the round bar controls say what they are', async ({ page }) => {
   // Every one of them is a mark with no word near it, and the word was
   // already written down for a screen reader.
-  await withStore(page, STORE);
+  await withStore(page, STORE());
   await page.getByTestId('tab-budget').click();
   const pencil = page.getByTestId('budget-edit-toggle');
   await expect(pencil).toHaveText('');
@@ -77,12 +91,12 @@ test('a number says which column it is under, and still opens the pad', async ({
   // Sean, 2026-09-18: "tooltip should appear over numbers as well." Hover
   // only for the three that open a pad — a tap there has a better answer to
   // "what is this number" than a word does, and the tip must not steal it.
-  await withStore(page, STORE);
+  await withStore(page, STORE());
   await page.getByTestId('tab-budget').click();
-  // The fixture budgets the line in the ALL-TIME set; the tab opens on the
-  // current month, where that line has been assigned nothing.
-  await pickView(page, 'all');
 
+  // The fixture's $250 is assigned in the month the tab opens on, which is
+  // the only month it can be on — so the number is drawn without anything
+  // being chosen first.
   const assigned = page.getByTestId('line-budgeted-tap-l1');
   await expect(assigned).toHaveText('$250.00');
   await assigned.hover();

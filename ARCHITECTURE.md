@@ -84,6 +84,22 @@ rename or remove it.
 Edit **either** budgeted or available and the other follows, because they are
 two views of one stored number.
 
+**The budget is read a month at a time, and only a month.** Arrows either
+side of the month name step through the year; what a line is assigned is
+stored per month, so September's plan is not October's, and what a month
+leaves unspent carries into the next one. There was a `View:` dropdown here
+offering All Time and named what-if views until 2026-09-21; it is gone
+("always have a month selected"). The sets it wrote still exist in the data
+and nothing was deleted — there is simply one way in.
+
+**Lines are selectable**, the same round tick the ledger's rows wear, with a
+bar at the foot of the screen saying how many. No sum: a budget selection is
+made in order to ASSIGN to it, not to add it up. Beside **All** and **Clear**
+sit three buttons, each an `=` and the column it levels ASSIGNED against —
+`= 0` empties it, `= ⚑` tops it up to what the line NEEDS (never down), and
+`= ↑` brings it to match what has been SPENT. Then **Delete**, two presses,
+at the far end where no thumb reaching for Clear can find it.
+
 Categories and accounts are made in one **Manage** screen, reached from the
 last row of either picker — and nowhere else, so there is one place that knows
 what a new one starts as.

@@ -9,7 +9,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, addMonths, amountDigits, applyOp, availableOf, budgetFor, dayOf,
+  addDays, addMonths, amountDigits, applyOp, assignedFor, availableOf, budgetFor, dayOf,
+  type AssignMode,
   importKey, lineTone, parseDelimited, reconcileAdjustment, stillNeeded, usDate,
   wellsFargoName,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
@@ -216,7 +217,17 @@ describe('spec/budget.json', () => {
     roundTrip: [number, number][];
     roundTripCarried: [number, number, number][];
     ops: [number, AmountOp, number, number | null][];
+    assign: [AssignMode, number, boolean, number, number, number][];
   }>('budget');
+
+  it("the pick bar's three buttons are three sentences about ASSIGNED", () => {
+    for (const [mode, needs, snoozed, budgeted, spent, want] of b.assign) {
+      expect(
+        assignedFor(mode, { needs, snoozed }, budgeted, spent),
+        `${mode} · needs ${needs}${snoozed ? ' snoozed' : ''} · has ${budgeted} · spent ${spent}`,
+      ).toBe(want);
+    }
+  });
 
   it('available is budgeted PLUS spent — money out is negative', () => {
     for (const [budget, spent, want] of b.available) {

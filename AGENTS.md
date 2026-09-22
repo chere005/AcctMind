@@ -51,10 +51,22 @@ learned goes in the commit that learns it.
   `CoreMind/canon/app/src/components/PickBar.tsx` on 2026-09-21 with ChefMind
   as the `exact` row and this one recorded as a `fork` — one palette, no
   `themed()`, controls DRAWN at TAP rather than bought back with
-  `WebHitSlop`, and a `detail` slot for the selection's sum. The DIVERGENCE
-  is those four things and nothing else: change what the bar DOES here and
-  the same change is owed to ChefMind and to canon, or the two bars start
-  disagreeing about what All, Clear and a two-press Delete mean.
+  `WebHitSlop`, and two SLOTS canon has no use for — `detail` (the ledger's
+  sum) and `extras` (the Budget tab's three assign buttons). The DIVERGENCE
+  is those four things and nothing else, and both slots are deliberately
+  slots: change what the bar DOES here — the four controls, their order, the
+  2.5s fuse — and the same change is owed to ChefMind and to canon, or the
+  two bars start disagreeing about what All, Clear and a two-press Delete
+  mean.
+
+- **The Budget tab reads ONE MONTH, and there is no way to ask for
+  another.** Sean, 2026-09-21: "get rid of the view dropdown and all time…
+  always have a month selected." `ViewPick.tsx` and the `budgetView` pref
+  are gone; the set is `monthSet(prefs.budgetMonth)` and nothing else
+  computes one. `ALL_TIME` and `viewSet` still EXIST in core, because
+  `budgetIn` reads what earlier versions wrote there and no record was
+  tombstoned — but nothing in the app reaches them, and a new code path that
+  does is re-opening a decision rather than fixing a gap.
 
 - **The drop rule is CANON, byte for byte.** `packages/core/src/rowslots.ts`
   is `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes

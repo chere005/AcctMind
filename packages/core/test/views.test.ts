@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_TIME, assignedBefore, budgetId, budgetIn, budgetSetIn, monthOf, monthSet, putBudget,
-  setMonth, viewSet, viewsOf,
+  ALL_TIME, assignMany, assignedBefore, budgetId, budgetIn, budgetSetIn, monthOf, monthSet,
+  putBudget, setMonth, viewSet, viewsOf,
   type BudgetAmount, type Line, type Store, type View,
 } from '../src/index';
 
@@ -185,5 +185,85 @@ describe('putBudget', () => {
     expect(budgetSetIn(s(next), monthSet('2026-10'), 'l1')).toBe(111);
     expect(budgetSetIn(s(next), monthSet('2026-09'), 'l2')).toBe(222);
     expect(budgetSetIn(s(next), monthSet('2026-09'), 'l1')).toBe(900);
+  });
+});
+
+describe('assigning to a whole selection at once', () => {
+  const SEP = monthSet('2026-09');
+  /** A line with a target, and what the screen would hand down beside it. */
+  const pick = (l: Line, budgeted: number, spent: number) => ({ line: l, budgeted, spent });
+
+  it('writes the month, never the line — a month is not All Time', () => {
+    const l = line('l1', 4000);
+    const out = assignMany(store([l]), SEP, [pick(l, 0, -3000)], 'spent', 99)!;
+    expect(out).not.toBeNull();
+    // The line's own amount is the ALL TIME answer and is untouched.
+    expect(out.lines[0]!.budget).toBe(4000);
+    expect(out.budgets).toHaveLength(1);
+    expect(out.budgets[0]!.amount).toBe(3000);
+    expect(out.budgets[0]!.set).toBe(SEP);
+  });
+
+  it('All Time writes the LINE, because that is where All Time lives', () => {
+    const l = line('l1', 4000);
+    const out = assignMany(store([l]), ALL_TIME, [pick(l, 4000, -3000)], 'spent', 99)!;
+    expect(out.budgets).toHaveLength(0);
+    expect(out.lines[0]!.budget).toBe(3000);
+    // A record edit, so it takes the merge clock like any other.
+    expect(out.lines[0]!.updated).toBe(99);
+  });
+
+  it('is one clock for the whole press, so the writes sort together', () => {
+    const a = line('l1', 0); const b = line('l2', 0);
+    const out = assignMany(store([a, b]), SEP, [pick(a, 0, -100), pick(b, 0, -200)], 'spent', 77)!;
+    expect(out.budgets.map((x) => x.updated)).toEqual([77, 77]);
+  });
+
+  it('skips a line that already holds the answer — no record, no sync', () => {
+    const l = line('l1', 0);
+    // `= 0` over a month nobody has assigned in. Every line already reads
+    // zero there, so a bar press that minted a row per line would fill the
+    // store with records saying what it already said.
+    expect(assignMany(store([l]), SEP, [pick(l, 0, -500)], 'zero', 1)).toBeNull();
+  });
+
+  it('keeps the created stamp of a row it overwrites', () => {
+    const l = line('l1', 0);
+    const had = amount(SEP, 'l1', 500, { created: 5, updated: 5 });
+    const out = assignMany(store([l], [had]), SEP, [pick(l, 500, -9000)], 'spent', 99)!;
+    expect(out.budgets[0]!.created).toBe(5);
+    expect(out.budgets[0]!.updated).toBe(99);
+    expect(out.budgets[0]!.amount).toBe(9000);
+  });
+
+  it('carries on past a line whose new amount is not an amount', () => {
+    const big: Line = { ...line('l1', 0), needs: 0 };
+    const ok = line('l2', 0);
+    // A spend past MAX_CENTS cannot be matched; the other line was still a
+    // legitimate instruction and must not be lost with it.
+    const out = assignMany(
+      store([big, ok]), SEP,
+      [pick(big, 0, -Number.MAX_SAFE_INTEGER), pick(ok, 0, -2500)], 'spent', 99,
+    )!;
+    expect(out.budgets).toHaveLength(1);
+    expect(out.budgets[0]!.line).toBe('l2');
+  });
+
+  it('leaves every other line and every other set alone', () => {
+    const a = line('l1', 0); const b = line('l2', 0);
+    const other = amount(monthSet('2026-08'), 'l1', 700);
+    const out = assignMany(store([a, b], [other]), SEP, [pick(a, 0, -100)], 'spent', 99)!;
+    expect(out.budgets.find((x) => x.set === monthSet('2026-08'))).toEqual(other);
+    expect(out.budgets.filter((x) => x.line === 'l2')).toHaveLength(0);
+    expect(out.lines).toHaveLength(2);
+  });
+
+  it('reaches the same number the screen would draw, through budgetIn', () => {
+    const l = line('l1', 0);
+    const out = assignMany(store([l]), SEP, [pick(l, 0, -3000)], 'spent', 99)!;
+    // The round trip that matters: what was written is what the budget then
+    // READS in that set. A row with the right amount under the wrong id is
+    // invisible, and only this direction catches it.
+    expect(budgetIn({ budgets: out.budgets }, SEP, l)).toBe(3000);
   });
 });

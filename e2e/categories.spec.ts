@@ -6,9 +6,15 @@
  * the line. These tests were written for the old one-level model and are
  * rewritten rather than deleted: every one of them still describes something
  * the app has to do, just one level down.
+ *
+ * The money a line holds is what it is ASSIGNED IN THE MONTH on screen, and
+ * since 2026-09-21 there is no other kind — Sean: "get rid of the view
+ * dropdown and all time... always have a month selected." `line.budget` is
+ * where All Time used to put it and nothing draws it any more, so what a line
+ * is assigned gets read with `assignedIn` rather than off the record.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { fresh, pickView, setSign, stored } from './helpers';
+import { assignedIn, fresh, setSign, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -113,9 +119,12 @@ test('the Budget tab opens on a default category rather than an empty state', as
 
 test('a category is a heading, and the money is on the line inside it', async ({ page }) => {
   await page.goto('./');
-  // The money asserted below is `line.budget`, the ALL-TIME number, and the
-  // pad writes to whichever set is on screen — the month, by default.
-  await pickView(page, 'all');
+  // The pad writes into whichever set the tab is on, and that is always a
+  // MONTH now. This picked All Time first, so the amount could be read
+  // straight back off `line.budget`; the dropdown that made that possible is
+  // gone, and so is the only screen that drew the field. `assignedIn` asks
+  // the month instead — which is also what makes this test able to fail if
+  // the pad ever writes into the wrong set.
   await openManage(page);
   const id = await makeCategory(page, 'Groceries');
   await page.getByTestId('manage-done').click();
@@ -124,9 +133,14 @@ test('a category is a heading, and the money is on the line inside it', async ({
   const line = await makeLine(page, id, 'Produce', '250');
 
   const s = await stored(page) as Stored;
-  // Integer minor units, like every amount in the ledger.
-  expect(liveLines(s)[0]?.budget).toBe(25000);
+  // Integer minor units, like every amount in the ledger — in this month's
+  // set, which is the only place the screen reads from.
+  expect(await assignedIn(page, line)).toBe(25000);
   expect(liveLines(s)[0]?.category).toBe(id);
+  // ...and NOT on the line's own `budget`, which is where All Time wrote.
+  // A pad still reaching that field would leave every figure on the tab at
+  // zero while the store looked right, so it is asserted rather than assumed.
+  expect(liveLines(s)[0]?.budget).toBe(0);
   // The CATEGORY holds no money of its own. Two numbers that must agree are
   // two numbers that eventually will not.
   expect(live(s)[0]).not.toHaveProperty('budget');

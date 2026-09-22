@@ -13,9 +13,18 @@
  * rather than a copy of this one, that last month's leftover turns up in this
  * month's available, and that the two figures in the header are the
  * subtraction they claim to be.
+ *
+ * A MONTH IS THE ONLY THING THE TAB CAN BE ON — Sean, 2026-09-21: "get rid of
+ * the view dropdown and all time.. always have a month selected." Every test
+ * below opened by PICKING Month from that dropdown until today, and the last
+ * one picked All Time so it could see two months at once. There is no such
+ * control: the tab opens on the current month, a test that needs another one
+ * STEPS to it, and an amount typed into the pad lands in that month's own
+ * record (`m:YYYY-MM|<line>`) rather than on `line.budget`, which nothing
+ * draws any more.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, pickView, stored } from './helpers';
+import { addTransaction, assignedIn, fresh, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -41,14 +50,13 @@ async function seedLine(page: Page): Promise<string> {
     .filter((l) => l.category === cat).pop()?.id ?? '';
 }
 
-/** Put the screen on Month, where every rule here lives. */
-async function onMonth(page: Page): Promise<void> {
-  await page.getByTestId('budget-view-pick').click();
-  await page.getByTestId('budget-view-month').click();
-  await expect(page.getByTestId('budget-month')).toBeVisible();
-}
-
-/** Assign an amount to a line, in whatever set the screen is on. */
+/**
+ * Assign an amount to a line, in the month the screen is on.
+ *
+ * Every call site assigns in the CURRENT month — the one the tab opens on —
+ * and steps the stepper afterwards if at all, which is what lets the wait
+ * below read this month's record.
+ */
 async function assign(page: Page, line: string, amount: string): Promise<void> {
   await page.getByTestId(`line-budgeted-tap-${line}`).click();
   await expect(page.getByTestId('pad-amount')).toBeVisible();
@@ -70,20 +78,19 @@ async function assign(page: Page, line: string, amount: string): Promise<void> {
    * Polling the STORE is waiting on the thing being measured. Raising the
    * element timeout would be waiting longer for the wrong signal, which
    * TESTING.md already names as the wrong fix for exactly this shape.
+   *
+   * THIS MONTH'S RECORD, not "the number anywhere in the store". The wait
+   * accepted `line.budget` OR any set's amount while All Time was a view a
+   * test could be sitting in; with the month the only set the screen has,
+   * that reading would go green on a pad writing into the wrong month —
+   * which is the one thing `assignedIn` exists to catch.
    */
   const want = Math.round(Number(amount) * 100);
   await expect
-    .poll(async () => {
-      const s = await stored(page) as {
-        lines: { id: string; budget: number }[];
-        budgets: { line: string; amount: number; deleted?: true }[];
-      };
-      const all = s.lines.find((l) => l.id === line)?.budget;
-      const set = (s.budgets ?? []).filter((b) => b.line === line && b.deleted !== true)
-        .map((b) => b.amount);
-      return [all, ...set].includes(want);
-    }, { message: `the ${amount} never reached the store`, timeout: 15_000 })
-    .toBe(true);
+    .poll(() => assignedIn(page, line), {
+      message: `the ${amount} never reached this month's record`, timeout: 15_000,
+    })
+    .toBe(want);
 }
 
 test('assigning in one month says nothing about the next — and the leftover carries', async ({ page }) => {
@@ -93,7 +100,9 @@ test('assigning in one month says nothing about the next — and the leftover ca
   // the money.
   await fresh(page);
   const line = await seedLine(page);
-  await onMonth(page);
+  // No view to pick first — the stepper is the whole of that row now, and it
+  // is drawn from the moment the tab opens.
+  await expect(page.getByTestId('budget-month')).toBeVisible();
 
   await assign(page, line, '250');
   await expect(page.getByTestId(`line-budgeted-${line}`)).toHaveText('$250.00');
@@ -137,7 +146,6 @@ test('the bar reads Available, Assigned, Account — and the first is the last l
   await addTransaction(page, { name: 'Payday', amount: '100000', day: lastMonthDay() });
   await addTransaction(page, { name: 'Coffee', amount: '-10000' });
   const line = await seedLine(page);
-  await onMonth(page);
 
   // Not -$100.00, which is all this month moved.
   await expect(page.getByTestId('budget-account')).toHaveText('$900.00');
@@ -157,7 +165,6 @@ test('an empty month still holds the account\'s balance', async ({ page }) => {
   await fresh(page);
   await addTransaction(page, { name: 'Payday', amount: '100000' });
   await seedLine(page);
-  await onMonth(page);
   await expect(page.getByTestId('budget-account')).toHaveText('$1,000.00');
 
   await page.getByTestId('budget-month-next').click();
@@ -175,7 +182,6 @@ test('the bar does not narrow with the category picker', async ({ page }) => {
   // Cents, like every amount field in this app — 100000 is $1,000.00.
   await addTransaction(page, { name: 'Payday', amount: '100000' });
   const line = await seedLine(page);
-  await onMonth(page);
   await assign(page, line, '300');
 
   const cat = (await stored(page) as Stored).lines.find((l) => l.id === line)?.category ?? '';
@@ -186,10 +192,29 @@ test('the bar does not narrow with the category picker', async ({ page }) => {
   await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
 });
 
-/** Tomorrow, as `YYYY-MM-DD` on the local calendar. */
-function tomorrowDay(): string {
-  const d = new Date(); d.setDate(d.getDate() + 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** The 1st of the month the tab opens on — today, or a day before it. */
+function firstOfThisMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+}
+
+/**
+ * The 1st of NEXT month: always after today, and never in this month's scope.
+ *
+ * This was `tomorrowDay()` while All Time could show every month at once. A
+ * month is the unit now, and "tomorrow" is inside the month being looked at
+ * on thirty days out of thirty-one and outside it on the last — a test whose
+ * scope depends on the date it runs is the coin flip TESTING.md pins the
+ * timezone down to avoid. The 1st of next month is both facts on every day
+ * of the year. Built from the parts, like every other date in this app: a
+ * `Date` stepped over a month boundary lands wherever the runtime's zone
+ * put it (see `stepMonth` in BudgetScreen).
+ */
+function firstOfNextMonth(): string {
+  const d = new Date();
+  const m = d.getMonth() + 1;
+  const y = d.getFullYear() + (m > 11 ? 1 : 0);
+  return `${y}-${String((m % 12) + 1).padStart(2, '0')}-01`;
 }
 
 test('No Category is a line that cannot be deleted, and a reconcile draws its starting line', async ({ page }) => {
@@ -198,20 +223,24 @@ test('No Category is a line that cannot be deleted, and a reconcile draws its st
   // assuming that i'm starting budgeting and tracking transactions that need
   // to be assigned after the reconcile." Two claims, one row.
   await fresh(page);
-  await addTransaction(page, { name: 'Old', amount: '-5000', day: lastMonthDay() });
-  await addTransaction(page, { name: 'Later', amount: '-2000', day: tomorrowDay() });
+  await addTransaction(page, { name: 'Old', amount: '-5000', day: firstOfThisMonth() });
+  await addTransaction(page, { name: 'Later', amount: '-2000', day: firstOfNextMonth() });
 
   await page.getByTestId('tab-budget').click();
-  // ALL TIME: the claim is that both rows land under No Category, and one of
-  // them is last month's. The tab opens on the current month now, which is
-  // the view that would leave it out.
-  await pickView(page, 'all');
+  // ONE MONTH AT A TIME. This picked All Time until 2026-09-21, to have both
+  // rows under the heading at once; with the dropdown gone, each row waits in
+  // the month it LANDED in and the test walks to it. Unfiled money is nagged
+  // for in its own month — which is the same rule the columns beside it keep.
   const row = page.getByTestId('line-row-none');
   await expect(row).toBeVisible();
   await expect(row).toContainText('No Category');
-  // Nothing assigned to it, both rows waiting, and the available is the hole.
-  await expect(page.getByTestId('line-spent-none')).toHaveText('-$70.00');
-  await expect(page.getByTestId('line-available-none')).toHaveText('-$70.00');
+  // Nothing assigned to it, this month's row waiting, and available is the hole.
+  await expect(page.getByTestId('line-spent-none')).toHaveText('-$50.00');
+  await expect(page.getByTestId('line-available-none')).toHaveText('-$50.00');
+  // The row dated into next month is waiting under the same heading there.
+  await page.getByTestId('budget-month-next').click();
+  await expect(page.getByTestId('line-spent-none')).toHaveText('-$20.00');
+  await page.getByTestId('budget-month-prev').click();
 
   // Edit mode gives it none of the controls a real line gets.
   await page.getByTestId('budget-edit-toggle').click();
@@ -230,7 +259,15 @@ test('No Category is a line that cannot be deleted, and a reconcile draws its st
   await expect(page.getByTestId('txn-row')).toHaveCount(3);
 
   await page.getByTestId('tab-budget').click();
+  // THIS month has nothing waiting any more, which is two claims in one
+  // absence: the row dated before the line stopped asking, and the $71.00
+  // Reconcile row the hammer just wrote — unfiled, dated today, right here
+  // in this month — never counted. It is an adjustment, not a purchase, so
+  // a heading that appeared for it would be the budget inventing spending.
+  await expect(page.getByTestId('line-row-none')).toHaveCount(0);
+  await expect(page.getByTestId('category-section-none')).toHaveCount(0);
+  // The row dated AFTER the line is untouched by it, and still waiting.
+  await page.getByTestId('budget-month-next').click();
   await expect(page.getByTestId('line-spent-none')).toHaveText('-$20.00');
-  // The Reconcile row is an adjustment, not a purchase: it never counts.
   await expect(page.getByTestId('line-available-none')).toHaveText('-$20.00');
 });

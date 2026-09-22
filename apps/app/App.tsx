@@ -27,16 +27,15 @@ import {
   live, makeTxn, moveLineTo, moveTxnTo,
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
-  REORDER_GAP, ALL_TIME, budgetCsv, budgetIn, carriedInto, linesIn, monthOf, monthSet, viewSet,
-  today, tombstone, tombstoneMany, touch,
+  REORDER_GAP, assignMany, budgetCsv, budgetIn, carriedInto, linesIn, monthOf,
+  monthSet, today, tombstone, tombstoneLines, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
-  type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
+  type AssignMode, type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
 } from '@acctmind/core';
 import * as Clipboard from 'expo-clipboard';
 import { AppMenu } from './src/AppMenu';
 import { Import } from './src/Import';
 import { saveTextFile } from './src/savefile';
-import { ALL_VIEW, MONTH_VIEW } from './src/ViewPick';
 import * as peer from './src/peer';
 import * as sync from './src/sync';
 import { AddTransaction } from './src/AddTransaction';
@@ -346,11 +345,10 @@ export default function App() {
   /**
    * THE BUDGET AS A FILE — Sean, 2026-09-21: "export budget".
    *
-   * What it exports is the budget as the tab is CURRENTLY READING IT: the
-   * set the View picker is on, and the month the stepper is on when that set
-   * has one. Exporting All Time from a screen showing September would be a
-   * file that disagrees with what is on the screen it was asked from, and
-   * nothing on the row would say so.
+   * What it exports is the budget as the tab is CURRENTLY READING IT — the
+   * month the stepper is on. It asked a View picker which set to use until
+   * 2026-09-21; there is one set now (Sean: "always have a month selected"),
+   * so the file and the screen cannot disagree about which budget they mean.
    *
    * The shape of the file is core's (`budgetCsv`); the numbers are the same
    * ones the rows draw, read through the same `budgetIn`/`carriedInto`.
@@ -358,18 +356,13 @@ export default function App() {
   const onExportBudget = useCallback(() => {
     if (phase.k !== 'ready') return;
     const store = phase.store;
-    const set = prefs.budgetView === ALL_VIEW ? ALL_TIME
-      : prefs.budgetView === MONTH_VIEW ? monthSet(prefs.budgetMonth)
-        : viewSet(prefs.budgetView);
-    const month = prefs.budgetView !== ALL_VIEW;
+    const set = monthSet(prefs.budgetMonth);
     const txns = live(store.txns);
     const lines = live(store.lines);
-    const inScope = month ? txns.filter((t) => monthOf(t.date) === prefs.budgetMonth) : txns;
+    const inScope = txns.filter((t) => monthOf(t.date) === prefs.budgetMonth);
     // The same map the screen draws from, so the file and the rows cannot
     // disagree about what a line is worth — see core's carriedInto.
-    const carried = prefs.budgetView === MONTH_VIEW
-      ? carriedInto(store, prefs.budgetMonth, lines, txns)
-      : new Map<string, number>();
+    const carried = carriedInto(store, prefs.budgetMonth, lines, txns);
     const rows = live(store.categories).flatMap((c) =>
       linesIn(lines, c.id).map((l) => {
         const assigned = budgetIn(store, set, l);
@@ -379,9 +372,9 @@ export default function App() {
           available: availableOf(assigned, spent, carried.get(l.id) ?? 0),
         };
       }));
-    const name = `acctmind-budget-${month ? prefs.budgetMonth : 'all-time'}.csv`;
+    const name = `acctmind-budget-${prefs.budgetMonth}.csv`;
     void saveTextFile(name, budgetCsv(rows)).then(say).catch(() => say('Could not export'));
-  }, [phase, prefs.budgetView, prefs.budgetMonth, say]);
+  }, [phase, prefs.budgetMonth, say]);
 
   const appMenu = (
     <AppMenu
@@ -453,26 +446,10 @@ export default function App() {
                 txns={live(phase.store.txns)}
                 categories={live(phase.store.categories)}
                 lines={live(phase.store.lines)}
-                views={live(phase.store.views)}
                 budgets={phase.store.budgets}
-                budgetView={prefs.budgetView}
                 budgetMonth={prefs.budgetMonth}
-                onBudgetView={(id) => setPref('budgetView', id)}
                 onBudgetMonth={(m: string) => setPref('budgetMonth', m)}
                 menu={appMenu}
-                /* A new view is a record, and picking it is a device choice —
-                   so it both syncs and lands in front of you. */
-                onNewView={(name) => {
-                  if (phase.k !== 'ready') return;
-                  const now = Date.now();
-                  const id = newId();
-                  const order = phase.store.views.reduce((n, v) => Math.max(n, v.order), 0) + REORDER_GAP;
-                  commit(phase, {
-                    ...phase.store,
-                    views: [...phase.store.views, { id, name, order, created: now, updated: now }],
-                  });
-                  setPref('budgetView', id);
-                }}
                 collapsed={prefs.collapsed}
                 onCollapsed={(ids) => setPref('collapsed', [...ids])}
                 onManage={() => setManaging('categories')}
@@ -541,6 +518,30 @@ export default function App() {
                   if (phase.k !== 'ready') return;
                   const moved = moveLineTo(live(phase.store.lines), line, category, beforeId, Date.now());
                   if (moved !== null) commit(phase, putLine(phase.store, moved));
+                }}
+                /*
+                 * The bar's three buttons, and the whole of what happens
+                 * here is deciding WHICH SET and handing it over. Core owns
+                 * both halves: `assignedFor` says what each mode makes of a
+                 * line, `assignMany` says where the answer lands.
+                 *
+                 * Null means nothing to write — every picked line already
+                 * held the amount asked for — and a commit of a store
+                 * identical to the one we have still saves it, publishes it
+                 * to every peer and pushes it to the wrist.
+                 */
+                onAssignMany={(picks, mode: AssignMode) => {
+                  if (phase.k !== 'ready') return;
+                  const out = assignMany(
+                    phase.store, monthSet(prefs.budgetMonth), picks, mode, Date.now(),
+                  );
+                  if (out !== null) commit(phase, { ...phase.store, ...out });
+                }}
+                /* One tombstone each, on one clock — `onDeleteLine` above,
+                   repeated rather than reinterpreted. */
+                onDeleteLines={(ids) => {
+                  if (phase.k !== 'ready') return;
+                  commit(phase, tombstoneLines(phase.store, ids, Date.now()));
                 }}
               />
             )}
@@ -766,23 +767,27 @@ export default function App() {
               )))}
               onDone={() => {
                 if (phase.k !== 'ready' || pad === null) return;
-                // NEEDS is its own stored number; the other two are two ways
-                // of saying what BUDGET is — see core/budget.ts.
+                // TWO PLACES, because they are two different kinds of
+                // number — see core/budget.ts.
                 //
-                // WHERE the budget lands depends on the set. All Time is the
-                // line's own amount, as it always was; a month or a named view
-                // keeps its own record and leaves the line untouched, which is
-                // the whole promise of "budget changes are unique to that view
-                // only". `needs` is NOT per set — a target is what the line is
-                // for, and it does not change because you are looking at
-                // October — so it is written on the line either way.
+                // The BUDGET goes in the set's own record and leaves the
+                // line alone, which is the whole promise of "budget changes
+                // are unique to that view only". `needs` is NOT per set — a
+                // target is what the line is FOR, and it does not change
+                // because you are looking at October — so it is written on
+                // the line.
+                //
+                // There was an All Time branch here, writing the budget onto
+                // the line, until 2026-09-21. `pad.set` comes from the Budget
+                // screen and the screen is always on a month now, so the
+                // branch was one nobody could take. The set still exists in
+                // core (`budgetIn` reads it) and holds what earlier versions
+                // wrote there; nothing reaches it from here.
                 const now = Date.now();
-                commit(phase, pad.set === ALL_TIME
-                  ? putLine(phase.store, touch({ ...pad.line, budget: pad.budget, needs: pad.needs }, now))
-                  : {
-                    ...putLine(phase.store, touch({ ...pad.line, needs: pad.needs }, now)),
-                    budgets: putBudget(phase.store, pad.set, pad.line.id, pad.budget, now),
-                  });
+                commit(phase, {
+                  ...putLine(phase.store, touch({ ...pad.line, needs: pad.needs }, now)),
+                  budgets: putBudget(phase.store, pad.set, pad.line.id, pad.budget, now),
+                });
                 setPad(null);
               }}
             />

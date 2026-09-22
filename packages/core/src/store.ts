@@ -490,6 +490,29 @@ export function tombstoneMany(store: Store, ids: readonly string[], now: number)
 }
 
 /**
+ * The same, for budget LINES — the Budget tab's pick bar (Sean, 2026-09-21).
+ *
+ * Every word of `tombstoneMany` above applies: a tombstone rather than a
+ * removal, one pass, one clock, and ids that name nothing skipped.
+ *
+ * WHAT IT DELIBERATELY DOES NOT DO is touch the transactions filed against
+ * those lines. That is `onDeleteLine`'s behaviour repeated, not a new rule —
+ * deleting one line has never re-filed its spending, and a bulk delete that
+ * did would make "delete four" mean something the single delete does not.
+ * `removeCategoryDeep` is the one place that unfiles, because deleting a
+ * whole category takes its lines with it and leaves the money pointing at
+ * nothing at all.
+ */
+export function tombstoneLines(store: Store, ids: readonly string[], now: number): Store {
+  const want = new Set(ids);
+  if (want.size === 0) return store;
+  return {
+    ...store,
+    lines: store.lines.map((l) => (want.has(l.id) ? tombstone(l, now) : l)),
+  };
+}
+
+/**
  * A store guaranteed to have somewhere to put a transaction.
  *
  * The invariant every screen depends on: there is ALWAYS at least one live

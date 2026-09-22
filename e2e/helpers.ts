@@ -105,20 +105,43 @@ export async function pickSort(page: Page, mode: 'custom' | 'date' | 'amount'): 
 }
 
 /**
- * Choose which budget SET the Budget tab reads, from the View dropdown.
+ * The set key the Budget tab is reading, today — core's `monthSet` spelled
+ * out, because the suite may not import core.
  *
- * Needed by every test that asserts on `line.budget` — the ALL-TIME number
- * — because the app opens on the current month since 2026-09-21 and the pad
- * writes to whichever set is being looked at. Before that the default WAS
- * All Time, and those tests said nothing about the view at all; the default
- * changing is what made the assumption visible.
+ * Every budget assertion needs it since 2026-09-21. The tab used to offer a
+ * View dropdown and All Time was one of the choices, so a test could put its
+ * money on `line.budget` and read it straight back. Sean took the dropdown
+ * out ("always have a month selected"), so the only amount a budget row
+ * draws is the one in THIS month's set, and a fixture that sets
+ * `line.budget` is now setting a number nothing shows.
  */
-export async function pickView(page: Page, view: 'all' | 'month'): Promise<void> {
-  await page.getByTestId('budget-view-pick').click();
-  await page.getByTestId(`budget-view-${view}`).click();
-  // The menu is a Modal; react-native-web leaves a hidden one in the DOM, so
-  // this waits on VISIBILITY — see pickSort.
-  await expect(page.getByTestId('budget-view-backdrop')).toBeHidden();
+export function thisMonthSet(): string {
+  const d = new Date();
+  return `m:${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** A `budgets` record for this month, the shape a fixture needs. */
+export function monthBudget(line: string, amount: number) {
+  const set = thisMonthSet();
+  return { id: `${set}|${line}`, set, line, amount, created: 1, updated: 1 };
+}
+
+/**
+ * What a line is ASSIGNED as the screen reads it: this month's record, or
+ * zero where the month has none.
+ *
+ * `line.budget` is the All Time number and is no longer drawn anywhere. A
+ * test that read it would pass against a pad writing into the wrong set,
+ * which is exactly the bug this indirection exists to catch.
+ */
+export async function assignedIn(page: Page, line: string): Promise<number> {
+  const s = await stored(page) as {
+    budgets?: { set: string; line: string; amount: number; deleted?: true }[];
+  };
+  const row = (s.budgets ?? []).find(
+    (b) => b.line === line && b.set === thisMonthSet() && b.deleted !== true,
+  );
+  return row?.amount ?? 0;
 }
 
 /** Walk the month grid to a day and tap it. */

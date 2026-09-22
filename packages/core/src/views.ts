@@ -51,6 +51,8 @@
  * including that month, plus everything it has spent. `assignedBefore` is the
  * first half; the ledger is the second, and budget.ts adds them.
  */
+import { assignedFor, type AssignMode } from './budget';
+import { touch } from './merge';
 import type { BudgetAmount, Line, Txn, View } from './types';
 
 /* The helpers take the COLLECTION they read, not the whole Store — a screen
@@ -207,4 +209,64 @@ export function carriedInto(
     if (before !== 0) by.set(l.id, (by.get(l.id) ?? 0) + before);
   }
   return by;
+}
+
+/**
+ * Assign to EVERY picked line at once, in one pass and on one clock.
+ *
+ * Sean, 2026-09-21: the three buttons beside All and Clear. `assignedFor`
+ * (budget.ts) is what each one MEANS; this is where the answer lands, and
+ * where it lands depends on the set — All Time writes the line itself,
+ * everything else writes a row in `budgets`. That split is `budgetIn`'s, read
+ * backwards: a helper that always wrote a budgets row would write one with
+ * `set: 'all'` that `budgetIn` then ignores, which is a save that reports
+ * success and changes nothing.
+ *
+ * WHAT IS ALREADY RIGHT IS NOT WRITTEN. A line whose amount is already the
+ * one asked for is skipped entirely — no `updated`, no record, no sync
+ * traffic. That is what keeps `= 0` over a whole budget from minting a
+ * budgets row for every line that had nothing assigned in this month
+ * anyway: an unassigned month already reads zero.
+ *
+ * A line whose new amount is not an amount at all — past `MAX_CENTS` — is
+ * skipped too, rather than taking the whole press down with it. The other
+ * forty lines were a legitimate instruction.
+ *
+ * `tombstoneMany`'s shape, deliberately (store.ts): one clock for the whole
+ * press, so the records this writes sort together on every device. NULL when
+ * there was nothing to write at all, which is `moveLineTo`'s idiom one file
+ * over — a caller that commits a store identical to the one it had still
+ * saves it, publishes it to every peer and re-renders the list.
+ */
+export function assignMany(
+  store: { lines: readonly Line[]; budgets: readonly BudgetAmount[] },
+  set: string,
+  picks: readonly { line: Line; budgeted: number; spent: number }[],
+  mode: AssignMode,
+  now: number,
+): { lines: Line[]; budgets: BudgetAmount[] } | null {
+  const lines = new Map(store.lines.map((l) => [l.id, l]));
+  const budgets = new Map(store.budgets.map((b) => [b.id, b]));
+  let changed = false;
+
+  for (const { line, budgeted, spent } of picks) {
+    const next = assignedFor(mode, line, budgeted, spent);
+    if (next === null || next === budgeted) continue;
+    changed = true;
+    if (set === ALL_TIME) {
+      // The All Time amount IS the line's, so this is a record edit and
+      // takes the merge clock like any other.
+      const was = lines.get(line.id) ?? line;
+      lines.set(line.id, touch({ ...was, budget: next }, now));
+      continue;
+    }
+    const id = budgetId(set, line.id);
+    const had = budgets.get(id);
+    budgets.set(id, {
+      id, set, line: line.id, amount: next, created: had?.created ?? now, updated: now,
+    });
+  }
+
+  if (!changed) return null;
+  return { lines: [...lines.values()], budgets: [...budgets.values()] };
 }

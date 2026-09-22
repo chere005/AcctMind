@@ -23,22 +23,36 @@
  * act on, and Delete is pushed to the far end where no thumb heading for
  * Clear can reach it" (Sean to ChefMind, 2026-09-16).
  *
- * `detail` is the one thing ChefMind's bar has no use for. Here the
+ * `detail` and `extras` are the two things ChefMind's bar has no use for.
+ * Both are SLOTS rather than behaviour, which is the line this fork holds:
+ * the four controls, their order and the fuse are still canon's, and a
+ * change to any of THOSE is owed back to ChefMind and to canon.
+ *
+ * `detail` is the first of them. Here the
  * selection is FOR adding up — Sean, 2026-08-21: "when multiple transactions
  * are selected, show the sum of their amounts" — so the sum rides beside the
  * count rather than in a bar of its own. It is a string because the bar does
  * no arithmetic: `selectedTotal` is core's and the screen has already asked.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SPACE, T, TAP } from './theme';
 
-export function PickBar({ prefix, count, detail, onAll, onClear, onDelete }: {
+export function PickBar({ prefix, count, detail, extras, onAll, onClear, onDelete }: {
   /** Names the testIDs, so the controls stay findable by name. */
   prefix: string;
   count: number;
   /** The selection's sum, already formatted. Omitted when nothing is picked. */
   detail?: string | undefined;
+  /**
+   * WHAT THIS SCREEN'S SELECTION IS FOR, drawn after Clear.
+   *
+   * The budget's three assign buttons (Sean, 2026-09-21: "next to the all
+   * and clear buttons are…"), and nothing on the ledger. A slot rather than
+   * three more props, because the bar has no business knowing what a target
+   * is — it knows where things go and that Delete ends the row.
+   */
+  extras?: ReactNode;
   /** Pick everything the screen is showing. */
   onAll: () => void;
   onClear: () => void;
@@ -101,6 +115,7 @@ export function PickBar({ prefix, count, detail, onAll, onClear, onDelete }: {
       >
         <View style={styles.pick}><Text style={styles.pickText}>Clear</Text></View>
       </Pressable>
+      {extras}
       {/* The space in "All, Clear, space, Delete". It takes whatever is left,
           so Delete ends the bar at every width instead of following Clear
           about. */}
@@ -130,9 +145,18 @@ export function PickBar({ prefix, count, detail, onAll, onClear, onDelete }: {
 
 const styles = StyleSheet.create({
   spacer: { flex: 1 },
+  // 4 and 8, where this was 8 and 12 until 2026-09-21. The Budget tab's bar
+  // carries three more controls than the ledger's and ran out of room at 393
+  // points — the COUNT is what gives here (see below), and it gave all the
+  // way down to `2…`, which is a count nobody can read. Measured: the fixed
+  // controls plus the old gaps came to 374 of a phone's 393, leaving 19 for
+  // a count that wants 76. Tightening the row is DRAWING, which is the axis
+  // this fork is already allowed to differ on; the ledger's bar has slack
+  // and simply comes out looking the same as the budget's, which is the
+  // point of their being one component.
   bar: {
-    flexDirection: 'row', alignItems: 'center', gap: SPACE.sm,
-    paddingHorizontal: SPACE.md,
+    flexDirection: 'row', alignItems: 'center', gap: SPACE.xs,
+    paddingHorizontal: SPACE.sm,
     borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.cardEdge,
     backgroundColor: T.card,
   },

@@ -29,20 +29,17 @@ export type Prefs = {
   /** Accounts folded shut, by id. Also a view choice. */
   collapsed: string[];
   /**
-   * Which budget SET the Budget tab is reading — 'all', 'month', or a view's
-   * id (see core/views.ts for the set keys those become).
+   * The month the Budget tab is on, `YYYY-MM`.
    *
-   * A view choice, so it lives here rather than on the records: which set you
-   * were last looking at is about this device, while the amounts inside the
-   * set are the ledger's and sync.
+   * A view choice, so it lives here rather than on the records: which month
+   * you were last looking at is about this device, while the amounts inside
+   * it are the ledger's and sync.
    *
-   * THE CURRENT MONTH unless this device has chosen otherwise — Sean,
-   * 2026-09-21: "the default view should be the current month". A ledger is
-   * kept a month at a time, so All Time as the opening screen answered a
-   * question nobody had just asked and hid the one they had.
+   * It had a `budgetView` beside it from 2026-09-16 — 'all', 'month', or a
+   * named view's id — until Sean took the dropdown out on 2026-09-21
+   * ("always have a month selected"). A device that saved one still has the
+   * key in its file; nothing reads it, and the next save drops it.
    */
-  budgetView: string;
-  /** The month the stepper is on, `YYYY-MM`. Only read when a set has one. */
   budgetMonth: string;
 };
 
@@ -53,7 +50,7 @@ const thisMonth = (): string => {
 };
 
 /** What a device that has never chosen anything gets. */
-export const DEFAULTS: Prefs = { amountMode: 'cents', sort: 'date', collapsed: [], budgetView: 'month', budgetMonth: thisMonth() };
+export const DEFAULTS: Prefs = { amountMode: 'cents', sort: 'date', collapsed: [], budgetMonth: thisMonth() };
 
 export async function loadPrefs(): Promise<Prefs> {
   try {
@@ -67,16 +64,11 @@ export async function loadPrefs(): Promise<Prefs> {
     // here understands.
     const sort = (data as Record<string, unknown>)['sort'];
     const collapsed = (data as Record<string, unknown>)['collapsed'];
-    const budgetView = (data as Record<string, unknown>)['budgetView'];
     const budgetMonth = (data as Record<string, unknown>)['budgetMonth'];
     return {
       amountMode: mode === 'whole' ? 'whole' : 'cents',
       sort: sort === 'custom' || sort === 'amount' ? sort : 'date',
       collapsed: Array.isArray(collapsed) ? collapsed.filter((c): c is string => typeof c === 'string') : [],
-      // A view that has since been deleted is not resolvable here — the
-      // screen falls back to the month when it cannot find the id, which is
-      // the only place that knows what views exist.
-      budgetView: typeof budgetView === 'string' && budgetView !== '' ? budgetView : 'month',
       budgetMonth: typeof budgetMonth === 'string' && /^\d{4}-\d{2}$/.test(budgetMonth)
         ? budgetMonth : thisMonth(),
     };
