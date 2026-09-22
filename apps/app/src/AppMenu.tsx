@@ -23,10 +23,11 @@
  * the menu opened INSIDE the callback, because measuring is asynchronous and
  * opening first draws one frame at the fallback position.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CogIcon } from './Icons';
+import * as shared from './icloudfile';
 import { TipBubble, useTip } from './Tip';
 import { SPACE, T, TAP } from './theme';
 import { TOPBAR_CTRL } from './TopBar';
@@ -45,6 +46,17 @@ export function AppMenu({ onImport, onExport, whole, onWhole }: {
 }) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
+  /** One line about the shared file — see where it is drawn. */
+  const [syncNote, setSyncNote] = useState('iCloud: checking…');
+  // Asked each time the menu OPENS rather than held: the container can
+  // appear or go away from outside this app entirely, and a cached answer
+  // would be the stale thing the row exists to replace.
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    void shared.status().then((s) => { if (alive) setSyncNote(`iCloud: ${s}`); });
+    return () => { alive = false; };
+  }, [open]);
   const [anchor, setAnchor] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const btn = useRef<View>(null);
   const tip = useTip();
@@ -139,6 +151,26 @@ export function AppMenu({ onImport, onExport, whole, onWhole }: {
                   {whole && <Text style={styles.boxTick}>✓</Text>}
                 </View>
               </Pressable>
+
+              {/*
+                WHETHER SYNC IS WORKING, in a sentence, at the foot.
+                
+                Not a control — the only row here that does nothing when
+                pressed — and it earns the exception. The peer link reports
+                itself on the Devices screen and iCloud's megabyte gets a
+                banner; the shared file had nothing at all, so "it is not
+                syncing" and "it is syncing and there was nothing to send"
+                looked exactly alike. On 2026-09-22 that cost an hour with
+                1,948 transactions sitting on one Mac.
+                
+                THE COG, not Devices, because Devices is not there on every
+                surface: it is drawn only when the peer module exists, so
+                the Tauri Mac app — the surface this transport was built
+                for — has no such screen at all.
+              */}
+              <View style={styles.note} testID="menu-sync">
+                <Text style={styles.noteText}>{syncNote}</Text>
+              </View>
             </Pressable>
           </Pressable>
         </Modal>
@@ -156,6 +188,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
     backgroundColor: T.card, alignItems: 'center', justifyContent: 'center',
   },
+  // The one row that is not a control: no tap target, no 44, and dimmer
+  // than the rows above it so the eye reads it as a statement.
+  note: {
+    paddingHorizontal: SPACE.md, paddingTop: SPACE.sm, paddingBottom: SPACE.md,
+    borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: T.cardEdge,
+  },
+  noteText: { color: T.faint, fontSize: 11, lineHeight: 15 },
   backdrop: { flex: 1, backgroundColor: '#00000088' },
   menu: {
     position: 'absolute', borderRadius: 14,
