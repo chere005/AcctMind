@@ -270,23 +270,9 @@ export function DollarIcon({ color, size = 14 }: { color: string; size?: number 
   );
 }
 
-/**
- * Bring this UP to what has moved — the pick bar's third button.
- *
- * A plain arrow rather than a copy of the SPENT column's own mark. The
- * button is not "spent"; it is "make assigned equal it", and drawing it with
- * the column's mark would read as a filter. It is also the one of the three
- * assign buttons with no column to borrow from, which is why it stays the
- * bar's grey while the flag beside it is the column's gold.
- */
-export function UpArrowIcon({ color = T.dim, size = 14 }: { color?: string; size?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 20V5" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-      <Path
-        d="M5.5 11.5 12 5l6.5 6.5"
-        stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
+/* An `UpArrowIcon` lived here for the pick bar's third button, on the
+ * reasoning that the button is not "spent" but "make assigned equal it", so
+ * borrowing the column's own mark would read as a filter. Sean, 2026-09-21:
+ * "= up arrow should actually just be = green $." It wears the AVAILABLE
+ * mark now, which is the truer statement anyway — what the press does is
+ * take a line's available to nothing. */

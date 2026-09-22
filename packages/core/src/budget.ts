@@ -188,9 +188,10 @@ export function stillNeeded(line: { budget: number; needs: number; snoozed: bool
  *
  * Three sentences about ASSIGNED, and every one of them is already a rule
  * this file holds — which is why they are here rather than in the bar that
- * draws them. `= flag` is `stillNeeded` added on. `= up arrow` is the
- * budget that leaves nothing available, which is `budgetFor(0, spent)` with
- * no carry. `= 0` is zero. Naming them here means the three buttons cannot
+ * draws them. `= flag` is `stillNeeded` added on. The third — an up arrow
+ * when he described it, a green `$` since he looked at it — is the budget
+ * that leaves nothing available, which is `budgetFor(0, spent)` with no
+ * carry. `= 0` is zero. Naming them here means the three buttons cannot
  * disagree with the four columns above them about what a target is.
  * ------------------------------------------------------------------ */
 

@@ -37,7 +37,7 @@ import {
 } from '@acctmind/core';
 import { Dot } from './Dot';
 import {
-  CheckIcon, DollarIcon, FlagIcon, PencilIcon, UpArrowIcon, XIcon,
+  CheckIcon, DollarIcon, FlagIcon, PencilIcon, XIcon,
 } from './Icons';
 import { PickBar } from './PickBar';
 import { useRowDrag, type RowDrag } from './rowdrag';
@@ -693,11 +693,17 @@ export function BudgetScreen({
         money columns would be one more number to read past. What sits in
         `detail`'s place is the three buttons.
 
-        `= 0`, `= flag`, `= up arrow` — the flag and the arrow are the marks
-        the NEEDS and SPENT columns already wear (see the column heads), so
-        each button says which column it is levelling assigned against
-        without a word on it. `= 0` is the one with no column: it is the
-        number itself.
+        `= 0`, `= ⚑`, `= $` — the flag and the green dollar are marks the
+        column heads already wear, so each button says which column it is
+        levelling assigned against without a word on it. `= 0` is the one
+        with no column: it is the number itself.
+
+        THE GREEN $ IS AVAILABLE'S, not Spent's red one, and it was an up
+        arrow until Sean said otherwise ("= up arrow should actually just be
+        = green $"). It reads right: the press sets assigned to match what
+        moved, which is the same thing as taking the line's AVAILABLE to
+        nothing, and available is the column a person is looking at when
+        they reach for it.
       */}
       <PickBar
         prefix="budget-picked"
@@ -729,7 +735,7 @@ export function BudgetScreen({
               off={picked.length === 0}
               testID="budget-assign-spent"
             >
-              <UpArrowIcon />
+              <DollarIcon color={T.positive} />
             </AssignBtn>
           </>
         )}

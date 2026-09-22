@@ -98,7 +98,8 @@ bar at the foot of the screen saying how many. No sum: a budget selection is
 made in order to ASSIGN to it, not to add it up. Beside **All** and **Clear**
 sit three buttons, each an `=` and the column it levels ASSIGNED against —
 `= 0` empties it, `= ⚑` tops it up to what the line NEEDS (never down), and
-`= ↑` brings it to match what has been SPENT. Then **Delete**, two presses,
+`= $` (green, the Available mark) brings it to match what has been SPENT,
+which is the same as taking Available to nothing. Then **Delete**, two presses,
 at the far end where no thumb reaching for Clear can find it.
 
 Categories and accounts are made in one **Manage** screen, reached from the

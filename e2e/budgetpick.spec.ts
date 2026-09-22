@@ -7,6 +7,9 @@
  * assigned to reach the amount needed, or '= up arrow' which brings the
  * amount assigned to match the sum of the transactions."
  *
+ * The arrow became a green `$` the same day — "= up arrow should actually
+ * just be = green $" — which changed the mark and nothing else about it.
+ *
  * The ARITHMETIC of all three is core's — `assignedFor`, replayed from
  * `spec/budget.json`, and `assignMany` for where the answer lands. What is
  * only checkable here is the WIRING: that the flag button is wired to the
@@ -151,7 +154,7 @@ test('= flag ADDS up to the target, and never takes away', async ({ page }) => {
   await expect(page.getByTestId('line-budgeted-l3')).toHaveText('$1,200.00');
 });
 
-test('= up arrow brings assigned to what actually moved', async ({ page }) => {
+test('= $ brings assigned to what actually moved', async ({ page }) => {
   await onBudget(page);
   await page.getByTestId('budget-picked-all').click();
   await page.getByTestId('budget-assign-spent').click();
@@ -265,4 +268,25 @@ test('the count is still READABLE with the three buttons beside it', async ({ pa
   const bar = (await page.getByTestId('budget-picked-bar').boundingBox())!;
   const del = (await page.getByTestId('budget-picked-delete').boundingBox())!;
   expect(del.x + del.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+});
+
+test("the bar's three buttons wear the marks of the columns they level", async ({ page }) => {
+  /*
+   * Sean named two of them by their column mark — "= flag icon", then "= up
+   * arrow should actually just be = green $" — so the flag here has to be
+   * the flag from the NEEDS head and the dollar the green one from
+   * AVAILABLE, or the buttons stop saying what they do.
+   *
+   * Compared against the COLUMN HEADS rather than against a hex, because
+   * the claim is that the two agree: repaint a column and this goes red
+   * until the button is repainted with it.
+   */
+  await onBudget(page);
+  const ink = (id: string) => page.locator(`[data-testid="${id}"] svg path`).first()
+    .evaluate((el) => el.getAttribute('stroke') ?? el.getAttribute('fill'));
+
+  expect(await ink('budget-assign-needs')).toBe(await ink('col-needs'));
+  expect(await ink('budget-assign-spent')).toBe(await ink('col-available'));
+  // And NOT the red one, which is the mistake the pair of dollars invites.
+  expect(await ink('budget-assign-spent')).not.toBe(await ink('col-spent'));
 });
