@@ -23,10 +23,11 @@
  * act on, and Delete is pushed to the far end where no thumb heading for
  * Clear can reach it" (Sean to ChefMind, 2026-09-16).
  *
- * `detail` and `extras` are the two things ChefMind's bar has no use for.
- * Both are SLOTS rather than behaviour, which is the line this fork holds:
- * the four controls, their order and the fuse are still canon's, and a
- * change to any of THOSE is owed back to ChefMind and to canon.
+ * `detail`, `extras` and an OPTIONAL `onDelete` are what ChefMind's bar has
+ * no use for. The first two are slots and the third is presence — none of
+ * them changes what a control MEANS, which is the line this fork holds: the
+ * controls, their order and the fuse are still canon's, and a change to any
+ * of THOSE is owed back to ChefMind and to canon.
  *
  * `detail` is the first of them. Here the
  * selection is FOR adding up — Sean, 2026-08-21: "when multiple transactions
@@ -56,7 +57,19 @@ export function PickBar({ prefix, count, detail, extras, onAll, onClear, onDelet
   /** Pick everything the screen is showing. */
   onAll: () => void;
   onClear: () => void;
-  onDelete: () => void;
+  /**
+   * OMIT IT and no Delete is drawn — Sean, 2026-09-21: "remove the delete
+   * button from the selection bar in the budget page, but not the
+   * transactions page."
+   *
+   * Presence, not meaning, which is the line this fork holds (see the head
+   * comment). Where the control IS drawn it is still canon's: same place at
+   * the far end, same two presses, same 2.5s fuse. Canon and ChefMind keep
+   * it mandatory, because every selection over there is one you might want
+   * to delete — and a budget line already has a delete of its own, on the
+   * row, behind the pencil.
+   */
+  onDelete?: (() => void) | undefined;
 }) {
   /**
    * Two presses, and the first one turns it red — the suite's delete
@@ -86,7 +99,7 @@ export function PickBar({ prefix, count, detail, extras, onAll, onClear, onDelet
     }
     clearTimeout(timer.current);
     setArmed(false);
-    onDelete();
+    onDelete?.();
   };
 
   return (
@@ -118,8 +131,10 @@ export function PickBar({ prefix, count, detail, extras, onAll, onClear, onDelet
       {extras}
       {/* The space in "All, Clear, space, Delete". It takes whatever is left,
           so Delete ends the bar at every width instead of following Clear
-          about. */}
+          about — and with no Delete it pushes the rest of the row left,
+          which is where the eye already is. */}
       <View style={styles.spacer} />
+      {onDelete !== undefined && (
       <Pressable
         testID={`${prefix}-delete`}
         accessibilityRole="button"
@@ -139,6 +154,7 @@ export function PickBar({ prefix, count, detail, extras, onAll, onClear, onDelet
           </Text>
         </View>
       </Pressable>
+      )}
     </View>
   );
 }

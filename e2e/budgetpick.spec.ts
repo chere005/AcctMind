@@ -184,25 +184,31 @@ test('a press writes THIS MONTH, never the line', async ({ page }) => {
   expect(await assignedIn(page, 'l1')).toBe(12000);
 });
 
-test('the bar deletes the picked lines, on the second press', async ({ page }) => {
+test('there is NO Delete here — the ledger has one, this bar does not', async ({ page }) => {
+  /*
+   * Sean, 2026-09-21: "remove the delete button from the selection bar in
+   * the budget page, but not the transactions page."
+   *
+   * Both halves, in one test, because the claim is a DIFFERENCE between two
+   * screens sharing one component — and a change that removed the control
+   * from the shared bar outright would satisfy half of it while breaking
+   * the ledger, which nothing else here would notice.
+   */
   await onBudget(page);
-  await pick(page, 'l2');
-  await pick(page, 'l3');
+  await page.getByTestId('budget-picked-all').click();
+  await expect(page.getByTestId('budget-picked-bar')).toBeVisible();
+  await expect(page.getByTestId('budget-picked-all')).toBeVisible();
+  // Not merely hidden: react-native-web leaves plenty in the DOM, so this
+  // asks whether it was rendered at all.
+  await expect(page.getByTestId('budget-picked-delete')).toHaveCount(0);
 
-  await page.getByTestId('budget-picked-delete').click();
-  // Armed, not done. One press must not remove two lines.
-  await expect(page.getByTestId('line-row-l2')).toBeVisible();
-  await page.getByTestId('budget-picked-delete').click();
+  // A line is still deletable one at a time, behind the pencil — the bar
+  // was the bulk of it, not the only way.
+  await page.getByTestId('budget-edit-toggle').click();
+  await expect(page.getByTestId('line-delete-l1')).toBeVisible();
 
-  await expect(page.getByTestId('line-row-l2')).toBeHidden();
-  await expect(page.getByTestId('line-row-l3')).toBeHidden();
-  await expect(page.getByTestId('line-row-l1')).toBeVisible();
-
-  // A tombstone, not a removal: dropping the record would work perfectly
-  // here and be undone by the next merge.
-  const s = await stored(page) as { lines: { id: string; deleted?: true }[] };
-  expect(s.lines.find((l) => l.id === 'l2')?.deleted).toBe(true);
-  expect(s.lines.find((l) => l.id === 'l1')?.deleted).toBeUndefined();
+  await page.getByTestId('tab-transactions').click();
+  await expect(page.getByTestId('picked-delete')).toBeVisible();
 });
 
 test('the No Category row has no selector, because there is no record', async ({ page }) => {
@@ -226,16 +232,16 @@ test('the No Category row has no selector, because there is no record', async ({
 
 test('the count is still READABLE with the three buttons beside it', async ({ page }) => {
   /*
-   * The bar carries three more controls here than it does on the ledger, and
-   * on a 393-point phone it overran: the fixed controls and their gaps came
-   * to 374, the count is the one thing in the bar that shrinks, and what it
-   * shrank to was `2…`.
+   * The bar carried three more controls than the ledger's and on a
+   * 393-point phone it overran: the fixed widths and gaps came to 374, the
+   * count is the one thing in there that shrinks, and what it shrank to was
+   * `2…`. Delete went later the same day, which bought back 74 points — so
+   * this now has room to spare rather than none, and it is kept because the
+   * spacing that makes it fit still lives in two files (the bar's gap and
+   * padding, the buttons' own) and a Delete could come back.
    *
    * Pinned at TWELVE selected, the widest count a budget realistically
-   * shows — every digit is tabular, so 12 and 99 are the same width. The
-   * spacing that makes it fit is in two files (the bar's gap and padding,
-   * the buttons' own padding), which is exactly the kind of arithmetic that
-   * comes undone one file at a time.
+   * shows — every digit is tabular, so 12 and 99 are the same width.
    */
   await withStore(page, JSON.stringify({
     v: 4,
@@ -264,10 +270,11 @@ test('the count is still READABLE with the three buttons beside it', async ({ pa
     return { drawn: el.getBoundingClientRect().width, wanted: w };
   });
   expect(drawn).toBeGreaterThanOrEqual(wanted - 0.5);
-  // And nothing was pushed off the end to pay for it.
+  // And nothing was pushed off the end to pay for it — the last control in
+  // the row is the third assign button now that Delete has gone.
   const bar = (await page.getByTestId('budget-picked-bar').boundingBox())!;
-  const del = (await page.getByTestId('budget-picked-delete').boundingBox())!;
-  expect(del.x + del.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
+  const last = (await page.getByTestId('budget-assign-spent').boundingBox())!;
+  expect(last.x + last.width).toBeLessThanOrEqual(bar.x + bar.width + 0.5);
 });
 
 test("the bar's three buttons wear the marks of the columns they level", async ({ page }) => {

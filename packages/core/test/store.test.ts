@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STORE_VERSION, addTxn, budgetIn, emptyStore, live, mergeStores, normalizeTxn, parseStore,
-  removeTxn, serialize, tombstone, tombstoneLines, tombstoneMany, undoTo, updateTxn,
+  removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
 } from '../src/index';
 import type { Store, Txn } from '../src/index';
 
@@ -480,36 +480,6 @@ describe('a file written while NAMED VIEWS existed', () => {
   });
 });
 
-describe('tombstoneLines — the budget bar\'s Delete', () => {
-  const store = () => ({
-    ...emptyStore(),
-    lines: [
-      { id: 'l1', name: 'A', category: 'c1', budget: 0, needs: 0, snoozed: false, order: 0, created: 1, updated: 1 },
-      { id: 'l2', name: 'B', category: 'c1', budget: 0, needs: 0, snoozed: false, order: 1, created: 1, updated: 1 },
-    ],
-    txns: [txn({ id: 't1', category: 'l1' })],
-  });
-
-  it('tombstones what was picked, on one clock, and leaves the rest', () => {
-    const next = tombstoneLines(store(), ['l1'], 5000);
-    expect(next.lines.find((l) => l.id === 'l1')?.deleted).toBe(true);
-    expect(next.lines.find((l) => l.id === 'l1')?.updated).toBe(5000);
-    expect(next.lines.find((l) => l.id === 'l2')?.deleted).toBeUndefined();
-  });
-
-  it('leaves the transactions filed against them ALONE', () => {
-    // `onDeleteLine` repeated, not reinterpreted: deleting one line has
-    // never re-filed its spending, and a bulk delete that did would make
-    // "delete four" mean something the single delete does not.
-    const next = tombstoneLines(store(), ['l1'], 5000);
-    expect(next.txns[0]?.category).toBe('l1');
-  });
-
-  it('returns the very same store for an empty selection', () => {
-    const before = store();
-    expect(tombstoneLines(before, [], 5000)).toBe(before);
-  });
-});
 
 describe('undoTo — the top bar\'s Undo', () => {
   const base = (): Store => ({

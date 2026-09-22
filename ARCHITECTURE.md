@@ -106,8 +106,10 @@ made in order to ASSIGN to it, not to add it up. Beside **All** and **Clear**
 sit three buttons, each an `=` and the column it levels ASSIGNED against —
 `= 0` empties it, `= ⚑` tops it up to what the line NEEDS (never down), and
 `= $` (green, the Available mark) brings it to match what has been SPENT,
-which is the same as taking Available to nothing. Then **Delete**, two presses,
-at the far end where no thumb reaching for Clear can find it.
+which is the same as taking Available to nothing. There is **no Delete** on
+this bar — a line is removed one at a time, on its row, behind the pencil.
+The ledger's bar keeps one, two presses, at the far end where no thumb
+reaching for Clear can find it.
 
 Categories and accounts are made in one **Manage** screen, reached from the
 last row of either picker — and nowhere else, so there is one place that knows

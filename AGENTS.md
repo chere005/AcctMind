@@ -51,13 +51,15 @@ learned goes in the commit that learns it.
   `CoreMind/canon/app/src/components/PickBar.tsx` on 2026-09-21 with ChefMind
   as the `exact` row and this one recorded as a `fork` — one palette, no
   `themed()`, controls DRAWN at TAP rather than bought back with
-  `WebHitSlop`, and two SLOTS canon has no use for — `detail` (the ledger's
-  sum) and `extras` (the Budget tab's three assign buttons). The DIVERGENCE
-  is those four things and nothing else, and both slots are deliberately
-  slots: change what the bar DOES here — the four controls, their order, the
-  2.5s fuse — and the same change is owed to ChefMind and to canon, or the
-  two bars start disagreeing about what All, Clear and a two-press Delete
-  mean.
+  `WebHitSlop`, and three things canon has no use for — `detail` (the
+  ledger's sum), `extras` (the Budget tab's three assign buttons) and an
+  OPTIONAL `onDelete`, omitted on the budget since 2026-09-21.
+
+  The line is MEANING, not presence. Two slots and a control the caller may
+  leave out do not change what All, Clear or a two-press Delete are; change
+  any of THOSE — the controls themselves, their order, the 2.5s fuse — and
+  the same change is owed to ChefMind and to canon, or the two bars start
+  disagreeing about what they mean.
 
 - **The Budget tab reads ONE MONTH, and there is no way to ask for
   another.** Sean, 2026-09-21: "get rid of the view dropdown and all time…

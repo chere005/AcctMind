@@ -28,7 +28,7 @@ import {
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
   REORDER_GAP, assignMany, budgetCsv, undoTo, budgetIn, carriedInto, linesIn, monthOf,
-  monthSet, today, tombstone, tombstoneLines, tombstoneMany, touch,
+  monthSet, today, tombstone, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
   type AssignMode, type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
 } from '@acctmind/core';
@@ -598,12 +598,6 @@ export default function App() {
                     phase.store, monthSet(prefs.budgetMonth), picks, mode, Date.now(),
                   );
                   if (out !== null) commit(phase, { ...phase.store, ...out });
-                }}
-                /* One tombstone each, on one clock — `onDeleteLine` above,
-                   repeated rather than reinterpreted. */
-                onDeleteLines={(ids) => {
-                  if (phase.k !== 'ready') return;
-                  commit(phase, tombstoneLines(phase.store, ids, Date.now()));
                 }}
               />
             )}

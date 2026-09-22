@@ -128,7 +128,7 @@ const KEEP_FOCUS = {
 export function BudgetScreen({
   txns, categories, lines, budgets, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
-  onDeleteCategory, onMoveLine, onAssignMany, onDeleteLines,
+  onDeleteCategory, onMoveLine, onAssignMany,
   budgetMonth, onBudgetMonth, menu, undo,
 }: {
   txns: readonly Txn[];
@@ -205,8 +205,6 @@ export function BudgetScreen({
     picks: readonly { line: Line; budgeted: number; spent: number }[],
     mode: AssignMode,
   ) => void;
-  /** The bar's Delete: one tombstone each, exactly as `onDeleteLine` makes one. */
-  onDeleteLines: (ids: readonly string[]) => void;
 }) {
   const [picking, setPicking] = useState(false);
   const [view, setView] = useState<string | null>(null);
@@ -700,6 +698,14 @@ export function BudgetScreen({
         THE PICK BAR, the ledger's own, at the foot and always drawn — Sean,
         2026-09-21: "add the same selector for budget categories."
 
+        AND NO DELETE — Sean, later the same day: "remove the delete button
+        from the selection bar in the budget page, but not the transactions
+        page." A line already has a delete of its own, on the row, behind
+        the pencil; what the bar offered was the same thing in bulk, sitting
+        an inch from Clear, on a screen where the selection exists to have
+        money assigned to it. The ledger keeps its Delete, which is what
+        the ledger's selection is most often for.
+
         NO SUM, and that is his word too ("it doesn't show a sum though").
         The ledger's selection is picked in order to add it up; this one is
         picked in order to ASSIGN to it, and a fifth figure beside four
@@ -723,7 +729,6 @@ export function BudgetScreen({
         count={picked.length}
         onAll={() => setPicked(visible)}
         onClear={() => setPicked([])}
-        onDelete={() => onDeleteLines(picked)}
         extras={(
           <>
             <AssignBtn
