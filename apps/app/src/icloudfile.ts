@@ -16,3 +16,16 @@ export const available = native.available;
 export const pull = native.pull;
 export const push = native.push;
 export const onRemoteChange = native.onRemoteChange;
+
+/**
+ * The same one-line answer the desktop gives, for the Devices screen.
+ *
+ * On a phone there is no ambiguity to resolve — the app holds the
+ * entitlement, so the container is either there or iCloud is off — but the
+ * screen asks one question of whichever surface it is on.
+ */
+export async function status(): Promise<string> {
+  return (await native.available())
+    ? 'container available'
+    : 'no iCloud container — signed out, or iCloud Drive is off for AcctMind';
+}

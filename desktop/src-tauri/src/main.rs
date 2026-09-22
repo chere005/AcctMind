@@ -124,12 +124,41 @@ fn icloud_available() -> bool {
         .unwrap_or(false)
 }
 
+/// What the container looks like from in here, in one line.
+///
+/// THE POINT IS THE DIFFERENCE BETWEEN "not there" AND "not allowed".
+/// `is_dir()` answers false for both, and on 2026-09-22 that cost an hour:
+/// the container existed, the Mac app published nothing, and neither end
+/// could say which of the two it was. macOS protects `~/Library/Mobile
+/// Documents` under TCC, so an app without the entitlement or Full Disk
+/// Access is refused — and refused silently, which is the one thing a sync
+/// must never be.
+///
+/// `symlink_metadata` is what separates them: it reports NotFound for a
+/// path that is not there and PermissionDenied for one we may not look at.
+#[tauri::command]
+fn icloud_status() -> String {
+    let Some(path) = store_path() else { return "not macOS".into() };
+    let Some(container) = path.parent().and_then(|d| d.parent()) else {
+        return "no container path".into();
+    };
+    match std::fs::symlink_metadata(container) {
+        Ok(m) if m.is_dir() => match std::fs::read_dir(container) {
+            Ok(_) => format!("container readable; file {}", if path.is_file() { "present" } else { "absent" }),
+            Err(e) => format!("container present but unreadable: {e}"),
+        },
+        Ok(_) => "container path is not a directory".into(),
+        Err(e) => format!("container unavailable: {e}"),
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             icloud_read,
             icloud_write,
-            icloud_available
+            icloud_available,
+            icloud_status
         ])
         .run(tauri::generate_context!())
         .expect("error while running AcctMind");

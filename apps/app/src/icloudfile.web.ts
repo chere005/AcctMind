@@ -77,6 +77,25 @@ export async function push(value: string): Promise<boolean> {
   }
 }
 
+/**
+ * What the container looks like from in here, in one line, for the Devices
+ * screen to show.
+ *
+ * It exists because `available()` answers false for two very different
+ * reasons — the folder is not there, and macOS will not let us look —
+ * and on 2026-09-22 an hour went into not knowing which. See the Rust
+ * command; `symlink_metadata` is what tells them apart.
+ */
+export async function status(): Promise<string> {
+  const invoke = bridge();
+  if (invoke === null) return 'not the desktop app';
+  try {
+    return await invoke<string>('icloud_status');
+  } catch (e) {
+    return `the bridge refused: ${String(e)}`;
+  }
+}
+
 /** Nothing tells the shell when the file changes. See the header. */
 export function onRemoteChange(_handler: () => void): () => void {
   return () => {};

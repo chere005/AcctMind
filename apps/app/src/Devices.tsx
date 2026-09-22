@@ -17,6 +17,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import * as peer from './peer';
+import * as shared from './icloudfile';
 import { SPACE, T, TAP } from './theme';
 
 type Props = {
@@ -37,6 +38,8 @@ export function Devices({ visible, peers, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [joined, setJoined] = useState(false);
   const [copied, setCopied] = useState(false);
+  /** One line about the iCloud Drive file — see where it is drawn. */
+  const [sharedState, setSharedState] = useState('checking iCloud…');
 
   // Read the pairing state on each open rather than holding it: it changes
   // from the other side of a native module.
@@ -50,6 +53,8 @@ export function Devices({ visible, peers, onClose }: Props) {
       setError(null);
       setJoined(false);
       setCopied(false);
+      setSharedState('checking iCloud…');
+      void shared.status().then(setSharedState);
     }
   }
 
@@ -88,6 +93,15 @@ export function Devices({ visible, peers, onClose }: Props) {
 
         <ScrollView contentContainerStyle={styles.body}>
           <Status paired={paired} peers={peers} />
+
+          {/* THE SHARED FILE, said out loud.
+              
+              The other two transports announce themselves — a peer count
+              here, a banner when iCloud's megabyte is exceeded — and the
+              file had nothing, so "it is not syncing" and "it is syncing
+              and there was nothing to send" looked identical. On 2026-09-22
+              that cost an hour with the ledger sitting on one Mac. */}
+          <Text style={styles.shared} testID="devices-shared">{sharedState}</Text>
 
           {error !== null && (
             <Text style={styles.error} testID="devices-error">{error}</Text>
@@ -201,6 +215,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm,
   },
   title: { color: T.text, fontSize: 28, fontWeight: '700', letterSpacing: -0.5 },
+  shared: { color: T.dim, fontSize: 13, lineHeight: 18 },
   // Drawn at TAP rather than padded up to it: hitSlop is a no-op on the web.
   barBtn: { minHeight: TAP, minWidth: TAP, justifyContent: 'center', alignItems: 'flex-end' },
   barBtnText: { color: T.accent, fontSize: 17 },
