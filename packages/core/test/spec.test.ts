@@ -14,7 +14,7 @@ import {
   importKey, lineTone, parseDelimited, reconcileAdjustment, stillNeeded, usDate,
   wellsFargoName,
   dayToDate, entryCents, formatAmount, formatDay, isDay, monthGrid, monthLabel,
-  parseAmount, signedCents, sortTxns,
+  parseAmount, signedCents, sortTxns, unassigned,
 } from '../src/index';
 import type { AmountOp } from '../src/index';
 import type { AmountMode } from '../src/index';
@@ -216,6 +216,7 @@ describe('spec/budget.json', () => {
     carried: [number, number, number, number][];
     roundTrip: [number, number][];
     roundTripCarried: [number, number, number][];
+    unassigned: [number, [number, number, number][], number][];
     ops: [number, AmountOp, number, number | null][];
     assign: [AssignMode, number, boolean, number, number, number][];
   }>('budget');
@@ -256,6 +257,13 @@ describe('spec/budget.json', () => {
       const budget = budgetFor(available, spent, carry);
       expect(availableOf(budget, spent, carry), `${available} / ${spent} / ${carry}`).toBe(available);
       expect(budgetFor(availableOf(budget, spent, carry), spent, carry)).toBe(budget);
+    }
+  });
+
+  it("the bar's Available leaves out money already spent from a line", () => {
+    for (const [held, lines, want] of b.unassigned) {
+      const shaped = lines.map(([carry, budget, spent]) => ({ carry, budget, spent }));
+      expect(unassigned(held, shaped), `${held} / ${JSON.stringify(lines)}`).toBe(want);
     }
   });
 

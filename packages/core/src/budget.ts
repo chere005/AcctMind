@@ -72,6 +72,31 @@ export function budgetFor(available: number, spent: number, carry = 0): number {
   return available - spent - carry;
 }
 
+/**
+ * The bar's AVAILABLE: what the accounts hold, less what the lines still hold.
+ *
+ * Sean, 2026-09-25: it was account minus ASSIGNED, "but some of that assigned
+ * money has already been counted for from a spent transaction with that
+ * category". A $100 assignment with $30 spent has already taken the $30 out
+ * of `held`; subtracting the whole $100 as well counted the $30 twice. What
+ * is still spoken for is what is still IN the line — `availableOf` — so that
+ * is what comes off.
+ *
+ * FLOORED AT ZERO per line. An overspent line holds nothing, and its
+ * overspend has already left the account; letting its negative available
+ * through would hand that money back as though it were never spent.
+ *
+ * `carry` counts, which retires the 2026-09-18 reading that the bar left
+ * earlier months out: money carried into a line is still in its envelope,
+ * and with spending now netted out, leaving it in would count it as both.
+ */
+export function unassigned(
+  held: number,
+  lines: readonly { carry: number; budget: number; spent: number }[],
+): number {
+  return lines.reduce((n, l) => n - Math.max(0, availableOf(l.budget, l.spent, l.carry)), held);
+}
+
 /* ------------------------------------------------------------------ *
  * Typing into an amount that already has a value.
  *

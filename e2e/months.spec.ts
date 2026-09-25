@@ -24,7 +24,7 @@
  * draws any more.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, assignedIn, fresh, stored } from './helpers';
+import { addTransaction, assignedIn, fresh, setSign, stored } from './helpers';
 
 type Stored = {
   categories: { id: string; name: string; deleted?: true }[];
@@ -155,6 +155,39 @@ test('the bar reads Available, Assigned, Account — and the first is the last l
   await expect(page.getByTestId('budget-account')).toHaveText('$900.00');
   await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
   await expect(page.getByTestId('budget-available')).toHaveText('$600.00');
+});
+
+test('money spent from a line is not taken off Available twice', async ({ page }) => {
+  // Sean, 2026-09-25: available was account minus assigned, "but some of
+  // that assigned money has already been counted for from a spent
+  // transaction with that category". $300 assigned, $100 of it spent: the
+  // account already dropped by the $100, so only the $200 still in the line
+  // comes off — $700, not the $600 the old subtraction drew.
+  await fresh(page);
+  await addTransaction(page, { name: 'Payday', amount: '100000', day: lastMonthDay() });
+  const line = await seedLine(page);
+  await assign(page, line, '300');
+
+  await page.getByTestId('tab-transactions').click();
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').fill('Co-op');
+  await page.getByTestId('amount-input').fill('10000');
+  await setSign(page, true);
+  await page.getByTestId('category-button').click();
+  await page.getByTestId(`category-opt-${line}`).click();
+  await page.getByTestId('save-button').click();
+  await expect(page.getByTestId('save-button')).toBeHidden();
+  await page.getByTestId('tab-budget').click();
+
+  await expect(page.getByTestId('budget-account')).toHaveText('$900.00');
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$300.00 Assigned');
+  await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$200.00');
+  await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
+
+  // Next month the $200 is still in the line, so it is still spoken for.
+  await page.getByTestId('budget-month-next').click();
+  await expect(page.getByTestId('budget-assigned')).toHaveText('$0.00 Assigned');
+  await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
 });
 
 test('an empty month still holds the account\'s balance', async ({ page }) => {

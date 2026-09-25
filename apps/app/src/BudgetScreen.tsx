@@ -32,7 +32,7 @@ import {
 import {
   LONG_PRESS_MS, availableOf, budgetIn, carriedInto, dropTarget, foldLevel,
   formatAmount, lineTone, linesIn, monthOf, monthSet, slotEntries, toggleSelected, total,
-  unfiledSince,
+  unassigned, unfiledSince,
   type AssignMode, type BudgetAmount, type Category, type Line, type LineTone, type Txn,
 } from '@acctmind/core';
 import { Dot } from './Dot';
@@ -320,31 +320,22 @@ export function BudgetScreen({
     [txns, budgetMonth],
   );
   /**
-   * AVAILABLE — what the accounts hold, less what this month assigned.
+   * AVAILABLE — what the accounts hold, less what is still sitting in lines.
    *
-   * Sean, 2026-09-18, twice over. First: "the current month is how much is
-   * available with the amount assigned for the current month". Then, seeing
-   * the bar: "change Funds Available to Account, assigned to Assigned, and to
-   * the right of that put available - assigned with label Available" — so
-   * the bar says all three, and the third is the first less the second, in
-   * that order, which is the arithmetic written out.
-   *
-   * The quiet-month zero went with the rename. It existed so a run of empty
-   * months would not repeat the balance as though each were news; with the
-   * balance now LABELLED as the account's, repeating it is exactly right —
-   * the account holds that much in an empty month too.
-   *
-   * It does NOT take off what earlier months carried into the LINES
-   * (`carried` above), and that was Sean's call between the two readings:
-   * this bar answers what the accounts hold against this month's plan, and
-   * the lines underneath answer what is still in the envelopes.
+   * Sean, 2026-09-18: "change Funds Available to Account, assigned to
+   * Assigned, and to the right of that put available - assigned with label
+   * Available". Then 2026-09-25: "some of that assigned money has already
+   * been counted for from a spent transaction with that category" — spending
+   * is already out of `held`, so only what each line has LEFT comes off, not
+   * what was assigned to it. That rule is core's `unassigned`.
    *
    * `shown` is deliberately not consulted, and `txns` is every live
-   * transaction — not `spentOn`, which files by LINE (see `Txn.category`,
-   * whose name predates lines carrying the money). Filtering the budget to
-   * Groceries cannot change how much money you have.
+   * transaction. Filtering the budget to Groceries cannot change how much
+   * money you have.
    */
-  const available = held - assigned;
+  const available = unassigned(held, categories.flatMap((c) => linesOf(c.id).map((l) => ({
+    carry: carryOf(l), budget: budgetOf(l), spent: spentOn(l.id),
+  }))));
 
   /** Money that belongs to no line at all. Drawn under its own heading. */
   /**
