@@ -26,6 +26,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { addDays, monthLabel } from '@acctmind/core';
 import { CogIcon } from './Icons';
 import * as shared from './icloudfile';
 import { TipBubble, useTip } from './Tip';
@@ -35,7 +36,11 @@ import { TOPBAR_CTRL } from './TopBar';
 /** Wide enough for the longest row, narrow enough to hang off a 44pt ring. */
 const MENU_W = 212;
 
-export function AppMenu({ onImport, onExport, whole, onWhole }: {
+/** "Sep 21, 2026" — the full month name does not fit between two arrows here. */
+const shortDay = (day: string): string =>
+  `${monthLabel(day).slice(0, 3)} ${Number(day.slice(8, 10))}, ${day.slice(0, 4)}`;
+
+export function AppMenu({ onImport, onExport, whole, onWhole, start, onStart, offer }: {
   /** Open the CSV import. Absent on a surface that cannot read a file. */
   onImport?: (() => void) | undefined;
   /** Write the budget out. Absent nowhere — every surface can hand over text. */
@@ -43,6 +48,11 @@ export function AppMenu({ onImport, onExport, whole, onWhole }: {
   /** Are bare digits read as whole dollars? */
   whole: boolean;
   onWhole: (next: boolean) => void;
+  /** The budget's first day, `YYYY-MM-DD`, or null for none. A ledger setting. */
+  start: string | null;
+  onStart: (next: string | null) => void;
+  /** What an unset start offers: the latest reconcile, else the 1st of the Budget tab's month. */
+  offer: string;
 }) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -138,6 +148,65 @@ export function AppMenu({ onImport, onExport, whole, onWhole }: {
                 having the menu vanish makes you reopen it to see whether it
                 took.
               */}
+              {/*
+                BUDGET START — Sean, 2026-09-25: "an option under the options
+                drop down for Starting Month", then "i basically started on
+                i think 9/21 after doing a reconcile". A DAY, for that second
+                sentence; nothing dated before it counts against a line.
+
+                A setting like the box below, so it keeps the menu open. Unset,
+                it offers the latest reconcile — where his budget began — and
+                set, it steps a day at a time and × clears.
+              */}
+              <View style={styles.startWrap} testID="menu-start">
+                <View style={styles.startHead}>
+                  <Text style={styles.rowText}>Budget starts</Text>
+                  {start !== null && (
+                    <Pressable
+                      onPress={() => onStart(null)}
+                      style={styles.startBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Clear the starting month"
+                      testID="menu-start-clear"
+                    >
+                      <Text style={styles.startArrow}>×</Text>
+                    </Pressable>
+                  )}
+                </View>
+                {start === null ? (
+                  <Pressable
+                    onPress={() => onStart(offer)}
+                    style={styles.startSet}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Start the budget on ${shortDay(offer)}`}
+                    testID="menu-start-set"
+                  >
+                    <Text style={styles.startNone}>Not set — use {shortDay(offer)}</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.startSteps}>
+                    <Pressable
+                      onPress={() => onStart(addDays(start, -1))}
+                      style={styles.startBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Start a day earlier"
+                      testID="menu-start-prev"
+                    >
+                      <Text style={styles.startArrow}>‹</Text>
+                    </Pressable>
+                    <Text style={styles.startMonth} testID="menu-start-day">{shortDay(start)}</Text>
+                    <Pressable
+                      onPress={() => onStart(addDays(start, 1))}
+                      style={styles.startBtn}
+                      accessibilityRole="button"
+                      accessibilityLabel="Start a day later"
+                      testID="menu-start-next"
+                    >
+                      <Text style={styles.startArrow}>›</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
               <Pressable
                 style={[styles.row, styles.last]}
                 onPress={() => onWhole(!whole)}
@@ -207,6 +276,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
   },
   last: { borderBottomWidth: 0 },
+  startWrap: {
+    paddingLeft: SPACE.lg,
+    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: T.cardEdge,
+  },
+  startHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: TAP },
+  startSteps: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  startSet: { minHeight: TAP, justifyContent: 'center', paddingRight: SPACE.lg },
+  startNone: { color: T.dim, fontSize: 14 },
+  startBtn: { width: TAP, height: TAP, alignItems: 'center', justifyContent: 'center' },
+  startArrow: { color: T.text, fontSize: 20 },
+  startMonth: { color: T.text, fontSize: 16, fontVariant: ['tabular-nums'] },
   rowText: { color: T.text, fontSize: 16, flexShrink: 1 },
   // The ledger's own checkbox, at the same 15 points — see the cleared box
   // on a transaction row. One shape for "this is on" across the app.

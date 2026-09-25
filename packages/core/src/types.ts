@@ -194,6 +194,20 @@ export type BudgetAmount = Record_ & {
   amount: number;
 };
 
+/**
+ * A setting about the LEDGER rather than about a device, so it syncs.
+ *
+ * Sean, 2026-09-25: a Starting Month for the budget. Prefs (prefs.ts) are
+ * deliberately per-device and never merge; this is the other kind — the
+ * phone and the Mac would draw different envelopes if they disagreed about
+ * where the budget starts. One record per setting, keyed by a fixed id so two
+ * devices converge on it, merged like every other record.
+ */
+export type Setting = Record_ & {
+  /** The setting's value as a string; '' means unset. */
+  value: string;
+};
+
 export type Store = {
   v: 4;
   txns: Txn[];
@@ -212,6 +226,13 @@ export type Store = {
    * think its data needed migrating when nothing about it did.
    */
   budgets: BudgetAmount[];
+  /**
+   * Ledger-wide settings — see `Setting`. OPTIONAL, the one collection that
+   * is: added 2026-09-25 and read through `?? []` everywhere, so every store
+   * literal and every file written before it still means what it did. Still
+   * v4, on `budgets`' reasoning above.
+   */
+  settings?: Setting[];
 };
 
 /** What the one account a migrated store gets is called. */

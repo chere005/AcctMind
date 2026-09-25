@@ -30,7 +30,7 @@ import {
   Animated, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  LONG_PRESS_MS, availableOf, budgetIn, carriedInto, dropTarget, foldLevel,
+  LONG_PRESS_MS, availableOf, budgetIn, carriedInto, countsFrom, dropTarget, foldLevel,
   formatAmount, lineTone, linesIn, monthOf, monthSet, slotEntries, toggleSelected, total,
   unassigned, unfiledSince,
   type AssignMode, type BudgetAmount, type Category, type Line, type LineTone, type Txn,
@@ -126,7 +126,7 @@ const KEEP_FOCUS = {
 } as unknown as Record<string, unknown>;
 
 export function BudgetScreen({
-  txns, categories, lines, budgets, collapsed, onCollapsed, onManage, onAddLine,
+  txns, categories, lines, budgets, start, collapsed, onCollapsed, onManage, onAddLine,
   onEditAmount, onRenameLine, onRenameCategory, onDeleteLine, onSnoozeLine,
   onDeleteCategory, onMoveLine, onAssignMany,
   budgetMonth, onBudgetMonth, menu, undo,
@@ -135,6 +135,8 @@ export function BudgetScreen({
   categories: readonly Category[];
   lines: readonly Line[];
   budgets: readonly BudgetAmount[];
+  /** The budget's first day, or null. Nothing dated before it counts against a line. */
+  start: string | null;
   /**
    * `YYYY-MM`, the month this screen is on. There is no other answer.
    *
@@ -253,9 +255,11 @@ export function BudgetScreen({
    * in, which is a change to one control rather than to anybody's data.
    */
   const set = monthSet(budgetMonth);
+  /* This month's rows, from the budget's first day on — nothing dated
+     before the start counts against a line (core's `countsFrom`). */
   const inScope = useMemo(
-    () => txns.filter((t) => monthOf(t.date) === budgetMonth),
-    [txns, budgetMonth],
+    () => countsFrom(txns.filter((t) => monthOf(t.date) === budgetMonth), start),
+    [txns, budgetMonth, start],
   );
   /** What this line is budgeted IN THIS SET — never `line.budget` directly. */
   const budgetOf = (l: Line) => budgetIn({ budgets }, set, l);
@@ -277,8 +281,8 @@ export function BudgetScreen({
    * turns the whole ledger into an N×M scan on every keystroke of a rename.
    */
   const carried = useMemo(
-    () => carriedInto({ budgets }, budgetMonth, lines, txns),
-    [txns, lines, budgets, budgetMonth],
+    () => carriedInto({ budgets }, budgetMonth, lines, txns, start),
+    [txns, lines, budgets, budgetMonth, start],
   );
   const carryOf = (l: Line) => carried.get(l.id) ?? 0;
 

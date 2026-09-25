@@ -27,7 +27,7 @@ import {
   live, makeTxn, moveLineTo, moveTxnTo,
   applyImport, clearedTotal, ensureCategory, newId, nextColor, planImport, RECONCILE_NAME,
   reconcileAdjustment, total, putAccount, putBudget, putCategory, putLine, removeCategoryDeep,
-  REORDER_GAP, assignMany, budgetCsv, planSync, serialize, undoTo, budgetIn, carriedInto, linesIn, monthOf,
+  REORDER_GAP, assignMany, budgetCsv, budgetStart, countsFrom, putBudgetStart, suggestedStart, planSync, serialize, undoTo, budgetIn, carriedInto, linesIn, monthOf,
   monthSet, today, tombstone, tombstoneMany, touch,
   txnText, updateTxn, setCleared,
   type AssignMode, type CsvRow, type Draft, type ImportMode, type Line, type Store, type Txn,
@@ -432,10 +432,10 @@ export default function App() {
     const set = monthSet(prefs.budgetMonth);
     const txns = live(store.txns);
     const lines = live(store.lines);
-    const inScope = txns.filter((t) => monthOf(t.date) === prefs.budgetMonth);
+    const inScope = countsFrom(txns.filter((t) => monthOf(t.date) === prefs.budgetMonth), budgetStart(store));
     // The same map the screen draws from, so the file and the rows cannot
     // disagree about what a line is worth — see core's carriedInto.
-    const carried = carriedInto(store, prefs.budgetMonth, lines, txns);
+    const carried = carriedInto(store, prefs.budgetMonth, lines, txns, budgetStart(store));
     const rows = live(store.categories).flatMap((c) =>
       linesIn(lines, c.id).map((l) => {
         const assigned = budgetIn(store, set, l);
@@ -484,6 +484,16 @@ export default function App() {
       onExport={onExportBudget}
       whole={prefs.amountMode === 'whole'}
       onWhole={(next) => setPref('amountMode', next ? 'whole' : 'cents')}
+      /* A LEDGER setting, not a pref: it commits into the store and syncs,
+         because two devices disagreeing about where the budget starts would
+         draw two different budgets. */
+      start={phase.k === 'ready' ? budgetStart(phase.store) : null}
+      onStart={(next) => {
+        if (phase.k !== 'ready') return;
+        commit(phase, { ...phase.store, settings: putBudgetStart(phase.store, next, Date.now()) });
+      }}
+      offer={(phase.k === 'ready' ? suggestedStart(live(phase.store.txns)) : null)
+        ?? `${prefs.budgetMonth}-01`}
     />
   );
 
@@ -542,6 +552,7 @@ export default function App() {
                 categories={live(phase.store.categories)}
                 lines={live(phase.store.lines)}
                 budgets={phase.store.budgets}
+                start={budgetStart(phase.store)}
                 budgetMonth={prefs.budgetMonth}
                 onBudgetMonth={(m: string) => setPref('budgetMonth', m)}
                 menu={appMenu}

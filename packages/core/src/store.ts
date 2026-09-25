@@ -12,7 +12,8 @@
 
 import {
   DEFAULT_ACCOUNT_NAME, DEFAULT_CATEGORY_NAME, INCOME, STORE_VERSION,
-  type Account, type BudgetAmount, type Category, type Line, type Record_, type Store, type Txn,
+  type Account, type BudgetAmount, type Category, type Line, type Record_, type Setting,
+  type Store, type Txn,
 } from './types';
 import { isDay } from './day';
 import { PALETTE } from './palette';
@@ -27,7 +28,7 @@ export type LoadResult =
 export const READABLE_VERSIONS = [1, 2, 3, STORE_VERSION] as const;
 
 export function emptyStore(): Store {
-  return { v: STORE_VERSION, txns: [], accounts: [], categories: [], lines: [], budgets: [] };
+  return { v: STORE_VERSION, txns: [], accounts: [], categories: [], lines: [], budgets: [], settings: [] };
 }
 
 /** Serialize for the device. Compact — nothing reads this by eye but us. */
@@ -107,6 +108,8 @@ export function parseStore(raw: string | null | undefined): LoadResult {
   // next, and no row is reported as damaged for it: those records were
   // fine, the feature is what went.
   const budgets = readAll(obj['budgets'], normalizeBudgetAmount);
+  // Additive in the same way, and later: most files on disk have none.
+  const settings = readAll(obj['settings'], normalizeSetting);
   const txns = readAll(obj['txns'], normalizeTxn);
 
   /*
@@ -151,7 +154,7 @@ export function parseStore(raw: string | null | undefined): LoadResult {
 
   return {
     ok: true,
-    store: { v: STORE_VERSION, txns, accounts, categories, lines, budgets },
+    store: { v: STORE_VERSION, txns, accounts, categories, lines, budgets, settings },
     dropped,
     migrated,
   };
@@ -322,6 +325,17 @@ export function normalizeBudgetAmount(row: unknown): BudgetAmount | null {
   const amount = r['amount'];
   if (typeof amount !== 'number' || !Number.isSafeInteger(amount)) return null;
   return { ...base, set, line, amount };
+}
+
+/** One ledger setting, or null. The value is a string or it is damage. */
+export function normalizeSetting(row: unknown): Setting | null {
+  if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+  const r = row as Record<string, unknown>;
+  const base = normalizeRecord(r);
+  if (base === null) return null;
+  const value = r['value'];
+  if (typeof value !== 'string') return null;
+  return { ...base, value };
 }
 
 export function normalizeLine(row: unknown): Line | null {
@@ -517,6 +531,7 @@ export function undoTo(current: Store, before: Store, now: number): Store {
     categories: restore(current.categories, before.categories, now),
     lines: restore(current.lines, before.lines, now),
     budgets: restore(current.budgets, before.budgets, now),
+    settings: restore(current.settings ?? [], before.settings ?? [], now),
   };
 }
 

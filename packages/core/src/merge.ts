@@ -73,6 +73,7 @@ export function mergeStores(mine: Store, theirs: Store): Store {
     // A month's amounts merge per record, which is the whole reason an
     // amount IS a record rather than a map per month — see views.ts.
     budgets: mergeRecords(mine.budgets, theirs.budgets),
+    settings: mergeRecords(mine.settings ?? [], theirs.settings ?? []),
   };
 }
 
@@ -132,6 +133,7 @@ export function prune(store: Store, now: number, ttl: number = TOMBSTONE_TTL_MS)
     categories: fresh(store.categories),
     lines: fresh(store.lines),
     budgets: fresh(store.budgets),
+    settings: fresh(store.settings ?? []),
   };
 }
 
@@ -155,6 +157,7 @@ export function canonical(store: Store): Store {
     categories: byId(store.categories),
     lines: byId(store.lines),
     budgets: byId(store.budgets),
+    settings: byId(store.settings ?? []),
   };
 }
 

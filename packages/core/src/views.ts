@@ -53,9 +53,10 @@
  * including that month, plus everything it has spent. `assignedBefore` is the
  * first half; the ledger is the second, and budget.ts adds them.
  */
-import { assignedFor, type AssignMode } from './budget';
+import { RECONCILE_NAME, assignedFor, type AssignMode } from './budget';
+import { isDay } from './day';
 import { touch } from './merge';
-import type { BudgetAmount, Line, Txn } from './types';
+import type { BudgetAmount, Line, Setting, Txn } from './types';
 
 /* The helpers take the COLLECTION they read, not the whole Store — a screen
  * holds `budgets` as a prop and should not have to hold a Store to ask what a
@@ -124,11 +125,13 @@ export function budgetIn(store: HasBudgets, set: string, line: Line): number {
  * October. Named views and All Time are skipped — a view has no place in a
  * month's history, and All Time is not a month at all.
  */
-export function assignedBefore(store: HasBudgets, month: string, line: string): number {
+export function assignedBefore(
+  store: HasBudgets, month: string, line: string, start: string | null = null,
+): number {
   return store.budgets.reduce((n, b) => {
     if (b.deleted || b.line !== line) return n;
     const m = setMonth(b.set);
-    return m !== null && m < month ? n + b.amount : n;
+    return m !== null && m < month && (start === null || m >= start) ? n + b.amount : n;
   }, 0);
 }
 
@@ -195,17 +198,84 @@ export function putBudget(
  */
 export function carriedInto(
   store: HasBudgets, month: string, lines: readonly Line[], txns: readonly Txn[],
+  start: string | null = null,
 ): Map<string, number> {
   const by = new Map<string, number>();
-  for (const t of txns) {
+  for (const t of countsFrom(txns, start)) {
     if (t.category === null || monthOf(t.date) >= month) continue;
     by.set(t.category, (by.get(t.category) ?? 0) + t.amount);
   }
+  const fromMonth = start === null ? null : monthOf(start);
   for (const l of lines) {
-    const before = assignedBefore(store, month, l.id);
+    const before = assignedBefore(store, month, l.id, fromMonth);
     if (before !== 0) by.set(l.id, (by.get(l.id) ?? 0) + before);
   }
   return by;
+}
+
+/* ------------------------------------------------------------------ *
+ * The STARTING DAY.
+ *
+ * Sean, 2026-09-25: "i'm starting my budget in sept... now that i put in
+ * more transactions it doesn't line up... maybe there should be an option
+ * under the options drop down for Starting Month", then "i basically started
+ * on i think 9/21 after doing a reconcile". Filing earlier spending against a
+ * line took it off money that was only assigned afterwards. So the budget
+ * has a first DAY — a month was his first word for it and too coarse for
+ * the second: nothing dated before it counts against a line, in the month
+ * or carried, and no month before its month carries an assignment.
+ *
+ * `held` is untouched, deliberately. What the accounts hold is everything
+ * that ever happened to them; the start only says which of it the lines
+ * were ever asked to cover.
+ *
+ * A ledger `Setting`, not a device pref: two devices that disagreed about it
+ * would draw two different budgets.
+ * ------------------------------------------------------------------ */
+
+/** The setting's fixed id — the same on every device. */
+export const BUDGET_START = 'budgetStart';
+
+type HasSettings = { settings?: readonly Setting[] | undefined };
+
+/** The day the budget starts, `YYYY-MM-DD`, or null for "from the beginning". */
+export function budgetStart(store: HasSettings): string | null {
+  const row = (store.settings ?? []).find((r) => r.id === BUDGET_START && r.deleted !== true);
+  return row !== undefined && isDay(row.value) ? row.value : null;
+}
+
+/**
+ * Set or clear the starting day. Cleared is `''`, not a tombstone: a setting
+ * that flips back and forth is one record with a clock, and a deleted then
+ * recreated id is the case `mergeRecords` has to argue about.
+ */
+export function putBudgetStart(store: HasSettings, day: string | null, now: number): Setting[] {
+  const all = store.settings ?? [];
+  const had = all.find((r) => r.id === BUDGET_START);
+  const row: Setting = had === undefined
+    ? { id: BUDGET_START, value: day ?? '', created: now, updated: now }
+    : { ...touch(had, now), value: day ?? '' };
+  return had === undefined ? [...all, row] : all.map((r) => (r.id === BUDGET_START ? row : r));
+}
+
+/** The transactions the budget's lines answer for: dated on or after the start. */
+export function countsFrom<T extends { date: string }>(txns: readonly T[], start: string | null): T[] {
+  return start === null ? [...txns] : txns.filter((t) => t.date >= start);
+}
+
+/**
+ * The day a start is OFFERED as when none is set: the latest reconcile, which
+ * is where Sean's budget actually began — "after doing a reconcile" — and the
+ * line `unfiledSince` already treats as the start of what needs filing. Null
+ * when nothing has been reconciled.
+ */
+export function suggestedStart(txns: readonly Txn[]): string | null {
+  let at: string | null = null;
+  for (const t of txns) {
+    if (t.deleted === true || t.name !== RECONCILE_NAME) continue;
+    if (at === null || t.date > at) at = t.date;
+  }
+  return at;
 }
 
 /**

@@ -231,6 +231,49 @@ test('an empty month still holds the account\'s balance', async ({ page }) => {
   await expect(page.getByTestId('budget-available')).toHaveText('$1,000.00');
 });
 
+test('the budget has a first day, and nothing filed before it counts against a line', async ({ page }) => {
+  // Sean, 2026-09-25: a Starting Month under the cog, then "i basically
+  // started on i think 9/21 after doing a reconcile". Spending filed before
+  // the start is not money the lines were ever asked to cover.
+  await fresh(page);
+  await addTransaction(page, { name: 'Payday', amount: '100000', day: lastMonthDay() });
+  await addTransaction(page, { name: 'Old', amount: '-5000', day: firstOfThisMonth() });
+  const line = await seedLine(page);
+  await assign(page, line, '300');
+
+  await page.getByTestId('tab-transactions').click();
+  const old = (await stored(page) as { txns: { id: string; name: string }[] })
+    .txns.find((t) => t.name === 'Old')?.id ?? '';
+  await page.getByTestId(`txn-category-tap-${old}`).click();
+  await page.getByTestId(`category-opt-${line}`).click();
+  await page.getByTestId('tab-budget').click();
+  await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$250.00');
+  await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
+
+  // Unset, it offers the 1st of the month on screen (nothing reconciled) —
+  // inclusive, so Old still counts. A day later and it does not.
+  await page.getByTestId('app-menu-button').click();
+  await page.getByTestId('menu-start-set').click();
+  await expect.poll(async () => ((await stored(page) as { settings?: { value: string }[] })
+    .settings ?? [])[0]?.value).toBe(firstOfThisMonth());
+  await page.getByTestId('menu-start-next').click();
+  await expect.poll(async () => ((await stored(page) as { settings?: { value: string }[] })
+    .settings ?? [])[0]?.value).toBe(`${firstOfThisMonth().slice(0, 8)}02`);
+  await page.getByTestId('app-menu-backdrop').click({ position: { x: 5, y: 5 } });
+
+  await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$300.00');
+  await expect(page.getByTestId(`line-spent-${line}`)).toHaveText('$0.00');
+  // The account still holds what it holds; only the lines were let off.
+  await expect(page.getByTestId('budget-account')).toHaveText('$950.00');
+  await expect(page.getByTestId('budget-available')).toHaveText('$650.00');
+
+  await page.getByTestId('app-menu-button').click();
+  await page.getByTestId('menu-start-clear').click();
+  await expect(page.getByTestId('menu-start-set')).toBeVisible();
+  await page.getByTestId('app-menu-backdrop').click({ position: { x: 5, y: 5 } });
+  await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
+});
+
 test('the bar does not narrow with the category picker', async ({ page }) => {
   // It never has — filtering the budget to Groceries cannot change how much
   // money you have — and now that ASSIGNED is the other half of that

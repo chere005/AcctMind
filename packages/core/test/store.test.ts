@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STORE_VERSION, addTxn, budgetIn, emptyStore, live, mergeStores, normalizeTxn, parseStore,
-  INCOME, removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
+  INCOME, budgetStart, putBudgetStart, removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
 } from '../src/index';
 import type { Store, Txn } from '../src/index';
 
@@ -328,6 +328,23 @@ describe('v4 — the money moves off the category and onto a line', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.store.lines[0]?.deleted).toBe(true);
+  });
+
+  it('carries the starting day through a save, a load and a merge', () => {
+    // A ledger SETTING (2026-09-25): it has to reach the other devices, or
+    // the phone and the Mac draw two different budgets.
+    const base = emptyStore();
+    const mine = { ...base, settings: putBudgetStart(base, '2026-09-21', 10) };
+    const r = parseStore(serialize(mine));
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(budgetStart(r.store)).toBe('2026-09-21');
+    const theirs = { ...base, settings: putBudgetStart(mine, '2026-09-20', 20) };
+    expect(budgetStart(mergeStores(mine, theirs))).toBe('2026-09-20');
+    expect(budgetStart(mergeStores(theirs, mine))).toBe('2026-09-20');
+    // A file from before settings existed loads with none.
+    const old = parseStore(JSON.stringify({ ...base, settings: undefined }));
+    expect(old.ok && old.store.settings).toEqual([]);
   });
 
   it('keeps a transaction filed as Income, which is a line with no record', () => {
