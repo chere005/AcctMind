@@ -175,7 +175,7 @@ test('a line shows budgeted, spent and available, and available is the sum', asy
   await expect(page.getByTestId(`line-available-${line}`)).toHaveText('$237.50');
 });
 
-test('"None" is always offered and never filtered away', async ({ page }) => {
+test('"No Category" is always offered and never filtered away', async ({ page }) => {
   // It is a real answer, not a line that happens to match nothing.
   await page.goto('./');
   await openManage(page);

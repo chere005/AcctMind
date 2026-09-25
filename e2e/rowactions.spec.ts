@@ -14,7 +14,7 @@
  * an absence.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, pickSort, reload, rows, stored, swipeRow } from './helpers';
+import { addTransaction, fresh, pickSort, reload, rows, stored, storedTxns, swipeRow } from './helpers';
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
@@ -795,9 +795,46 @@ test('a row says what it is filed against, and long text is CLIPPED', async ({ p
   expect(clipped.client).toBeGreaterThan(0);
   expect(clipped.scroll).toBeGreaterThan(clipped.client);
 
-  // The column exists and is empty for an unfiled row — after a CSV import
-  // the whole ledger is unfiled, and two thousand dashes is noise.
-  await expect(page.getByTestId('txn-category').first()).toHaveText('');
+  // The column always says something — Sean, 2026-09-25, "always show a
+  // category". It was blank for an unfiled row until then.
+  await expect(page.getByTestId('txn-category').first()).toHaveText('No Category');
+});
+
+test('tapping a row\'s category files it from a dropdown', async ({ page }) => {
+  // Sean, 2026-09-25: "clicking the category in the row brings a dropdown to
+  // select category". The add form's list, opened from the row itself.
+  await fresh(page);
+  await addTransaction(page, { name: 'Co-op', amount: '-1250' });
+  await page.getByTestId('tab-budget').click();
+  await page.getByTestId('section-pick').click();
+  await page.getByTestId('section-manage').click();
+  await page.getByTestId('manage-add').click();
+  const s0 = await stored(page) as { categories: { id: string; deleted?: true }[] };
+  const cat = s0.categories.filter((c) => c.deleted !== true).slice(-1)[0]?.id ?? '';
+  await page.getByTestId(`manage-name-${cat}`).fill('Food');
+  await page.getByTestId('manage-done').click();
+  await page.getByTestId(`category-add-${cat}`).click();
+  const s1 = await stored(page) as { lines: { id: string; name: string; category: string }[] };
+  const line = s1.lines.filter((l) => l.category === cat).pop()?.id ?? '';
+
+  await page.getByTestId('tab-transactions').click();
+  const id = ((await storedTxns(page))[0] as { id: string }).id;
+  await expect(page.getByTestId('txn-category').first()).toHaveText('No Category');
+
+  await page.getByTestId(`txn-category-tap-${id}`).click();
+  await page.getByTestId(`category-opt-${line}`).click();
+  await expect(page.getByTestId('category-filter')).toBeHidden();
+  await expect.poll(async () =>
+    ((await storedTxns(page))[0] as { category: string | null }).category).toBe(line);
+  const name = s1.lines.find((l) => l.id === line)?.name ?? '';
+  await expect(page.getByTestId('txn-category').first()).toHaveText(name);
+
+  // And back out again: No Category is an answer the dropdown always offers.
+  await page.getByTestId(`txn-category-tap-${id}`).click();
+  await page.getByTestId('category-none').click();
+  await expect.poll(async () =>
+    ((await storedTxns(page))[0] as { category: string | null }).category).toBe(null);
+  await expect(page.getByTestId('txn-category').first()).toHaveText('No Category');
 });
 
 test('the hammer reconciles an account, dated today, and only when it differs', async ({ page }) => {

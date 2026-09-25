@@ -656,9 +656,10 @@ export default function App() {
                 const moved = moveTxnTo(live(phase.store.txns), txn, account, beforeId, Date.now());
                 if (moved !== null) commit(phase, updateTxn(phase.store, moved));
               }}
-              /* One field, changed in place. `touch` so it travels; the rest
-                 of the record is untouched, which is what makes this cheap
-                 enough to do on a tap. */
+              /* One field, changed in place — name, amount, or the line the
+                 row's category dropdown picked. `touch` so it travels; the
+                 rest of the record is untouched, which is what makes this
+                 cheap enough to do on a tap. */
               onInline={(txn, patch) => {
                 if (phase.k !== 'ready') return;
                 const next = { ...txn, ...patch };
@@ -690,6 +691,7 @@ export default function App() {
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
               onManage={() => setManaging('accounts')}
               lines={live(phase.store.lines)}
+              categories={live(phase.store.categories)}
               /*
                * Reconcile: say what the account actually holds, and the
                * difference becomes one transaction dated TODAY — Sean,

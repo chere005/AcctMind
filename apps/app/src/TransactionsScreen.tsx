@@ -12,8 +12,9 @@ import {
   formatAmount, formatDay, parseAmount, pickTap, rowTap,
   selectedTotal, slotEntries,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
-  type Account, type Line, type SortMode, type Txn,
+  type Account, type Category, type Line, type SortMode, type Txn,
 } from '@acctmind/core';
+import { CategoryMenu, NO_CATEGORY } from './CategoryPick';
 import { Dot } from './Dot';
 import { SectionPick } from './SectionPick';
 import { SortPick } from './SortPick';
@@ -27,6 +28,9 @@ import { BarRow, CircleBtn, TopBar } from './TopBar';
 import { SPACE, T, TAP } from './theme';
 
 export type RowAction = 'edit' | 'duplicate' | 'copy' | 'delete';
+
+/** One field of a row, changed in place — including, since 2026-09-25, its line. */
+export type InlinePatch = { name?: string; amount?: number; category?: string | null };
 
 type Props = {
   txns: readonly Txn[];
@@ -47,7 +51,7 @@ type Props = {
    */
   onMove?: ((txn: Txn, account: string, beforeId: string | null) => void) | undefined;
   /** One field of one row was edited in place. */
-  onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
+  onInline?: ((txn: Txn, patch: InlinePatch) => void) | undefined;
   /** The date on a row was tapped — the caller opens the day grid. */
   onDate?: ((txn: Txn) => void) | undefined;
   /** The cleared box on a row was flipped. Absent where the ledger is read-only. */
@@ -86,6 +90,8 @@ type Props = {
    * points at a LINE (v4), so this is what turns that id into a word.
    */
   lines: readonly Line[];
+  /** The headings the lines sit under — the row's dropdown groups by them. */
+  categories: readonly Category[];
   /**
    * A stated balance for an account. Core decides whether that is a
    * difference worth a transaction; this only reports what was typed.
@@ -112,7 +118,7 @@ type Props = {
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, menu, undo, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, onReconcile,
+  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, categories, onReconcile,
   onInline, onDate, onCleared, onDeleteMany,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
@@ -430,6 +436,8 @@ export function TransactionsScreen({
             onDate={onDate}
             onCleared={onCleared}
             lineName={lineName}
+            lines={lines}
+            categories={categories}
             reconciling={reconciling}
             onReconcileOpen={(account, what) => setReconciling({ account, what })}
             onReconcile={(id, stated, what) => {
@@ -517,8 +525,8 @@ export function TransactionsScreen({
  */
 function Section({
   account, rows, shut, onToggle, onFoldAll, onAdd, edit, onEdited, picked, onPick,
-  inline, setInline, onInline, onDate, onCleared, lineName, swipedId, setSwipedId, onAction,
-  drag, canMove, headIdx, flatIdxOf,
+  inline, setInline, onInline, onDate, onCleared, lineName, lines, categories,
+  swipedId, setSwipedId, onAction, drag, canMove, headIdx, flatIdxOf,
   reconciling, onReconcileOpen, onReconcile,
 }: {
   account: Account;
@@ -537,12 +545,15 @@ function Section({
   onPick: (id: string) => void;
   inline: { id: string; field: 'name' | 'amount' } | null;
   setInline: (next: { id: string; field: 'name' | 'amount' } | null) => void;
-  onInline?: ((txn: Txn, patch: { name?: string; amount?: number }) => void) | undefined;
+  onInline?: ((txn: Txn, patch: InlinePatch) => void) | undefined;
   onDate?: ((txn: Txn) => void) | undefined;
   /** The cleared box on a row was flipped. Absent where the ledger is read-only. */
   onCleared?: ((txn: Txn, cleared: boolean) => void) | undefined;
   /** The row whose delete is parked, if any. One at a time, like openId. */
   lineName: (id: string | null) => string;
+  /** What the row's category dropdown offers. */
+  lines: readonly Line[];
+  categories: readonly Category[];
   /** The account, and which of its two figures, open as a field — if any. */
   reconciling: { account: string; what: Reconciled } | null;
   onReconcileOpen: (account: string, what: Reconciled) => void;
@@ -765,6 +776,8 @@ function Section({
             lifted={drag.dragIdx === i}
             dy={drag.dragIdx === i ? drag.dragDy : 0}
             lineName={lineName(t.category)}
+            lines={lines}
+            categories={categories}
             swiped={swipedId === t.id}
             parked={swipedId !== null}
             onDismiss={() => setSwipedId(null)}
@@ -779,7 +792,7 @@ function Section({
 
 function Row({
   txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate, onCleared,
-  onAction, grip, lifted, dy, swiped, parked, lineName, onDismiss, onSwipe,
+  onAction, grip, lifted, dy, swiped, parked, lineName, lines, categories, onDismiss, onSwipe,
 }: {
   txn: Txn;
   /** Is the page in edit mode? Then this row shows its controls. */
@@ -793,7 +806,7 @@ function Row({
   onOpenInline: (field: 'name' | 'amount') => void;
   onCloseInline: () => void;
   /** Commit an in-place edit. Absent where the ledger is read-only. */
-  onInline?: ((patch: { name?: string; amount?: number }) => void) | undefined;
+  onInline?: ((patch: InlinePatch) => void) | undefined;
   /** The date was tapped. */
   onDate?: (() => void) | undefined;
   /** The cleared box was tapped; `cleared` is what it now says. */
@@ -817,6 +830,8 @@ function Row({
   parked: boolean;
   /** What this row is filed against, already resolved to a word. */
   lineName: string;
+  lines: readonly Line[];
+  categories: readonly Category[];
   /** Put away a parked delete — a tap on any row does it. */
   onDismiss: () => void;
   /** A firm left swipe landed — park the delete. */
@@ -858,6 +873,8 @@ function Row({
    * reads it.
    */
   const tap = rowTap(parked, edit);
+  /** The category dropdown, open on THIS row. */
+  const [filing, setFiling] = useState(false);
   /** The tap handler every part of the row shares, `undefined` for none. */
   const onTap = (own: (() => void) | undefined): (() => void) | undefined =>
     tap === 'dismiss' ? onDismiss : tap === 'pick' ? onPick : own;
@@ -979,16 +996,46 @@ function Row({
       {/*
         What it is filed against — Sean, 2026-09-15, "a category column on
         transactions in the middle".
-        
+
         The LINE's name, because that is what a transaction points at since
         v4; the category above it is one more hop and would not fit anyway.
-        Blank rather than a dash for an unfiled row: after a CSV import the
-        whole ledger is unfiled, and two thousand dashes is noise where
-        nothing is the honest answer.
+
+        ALWAYS SAYS SOMETHING, and it is a control. Sean, 2026-09-25: "always
+        show a category and clicking the category in the row brings a
+        dropdown to select category". It was blank for an unfiled row until
+        then, on the reading that two thousand dashes after an import is
+        noise; but a blank is not something you can see to tap, and filing
+        is the thing an unfiled row is waiting for. So it reads No Category —
+        the Budget tab's word for the same money — faint, where a filed row
+        reads its line in the ordinary dim.
+
+        Under `rowTap` like the name and the amount: a parked delete or edit
+        mode wins, so this is one more field that defers to the row.
       */}
-      <Text style={styles.cat} numberOfLines={1} ellipsizeMode="tail" testID="txn-category">
-        {lineName}
-      </Text>
+      <Pressable
+        onPress={onTap(onInline === undefined ? undefined : () => setFiling(true))}
+        style={styles.catTap}
+        accessibilityRole="button"
+        accessibilityLabel={`Category: ${lineName === '' ? NO_CATEGORY : lineName}`}
+        testID={`txn-category-tap-${txn.id}`}
+      >
+        <Text
+          style={[styles.cat, lineName === '' && styles.catNone]}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+          testID="txn-category"
+        >
+          {lineName === '' ? NO_CATEGORY : lineName}
+        </Text>
+      </Pressable>
+      {filing && onInline !== undefined && (
+        <CategoryMenu
+          categories={categories}
+          lines={lines}
+          onPick={(id) => { if (id !== txn.category) onInline({ category: id }); }}
+          onClose={() => setFiling(false)}
+        />
+      )}
 
       {/* Money in is the only row that gets a colour. Everything else is an
           expense, and colouring those red would make the whole list red —
@@ -1672,10 +1719,11 @@ const styles = StyleSheet.create({
   rowMain: { flex: 1, gap: 1, minWidth: 0 },
   // The category column: narrow, dim, and allowed to vanish before the
   // numbers do — a name you cannot read is worse than a name you cannot see.
-  cat: {
-    color: T.dim, fontSize: 12, lineHeight: 16, width: 74, flexShrink: 1,
-    textAlign: 'right',
-  },
+  // The width is the PRESSABLE's, so the whole column is the target and not
+  // just however many letters the name happens to have.
+  catTap: { width: 74, flexShrink: 1, alignSelf: 'stretch', justifyContent: 'center' },
+  cat: { color: T.dim, fontSize: 12, lineHeight: 16, textAlign: 'right' },
+  catNone: { color: T.faint },
   name: { color: T.text, fontSize: 16, lineHeight: 20 },
   desc: { color: T.dim, fontSize: 13, lineHeight: 16 },
   amount: {

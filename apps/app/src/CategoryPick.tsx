@@ -21,6 +21,9 @@ import { filterByName, type Category, type Line } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SPACE, T, TAP } from './theme';
 
+/** What an unfiled transaction reads as — the Budget tab's word for it too. */
+export const NO_CATEGORY = 'No Category';
+
 export function CategoryPick({ categories, lines, value, onPick }: {
   categories: readonly Category[];
   lines: readonly Line[];
@@ -28,80 +31,104 @@ export function CategoryPick({ categories, lines, value, onPick }: {
   onPick: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const insets = useSafeAreaInsets();
   const chosen = lines.find((l) => l.id === value) ?? null;
-  const shown = filterByName(lines, query);
   const colorOf = (l: Line) => categories.find((c) => c.id === l.category)?.color ?? T.faint;
-  const groupOf = (l: Line) => categories.find((c) => c.id === l.category)?.name ?? '';
 
   return (
     <>
       <Pressable
-        onPress={() => { setQuery(''); setOpen(true); }}
+        onPress={() => setOpen(true)}
         style={styles.field}
         accessibilityRole="button"
-        accessibilityLabel={chosen === null ? 'No category' : chosen.name}
+        accessibilityLabel={chosen === null ? NO_CATEGORY : chosen.name}
         testID="category-button"
       >
         {chosen !== null && <Dot colors={[colorOf(chosen)]} size={12} />}
         <Text style={[styles.value, chosen === null && styles.none]} testID="category-value">
-          {chosen?.name ?? 'None'}
+          {chosen?.name ?? NO_CATEGORY}
         </Text>
         <Text style={styles.chev}>⌄</Text>
       </Pressable>
 
       {open && (
-        <Modal transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-          {/* Its own window: the app's safe area does not reach in here. */}
-          <Pressable style={styles.backdrop} onPress={() => setOpen(false)}>
-            <Pressable style={[styles.menu, { marginTop: insets.top + SPACE.xl }]} onPress={() => {}}>
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="Filter"
-                placeholderTextColor={T.faint}
-                autoFocus
-                autoCorrect={false}
-                style={styles.search}
-                testID="category-filter"
-              />
-              <ScrollView keyboardShouldPersistTaps="handled">
-                {/* Always offered, and never filtered away: "none" is a real
-                    answer, not a category that happens to match nothing. */}
-                <Pressable
-                  onPress={() => { onPick(null); setOpen(false); }}
-                  style={styles.row}
-                  testID="category-none"
-                >
-                  <Text style={[styles.rowText, styles.none]}>None</Text>
-                </Pressable>
-                {shown.map((l) => (
-                  <Pressable
-                    key={l.id}
-                    onPress={() => { onPick(l.id); setOpen(false); }}
-                    style={styles.row}
-                    testID={`category-opt-${l.id}`}
-                  >
-                    <Dot colors={[colorOf(l)]} size={12} />
-                    <Text style={styles.rowText} numberOfLines={1}>{l.name}</Text>
-                    {/* Which category it sits in. Two lines can share a name
-                        across categories, and without this the list offers
-                        the same word twice with no way to choose. */}
-                    <Text style={styles.rowGroup} numberOfLines={1}>{groupOf(l)}</Text>
-                  </Pressable>
-                ))}
-                {shown.length === 0 && (
-                  <Text style={styles.nothing} testID="category-nomatch">
-                    Nothing matches “{query.trim()}”.
-                  </Text>
-                )}
-              </ScrollView>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        <CategoryMenu
+          categories={categories}
+          lines={lines}
+          onPick={onPick}
+          onClose={() => setOpen(false)}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * The dropdown on its own, for a caller that draws its own trigger.
+ *
+ * Sean, 2026-09-25: "clicking the category in the row brings a dropdown to
+ * select category". The ledger row's category word IS the trigger there, so
+ * the list the add form opens is split out rather than drawn twice — one
+ * filter, one "No Category" that is never filtered away, one grouping, on
+ * both paths. Mounted only while open, so the filter starts empty each time.
+ */
+export function CategoryMenu({ categories, lines, onPick, onClose }: {
+  categories: readonly Category[];
+  lines: readonly Line[];
+  onPick: (id: string | null) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const insets = useSafeAreaInsets();
+  const shown = filterByName(lines, query);
+  const colorOf = (l: Line) => categories.find((c) => c.id === l.category)?.color ?? T.faint;
+  const groupOf = (l: Line) => categories.find((c) => c.id === l.category)?.name ?? '';
+  const pick = (id: string | null) => { onClose(); onPick(id); };
+
+  return (
+    <Modal transparent animationType="fade" onRequestClose={onClose}>
+      {/* Its own window: the app's safe area does not reach in here. */}
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={[styles.menu, { marginTop: insets.top + SPACE.xl }]} onPress={() => {}}>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Filter"
+            placeholderTextColor={T.faint}
+            autoFocus
+            autoCorrect={false}
+            style={styles.search}
+            testID="category-filter"
+          />
+          <ScrollView keyboardShouldPersistTaps="handled">
+            {/* Always offered, and never filtered away: "none" is a real
+                answer, not a category that happens to match nothing. */}
+            <Pressable onPress={() => pick(null)} style={styles.row} testID="category-none">
+              <Text style={[styles.rowText, styles.none]}>{NO_CATEGORY}</Text>
+            </Pressable>
+            {shown.map((l) => (
+              <Pressable
+                key={l.id}
+                onPress={() => pick(l.id)}
+                style={styles.row}
+                testID={`category-opt-${l.id}`}
+              >
+                <Dot colors={[colorOf(l)]} size={12} />
+                <Text style={styles.rowText} numberOfLines={1}>{l.name}</Text>
+                {/* Which category it sits in. Two lines can share a name
+                    across categories, and without this the list offers
+                    the same word twice with no way to choose. */}
+                <Text style={styles.rowGroup} numberOfLines={1}>{groupOf(l)}</Text>
+              </Pressable>
+            ))}
+            {shown.length === 0 && (
+              <Text style={styles.nothing} testID="category-nomatch">
+                Nothing matches “{query.trim()}”.
+              </Text>
+            )}
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
