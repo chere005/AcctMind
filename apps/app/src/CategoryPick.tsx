@@ -17,7 +17,7 @@
 import { useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { filterByName, type Category, type Line } from '@acctmind/core';
+import { INCOME, INCOME_NAME, filterByName, type Category, type Line } from '@acctmind/core';
 import { Dot } from './Dot';
 import { SPACE, T, TAP } from './theme';
 
@@ -31,8 +31,10 @@ export function CategoryPick({ categories, lines, value, onPick }: {
   onPick: (id: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const chosen = lines.find((l) => l.id === value) ?? null;
-  const colorOf = (l: Line) => categories.find((c) => c.id === l.category)?.color ?? T.faint;
+  const line = lines.find((l) => l.id === value) ?? null;
+  const chosen = value === INCOME ? { name: INCOME_NAME, color: T.positive }
+    : line === null ? null
+    : { name: line.name, color: categories.find((c) => c.id === line.category)?.color ?? T.faint };
 
   return (
     <>
@@ -43,7 +45,7 @@ export function CategoryPick({ categories, lines, value, onPick }: {
         accessibilityLabel={chosen === null ? NO_CATEGORY : chosen.name}
         testID="category-button"
       >
-        {chosen !== null && <Dot colors={[colorOf(chosen)]} size={12} />}
+        {chosen !== null && <Dot colors={[chosen.color]} size={12} />}
         <Text style={[styles.value, chosen === null && styles.none]} testID="category-value">
           {chosen?.name ?? NO_CATEGORY}
         </Text>
@@ -80,6 +82,7 @@ export function CategoryMenu({ categories, lines, onPick, onClose }: {
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
   const shown = filterByName(lines, query);
+  const income = filterByName([{ name: INCOME_NAME }], query).length > 0;
   const colorOf = (l: Line) => categories.find((c) => c.id === l.category)?.color ?? T.faint;
   const groupOf = (l: Line) => categories.find((c) => c.id === l.category)?.name ?? '';
   const pick = (id: string | null) => { onClose(); onPick(id); };
@@ -105,6 +108,15 @@ export function CategoryMenu({ categories, lines, onPick, onClose }: {
             <Pressable onPress={() => pick(null)} style={styles.row} testID="category-none">
               <Text style={[styles.rowText, styles.none]}>{NO_CATEGORY}</Text>
             </Pressable>
+            {/* Incoming cash — a fixed id, not a line (core's INCOME), so it
+                sits here beside No Category rather than under a heading. It
+                does filter, being a name like any other. */}
+            {income && (
+              <Pressable onPress={() => pick(INCOME)} style={styles.row} testID="category-income">
+                <Dot colors={[T.positive]} size={12} />
+                <Text style={styles.rowText} numberOfLines={1}>{INCOME_NAME}</Text>
+              </Pressable>
+            )}
             {shown.map((l) => (
               <Pressable
                 key={l.id}
@@ -120,7 +132,7 @@ export function CategoryMenu({ categories, lines, onPick, onClose }: {
                 <Text style={styles.rowGroup} numberOfLines={1}>{groupOf(l)}</Text>
               </Pressable>
             ))}
-            {shown.length === 0 && (
+            {shown.length === 0 && !income && (
               <Text style={styles.nothing} testID="category-nomatch">
                 Nothing matches “{query.trim()}”.
               </Text>

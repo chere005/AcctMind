@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STORE_VERSION, addTxn, budgetIn, emptyStore, live, mergeStores, normalizeTxn, parseStore,
-  removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
+  INCOME, removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
 } from '../src/index';
 import type { Store, Txn } from '../src/index';
 
@@ -328,6 +328,27 @@ describe('v4 — the money moves off the category and onto a line', () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.store.lines[0]?.deleted).toBe(true);
+  });
+
+  it('keeps a transaction filed as Income, which is a line with no record', () => {
+    // Sean, 2026-09-25: "add a category for incoming cash". INCOME is a fixed
+    // id, not a record, so the dangling-line rule below must not forget it —
+    // every load would otherwise unfile every paycheque.
+    const paid = JSON.stringify({
+      v: 4,
+      txns: [{
+        id: 'x', name: 'Payday', description: '', amount: 250000,
+        date: '2026-09-15', account: 'a1', category: INCOME, order: 0,
+        created: 1000, updated: 1000,
+      }],
+      accounts: [{ id: 'a1', name: 'Account', color: '#4c8bf0', order: 0, created: 0, updated: 0 }],
+      categories: [],
+      lines: [],
+    });
+    const r = parseStore(paid);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.store.txns[0]?.category).toBe(INCOME);
   });
 
   it('forgets a transaction pointing at a line that is not there', () => {

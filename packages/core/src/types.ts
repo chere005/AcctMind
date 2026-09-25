@@ -232,6 +232,23 @@ export const DEFAULT_ACCOUNT_NAME = 'Account';
 export const DEFAULT_CATEGORY_NAME = 'Available funds';
 
 /**
+ * INCOME — the category incoming cash is filed under. Sean, 2026-09-25: "add
+ * a category for incoming cash".
+ *
+ * A FIXED ID, not a record, for the reason `Txn.category` gives against an
+ * invented "Uncategorised": a record syncs, gets renamed, and can be deleted
+ * out from under its rows, and two devices that each made one would each
+ * have their own. This id is the same on every device from the first load.
+ *
+ * It is not an envelope. Nothing is assigned to it and it is never one of
+ * the lines `unassigned` takes off, so money filed here lands in the bar's
+ * Available — which is what incoming cash is for. And being filed at all, it
+ * is no longer one of the rows `unfiledSince` says are waiting.
+ */
+export const INCOME = 'income';
+export const INCOME_NAME = 'Income';
+
+/**
  * Older stores are READ and upgraded rather than refused: refusing one would
  * strand the ledger already sitting on a device. See `parseStore`.
  *

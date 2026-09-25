@@ -8,7 +8,7 @@ import {
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, dropTarget, foldLevel,
+  INCOME, INCOME_NAME, LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, dropTarget, foldLevel,
   formatAmount, formatDay, parseAmount, pickTap, rowTap,
   selectedTotal, slotEntries,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
@@ -140,7 +140,7 @@ export function TransactionsScreen({
    * per render is the shape that makes a list feel slow for no visible
    * reason.
    */
-  const lineNames = new Map(lines.map((l) => [l.id, l.name]));
+  const lineNames = new Map([[INCOME, INCOME_NAME], ...lines.map((l) => [l.id, l.name] as const)]);
   const lineName = (id: string | null): string =>
     id === null ? '' : lineNames.get(id) ?? '';
 

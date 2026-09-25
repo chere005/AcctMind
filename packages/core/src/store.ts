@@ -11,7 +11,7 @@
  */
 
 import {
-  DEFAULT_ACCOUNT_NAME, DEFAULT_CATEGORY_NAME, STORE_VERSION,
+  DEFAULT_ACCOUNT_NAME, DEFAULT_CATEGORY_NAME, INCOME, STORE_VERSION,
   type Account, type BudgetAmount, type Category, type Line, type Record_, type Store, type Txn,
 } from './types';
 import { isDay } from './day';
@@ -145,7 +145,8 @@ export function parseStore(raw: string | null | undefined): LoadResult {
   for (const l of lines) if (!cats.has(l.category)) l.deleted = true;
   // The same for a transaction pointing at a line that is not there. `null`
   // is a state the model already has, so there is nothing to fabricate.
-  const knownLines = new Set(lines.map((l) => l.id));
+  // INCOME is there without a record — see its note in types.ts.
+  const knownLines = new Set([INCOME, ...lines.map((l) => l.id)]);
   for (const t of txns) if (t.category !== null && !knownLines.has(t.category)) t.category = null;
 
   return {

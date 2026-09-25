@@ -190,6 +190,31 @@ test('money spent from a line is not taken off Available twice', async ({ page }
   await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
 });
 
+test('incoming cash has a category of its own, and it lands in Available', async ({ page }) => {
+  // Sean, 2026-09-25: "add a category for incoming cash". Filed as Income, a
+  // paycheque stops waiting under No Category, and — being no envelope —
+  // nothing of it is taken off the bar's Available.
+  await fresh(page);
+  await addTransaction(page, { name: 'Payday', amount: '100000' });
+  const line = await seedLine(page);
+  await assign(page, line, '300');
+  await expect(page.getByTestId('line-row-none')).toBeVisible();
+
+  await page.getByTestId('tab-transactions').click();
+  const id = (await stored(page) as { txns: { id: string }[] }).txns[0]?.id ?? '';
+  await page.getByTestId(`txn-category-tap-${id}`).click();
+  await page.getByTestId('category-filter').fill('inc');
+  await page.getByTestId('category-income').click();
+  await expect(page.getByTestId('txn-category').first()).toHaveText('Income');
+  await expect.poll(async () =>
+    (await stored(page) as { txns: { category: string | null }[] }).txns[0]?.category).toBe('income');
+
+  await page.getByTestId('tab-budget').click();
+  await expect(page.getByTestId('line-row-none')).toHaveCount(0);
+  await expect(page.getByTestId('budget-account')).toHaveText('$1,000.00');
+  await expect(page.getByTestId('budget-available')).toHaveText('$700.00');
+});
+
 test('an empty month still holds the account\'s balance', async ({ page }) => {
   // The quiet-month zero left with the rename: with the figure LABELLED as
   // the account's, an empty month showing the balance is exactly right — the
