@@ -55,13 +55,36 @@ export function OpAmount({
   const [base, setBase] = useState(value);
   const [editing, setEditing] = useState(false);
 
+  /** What the field says, applied to `from` under `o`. One sum, reached by
+   *  typing a digit or by choosing an operator. */
+  const apply = (from: number, o: AmountOp, clean: string) => {
+    const typed = parseAmount(clean);
+    if (typed === null) {
+      // Nothing typed yet: `=` shows nothing and leaves the value alone until
+      // there is something to replace it WITH.
+      if (o !== '=') onValue(from);
+      return;
+    }
+    const next = applyOp(from, o, typed);
+    if (next !== null) onValue(next);
+  };
+
   const start = (next: AmountOp) => {
-    // The value as it stands when the operator is chosen is what `+` and `−`
-    // work from, for the whole of that edit.
-    if (!editing) setBase(value);
     setOp(next);
-    setText('');
-    setEditing(true);
+    if (!editing) {
+      // The value as it stands when the edit opens is what `+` and `−` work
+      // from, for the whole of that edit.
+      setBase(value);
+      setText('');
+      setEditing(true);
+      return;
+    }
+    // Mid-edit, the typed digits STAY. Sean, 2026-09-30: "don't change the
+    // value typed in when switching from + to =". The digits are the number
+    // being said and the operator is only how to apply it, so a switch
+    // re-reads the same number against the same base — it used to empty the
+    // field and make you type it again.
+    apply(base, next, text);
   };
 
   const type = (raw: string) => {
@@ -80,16 +103,7 @@ export function OpAmount({
      * fifty. The old Assigned field on the category manager already made this
      * distinction and said so; this is the same number, one level down.
      */
-    const typed = parseAmount(clean);
-    const from = editing ? base : value;
-    if (typed === null) {
-      // Nothing typed yet: `=` shows nothing and leaves the value alone until
-      // there is something to replace it WITH.
-      if (op !== '=') onValue(from);
-      return;
-    }
-    const next = applyOp(from, op, typed);
-    if (next !== null) onValue(next);
+    apply(editing ? base : value, op, clean);
   };
 
   return (

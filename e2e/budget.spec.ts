@@ -181,6 +181,30 @@ test('the operator works from where the value STOOD, not from each keystroke', a
   await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
 });
 
+test('switching the operator keeps what was typed', async ({ page }) => {
+  // Sean, 2026-09-30: "don't change the value typed in when switching from +
+  // to =". The digits are the number being said; the operator is only how to
+  // apply it, so changing it re-reads the same 20 against the same $250 —
+  // it used to empty the field and make you type it again.
+  const line = await seed(page);
+  await tapAmount(page, line, 'budgeted');
+  await page.getByTestId('pad-amount').fill('20');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
+
+  await page.getByTestId('pad-amount-op-set').click();
+  await expect(page.getByTestId('pad-amount')).toHaveValue('20');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$20.00');
+
+  // And on to −, still from where the value STOOD — not from the $20 that
+  // `=` was showing a moment ago.
+  await page.getByTestId('pad-amount-op-sub').click();
+  await expect(page.getByTestId('pad-amount')).toHaveValue('20');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$230.00');
+
+  await commit(page);
+  expect(await assignedIn(page, line)).toBe(23000);
+});
+
 test('editing AVAILABLE moves what is budgeted, and the two agree', async ({ page }) => {
   // One stored number and two views of it. Asking for $300 available on a
   // line with nothing spent means budgeting $300; the pair can never
