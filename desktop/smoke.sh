@@ -16,9 +16,31 @@
 # frontend INTO the binary, so the asset paths are readable out of it — and
 # the check below is that the bundle the export names is embedded at the path
 # the window opens. That is the 404 that produced "Unexpected token '<'".
+#
+#   sh desktop/smoke.sh              build the shell, then every check below
+#   sh desktop/smoke.sh --no-build   every check below, on the bundle already
+#                                    built — what tools/build-platforms.sh
+#                                    runs, straight after its own build
+#
+# --no-build EXISTS BECAUSE THE LANE COMPILED THE SHELL TWICE. build-platforms
+# ran `tauri build`, then called this, which ran `tauri build` again on the
+# same staged export: check-assets re-stages dist-desktop (rm -rf and copy),
+# so tauri-build's rerun-if-changed fired and the whole crate recompiled —
+# 14-18 s on a quiet machine, 74 s under contention, proving nothing the
+# first build had not (2026-09-30). The checks are the same either way, and
+# they read the binary that build-platforms then installs; CalMind's smoke has
+# had the same flag since its lane first called it.
 set -e
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
+
+BUILD=1
+for a in "$@"; do
+  case "$a" in
+    --no-build) BUILD=0 ;;
+    *) echo "unknown flag: $a" >&2; exit 1 ;;
+  esac
+done
 
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); echo "  ok   $1"; }
@@ -28,10 +50,15 @@ echo "desktop smoke (macOS)"
 
 sh "$ROOT/desktop/check-assets.sh" | sed 's/^/  /'
 
-echo "==> building"
-(cd "$ROOT/desktop" && npx tauri build --bundles app > "$ROOT/desktop/.smoke-build.log" 2>&1) \
-  || { echo "  FAIL the shell builds"; tail -20 "$ROOT/desktop/.smoke-build.log"; exit 1; }
-ok "the shell builds"
+if [ "$BUILD" = 1 ]; then
+  echo "==> building"
+  (cd "$ROOT/desktop" && npx tauri build --bundles app > "$ROOT/desktop/.smoke-build.log" 2>&1) \
+    || { echo "  FAIL the shell builds"; tail -20 "$ROOT/desktop/.smoke-build.log"; exit 1; }
+  ok "the shell builds"
+else
+  # Said out loud, so a log never reads as though this run built anything.
+  echo "==> not building (--no-build): checking the bundle the caller just built"
+fi
 
 APP="$ROOT/desktop/src-tauri/target/release/bundle/macos/AcctMind.app"
 BIN="$APP/Contents/MacOS/acctmind-desktop"

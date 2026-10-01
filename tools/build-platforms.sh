@@ -81,7 +81,7 @@ done
 BUILD_SCRATCH="$ROOT/$APPDIR/ios"
 
 if [ "$DRY" = 1 ]; then
-  [ "$WANT_MAC" = 1 ]     && echo "would: clean export:web, npm -w $DESKTOP_WS run build, then install to /Applications"
+  [ "$WANT_MAC" = 1 ]     && echo "would: clean export:web, npm -w $DESKTOP_WS run build, smoke that bundle (desktop/smoke.sh --no-build), then install to /Applications"
   [ "$WANT_IOS" = 1 ]     && echo "would: prebuild $APPDIR (ios), test:version:device, xcodebuild Release once, devicectl install to every phone on this app's list"
   [ "$WANT_ANDROID" = 1 ] && echo "would: prebuild $APPDIR (android), gradlew assembleRelease, adb install"
   exit 0
@@ -127,6 +127,10 @@ prebuild_ios() {
 if [ "$WANT_MAC" = 1 ]; then
   echo "==> macOS desktop bundle"
   ensure_dist || exit 1
+  # The last run's bundle goes first. The smoke below checks this build
+  # rather than making its own, so a .app an earlier run left here must never
+  # be able to stand in for one this build did not write.
+  rm -rf "$ROOT/desktop/src-tauri/target/release/bundle/macos"
   ( cd "$ROOT" && npm -w "$DESKTOP_WS" run build ) \
     || { echo "the macOS bundle failed to build" >&2; exit 1; }
   # The .app is the shipped artifact — no dmg in bundle.targets, because
@@ -135,8 +139,12 @@ if [ "$WANT_MAC" = 1 ]; then
   APPBUNDLE=$(ls -d "$ROOT"/desktop/src-tauri/target/release/bundle/macos/*.app 2>/dev/null | head -1)
   [ -n "$APPBUNDLE" ] || { echo "the build reported success and produced no .app" >&2; exit 1; }
   echo "    $APPBUNDLE"
+  # --no-build: the build above IS the one under test. Without it the smoke
+  # compiled the same crate a second time from the same staged export, and
+  # the bundle installed below was the smoke's rebuild rather than this one
+  # (desktop/smoke.sh's header has the numbers).
   if [ -f "$ROOT/desktop/smoke.sh" ]; then
-    ( cd "$ROOT" && sh desktop/smoke.sh ) || { echo "the macOS smoke failed" >&2; exit 1; }
+    ( cd "$ROOT" && sh desktop/smoke.sh --no-build ) || { echo "the macOS smoke failed" >&2; exit 1; }
   fi
   # IS IT OPEN RIGHT NOW? Asked BEFORE the rm -rf, because the answer stops
   # being knowable the moment the bundle it names is gone.

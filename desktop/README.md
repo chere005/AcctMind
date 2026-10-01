@@ -12,6 +12,7 @@ and Windows — are this one directory.
 npm run export:web             # first: the shell carries an export, it does not make one
 npm -w desktop run dev         # a window, with devtools
 ./desktop/smoke.sh             # build, prove it carries THIS export, launch, quit
+./desktop/smoke.sh --no-build  # the same, on the bundle already built (the lane's form)
 sh desktop/check-assets.sh     # the same proofs without the 70-second Rust build
 ```
 

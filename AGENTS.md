@@ -212,7 +212,8 @@ Five surfaces, shipped by two different pipelines.
   step (above). Tauri can't cross-compile it — see "tauri.conf.json" below.
 - **macOS** — the Tauri desktop bundle in `desktop/`. Not built by
   `./deploy.sh`; built by THIS repo's `tools/build-platforms.sh --mac`, which
-  the lane runs before the tag (smoke-tested with `desktop/smoke.sh`). No
+  the lane runs before the tag (smoke-tested with `desktop/smoke.sh
+  --no-build` — the bundle that step just built, not a second compile). No
   `dmg` — see "tauri.conf.json" below. The script copies the bundle into
   `/Applications` and verifies the copy — that step was missing until
   2026-08-22, so every app's macOS build had succeeded and none of them was

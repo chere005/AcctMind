@@ -19,7 +19,7 @@ and nobody is looking at it.
 | `npm run test:version:device` | the same, plus the generated `Info.plist` — version AND build number. Run by this repo's `tools/build-platforms.sh --ios` around the prebuild, the one moment the plist is both fresh and about to be installed | no — see below |
 | `npm run test:peer` | the Bonjour service type and usage string in Info.plist, against core's `PEER_SERVICE` | no — only under `npm test` |
 | `sh desktop/check-assets.sh` | the desktop window opens the path the export was built for | no |
-| `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits | no — compiles Rust |
+| `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits. `--no-build` runs the same checks on the bundle already built — the lane's form, straight after `tools/build-platforms.sh --mac` has built it, so the shell is compiled once per release, not twice | no — compiles Rust (the lane's `--mac` step runs it before the tag) |
 
 **The deploy gate is `deploy.sh`'s own four** — typechecks, core, server, and
 the browser run (a spot subset on `--quick`). Everything else in this table
