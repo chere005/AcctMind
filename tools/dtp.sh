@@ -155,7 +155,7 @@ if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   # moving. Only when this lane OWNS the run — under `dtp all` the parent beats.
   #
   # WHAT THE BEAT SAYS comes from a file, not a constant, so that a build
-  # step waiting for the machine-wide heavy-build lock (tools/heavy-lock.sh)
+  # step waiting for the suite's heavy-build lock (tools/heavy-lock.sh)
   # can say so: the helper writes "waiting for the heavy-build lock, held by
   # …" into MIND_PHASE_FILE while it waits and puts this line back when it
   # has the lock. Without it a lane queued behind another session's
