@@ -76,17 +76,21 @@ learned goes in the commit that learns it.
   dropping records because a feature went is how a bookkeeping change
   becomes lost money. `store.test.ts` pins all four halves of that.
 
-- **The drop rule is CANON, byte for byte.** `packages/core/src/rowslots.ts`
-  is `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes
-  CalMind, ChefMind and MyCalMind carry, and the FIRST file this repo's core
-  shares with the lineage (it imports nothing, which is what lets a core with
-  `"types": []` hold it). It arrived 2026-09-21 with dragging between
+- **The drop rule and the fold rule are CANON, byte for byte.**
+  `packages/core/src/rowslots.ts` is
+  `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes CalMind,
+  ChefMind and MyCalMind carry (it imports nothing, which is what lets a core
+  with `"types": []` hold it). It arrived 2026-09-21 with dragging between
   sections, and the bug it prevents was paid for in ChefMind two days
-  earlier. Do not edit it here: a change goes to its home repo, then to
-  canon, then to every consumer, or `bin/check-drift.sh` starts lying about
-  all four at once. `orderAbove` and the `OrderDir` beside it are OURS —
-  canon's half answers "which section, above which row", ours answers "what
-  number is that".
+  earlier. It was not the first: `packages/core/src/folds.ts` and
+  `packages/core/test/folds.test.ts` — `foldLevel` and `LONG_PRESS_MS`, the
+  long press that folds a whole level — have been canon's
+  `canon/packages/core/` bytes since they arrived on 2026-09-18, and import
+  nothing either. Do not edit any of the three here: a change goes to its
+  home repo, then to canon, then to every consumer, or `bin/check-drift.sh`
+  starts lying about all four at once. `orderAbove` and the `OrderDir` beside
+  it are OURS — canon's half answers "which section, above which row", ours
+  answers "what number is that".
 
 - **"Things about the app" live in the cog, not in the bar.** Sean,
   2026-09-21: a cog top right, `AppMenu.tsx`, holding Import from CSV,
