@@ -7,7 +7,7 @@
  * `dist/build.json` against the source on disk right now, and names the
  * files that moved.
  */
-import { readFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
 export function assertFresh(root: string): void {
@@ -28,5 +28,22 @@ export function assertFresh(root: string): void {
       `the export is stale: dist was built from ${stamp.digest}, the source is now ${now}.\n`
       + `Run \`npm run export:web\` (which is the export PLUS the head patch — never a bare \`expo export\`).`,
     );
+  }
+
+  // THE LANE'S RECEIPT. tdtp carries this suite's verdict to deploy.sh by the
+  // tools/dist-key.mjs key of what it ran on, and it can only key that AFTER
+  // npm test — so an export or a spec edited while the suite was running would
+  // be keyed as passed when the suite drove the bytes from before. When the
+  // lane asks (ACCTMIND_GESTURES_SEEN names a file), every process that loads
+  // this config appends the key it STARTS on, and tools/dtp.sh carries the
+  // verdict only if every one of them equals the key at the end. Unset —
+  // every run but tdtp's — this does nothing. A receipt that cannot be
+  // written only means nothing is carried; it never fails the suite.
+  const receipt = process.env.ACCTMIND_GESTURES_SEEN;
+  if (receipt) {
+    try {
+      const key = execSync('node tools/dist-key.mjs apps/app/dist', { cwd: root }).toString();
+      appendFileSync(receipt, `${key}\n`);
+    } catch { /* no receipt, so no verdict carried: deploy.sh runs the suite */ }
   }
 }

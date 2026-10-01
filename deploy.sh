@@ -168,7 +168,28 @@ if [ "$QUICK" = "1" ]; then
 else
   echo "==> gestures (full)"
   ACCTMIND_BASE_URL=/AcctMind npm run -s export:web > /dev/null
-  npx playwright test
+  # RUN ONCE PER tdtp, NOT TWICE. tools/dtp.sh's --full lane has just run
+  # this whole suite in `npm test`, on its own fresh export, and hands this
+  # script that verdict as ACCTMIND_GESTURES_GREEN: its own pid, then the
+  # tools/dist-key.mjs key of what passed. The repeat is skipped only when
+  # THIS export keys the same — every byte of dist, the suite's files, the
+  # Playwright and node that ran it, the settings it reads — and only when
+  # the verdict was minted by the lane that started this script ($PPID).
+  # Anything else, including every standalone ./deploy.sh, runs the suite as
+  # it always has. The fresh export above is made either way; when the key
+  # matches, it is byte for byte what the suite just passed.
+  GESTURES_KEY=""
+  if [ -n "${ACCTMIND_GESTURES_GREEN:-}" ]; then
+    GESTURES_KEY=$(node tools/dist-key.mjs apps/app/dist) || GESTURES_KEY=""
+  fi
+  if [ -n "$GESTURES_KEY" ] && [ "$ACCTMIND_GESTURES_GREEN" = "$PPID:$GESTURES_KEY" ]; then
+    echo "    passed against these exact bytes in this lane's npm test (key $(printf '%.12s' "$GESTURES_KEY")): not repeated"
+  else
+    if [ -n "${ACCTMIND_GESTURES_GREEN:-}" ]; then
+      echo "    not the export (or not the lane) that npm test passed — running the full suite"
+    fi
+    npx playwright test
+  fi
 fi
 
 # --------------------------------------------------------------------- upload

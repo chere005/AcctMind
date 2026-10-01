@@ -18,7 +18,9 @@
 #      previous run failed before tagging — in which case that version is
 #      reused rather than skipped past.
 #   3. deploy: ./deploy.sh --quick for dtp, ./deploy.sh (full) for tdtp.
-#      Both write the sandbox and then production, running their own gates.
+#      Both write the sandbox and then production, running their own gates —
+#      tdtp's without a second full gesture run when its export is the one
+#      step 1 just passed, byte for byte (see "the gesture verdict" below).
 #      A failed deploy stops everything — never tag around one.
 #   4. the macOS bundle, from a clean export of what just shipped — BEFORE
 #      the tag, so a broken desktop build leaves the version untagged and a
@@ -196,9 +198,66 @@ if git remote get-url origin >/dev/null 2>&1; then
   refuse_dirty "the pull left the tree dirty — a conflicted autostash pop exits 0, so this is the check that catches it"
 fi
 
+# THE GESTURE VERDICT, CARRIED TO THE DEPLOY. tdtp's npm test runs the full
+# gesture suite on a fresh export, and deploy.sh's full gate used to run all
+# of it again on ITS fresh export — the same bytes, since the bump below
+# moves nothing in the web bundle: about two minutes spent sampling one thing
+# twice. So the verdict is keyed by tools/dist-key.mjs (the export's bytes,
+# the suite's own files, the Playwright and node that ran it, the settings it
+# reads), and deploy.sh skips its repeat only when its own export keys the
+# same. Any difference — a mid-lane source edit, a version string that one
+# day lands in the bundle, an edited spec — and the suite runs again.
+#
+# ONLY THIS LANE'S VERDICT. The key lives in the environment, never on disk,
+# prefixed with this shell's pid, which deploy.sh compares against its own
+# parent's: an export left in a terminal, or a value inherited from whoever
+# started this lane, cannot stand in for a run that happened here — and the
+# unset below makes sure nothing inherited is even looked at.
+#
+# AND ONLY THE BYTES IT RAN ON. The key can only be taken after npm test,
+# so an export or a spec edited while the suite ran would otherwise be keyed
+# as passed. Every process of the run writes the key it STARTS on into a
+# receipt (e2e/freshness.ts, only when ACCTMIND_GESTURES_SEEN names one), and
+# the verdict is carried only if every line equals the key at the end.
+#
+# AND ONLY WHEN THE SUITE SERVED ITSELF. playwright.config.ts REUSES whatever
+# already answers on its port (reuseExistingServer outside CI), so a server
+# left up there — another checkout's e2e/serve.mjs, say — would have been
+# what the suite drove, and its verdict is about that server's bytes, not
+# these. The port must refuse a connection before npm test and again after
+# it, or nothing is carried and deploy.sh runs the whole suite, as it always
+# did. Read from the config, so the two cannot drift apart.
+unset ACCTMIND_GESTURES_GREEN
+e2e_port_free() {
+  _port=$(sed -n 's/^const PORT = \([0-9][0-9]*\);.*/\1/p' playwright.config.ts)
+  [ -n "$_port" ] || return 1
+  node -e "require('net').connect($_port, '127.0.0.1').on('connect', () => process.exit(1)).on('error', (e) => process.exit(e.code === 'ECONNREFUSED' ? 0 : 1)).setTimeout(3000, () => process.exit(1))"
+}
+
 if [ "$FULL" = 1 ]; then
   echo "==> tdtp: the full run, before anything is touched"
-  npm test || { echo "the full run failed — nothing shipped" >&2; exit 1; }
+  E2E_FREE=0
+  if e2e_port_free; then E2E_FREE=1; fi
+  # The receipt: every process of the gesture run writes the key it STARTED
+  # on (e2e/freshness.ts), because the key below can only be taken after.
+  SEEN=$(mktemp -t acctmind-gestures-seen 2>/dev/null) || SEEN=""
+  ACCTMIND_GESTURES_SEEN="$SEEN" npm test || { [ -z "$SEEN" ] || rm -f "$SEEN"; echo "the full run failed — nothing shipped" >&2; exit 1; }
+  CARRY=""
+  if [ "$E2E_FREE" != 1 ] || ! e2e_port_free; then
+    CARRY="something else answered on the suite's port, so the suite may have driven that"
+  elif ! GESTURES_KEY=$(node tools/dist-key.mjs apps/app/dist); then
+    CARRY="the export could not be keyed"
+  elif [ -z "$SEEN" ] || [ "$(sort -u "$SEEN" 2>/dev/null)" != "$GESTURES_KEY" ]; then
+    CARRY="the run's receipt does not show it starting on these bytes (an export or a spec changed while it ran, or no receipt was written)"
+  fi
+  [ -z "$SEEN" ] || rm -f "$SEEN"
+  if [ -z "$CARRY" ]; then
+    ACCTMIND_GESTURES_GREEN="$$:$GESTURES_KEY"
+    export ACCTMIND_GESTURES_GREEN
+    echo "==> gestures passed on export key $(printf '%.12s' "$GESTURES_KEY"); deploy.sh repeats them only if its own export keys differently"
+  else
+    echo "==> the gesture verdict is NOT carried to the deploy: $CARRY — deploy.sh runs the full suite"
+  fi
 fi
 
 # ------------------------------------------------------------------ the version

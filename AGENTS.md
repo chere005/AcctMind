@@ -167,6 +167,11 @@ gate naming a real disagreement that no web deploy could ever have caused.
      tdtp. Both write the sandbox and then production and run their own
      gates on the way — the quick lane's gates are everything that costs
      seconds plus the spot test, so a dtp is never an unverified deploy.
+     tdtp's deploy does not run the full gesture suite a second time on an
+     export byte-identical to the one step 1 just passed: `npm test` mints a
+     key of what it ran on (`tools/dist-key.mjs`), and `deploy.sh` repeats
+     the suite whenever its own export keys differently (2026-10-01, about
+     two minutes a tdtp).
   3. **macOS** — `tools/build-platforms.sh --mac`, from a clean export of
      what just shipped, and BEFORE the tag: a broken bundle leaves the
      version untagged, and a re-run reuses it exactly as a failed deploy

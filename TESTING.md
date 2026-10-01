@@ -13,7 +13,7 @@ and nobody is looking at it.
 | `npm run test:dev` | the between-runs suite: three typechecks, core, server, version, peer, deploy guards — under a minute, no browser | (three of deploy.sh's four gates, run early; the browser run is not in it) |
 | `npm run test:core` | the behaviour itself, including the `spec/*.json` replay | **yes** |
 | `npm run test:server` | the doorway over real HTTP, against the real suite auth lib | **yes** |
-| `npm run test:e2e` | the whole app on the EXPORTED bundle, desktop and phone viewports — mouse, plus a real touch stream for the swipe | **yes** (a spot subset on `--quick`) |
+| `npm run test:e2e` | the whole app on the EXPORTED bundle, desktop and phone viewports — mouse, plus a real touch stream for the swipe | **yes** (a spot subset on `--quick`; once per `tdtp` — see below) |
 | `npm run test:deploy` | every deploy guard, each proven by breaking a copy | no — only under `npm test` |
 | `npm run test:version` | one version across the SIX source files, plus a build number that exists. `--sources-only`: it does NOT read the plist, and says so | no — only under `npm test` |
 | `npm run test:version:device` | the same, plus the generated `Info.plist` — version AND build number. Run by this repo's `tools/build-platforms.sh --ios` around the prebuild, the one moment the plist is both fresh and about to be installed | no — see below |
@@ -22,7 +22,13 @@ and nobody is looking at it.
 | `./desktop/smoke.sh` | the macOS shell builds, carries THIS export, launches, quits. `--no-build` runs the same checks on the bundle already built — the lane's form, straight after `tools/build-platforms.sh --mac` has built it, so the shell is compiled once per release, not twice | no — compiles Rust (the lane's `--mac` step runs it before the tag) |
 
 **The deploy gate is `deploy.sh`'s own four** — typechecks, core, server, and
-the browser run (a spot subset on `--quick`). Everything else in this table
+the browser run (a spot subset on `--quick`). Under `tdtp` the full browser
+run happens ONCE, in `npm test`: `deploy.sh` still makes its own fresh export,
+and repeats the suite only when that export — or the suite's files, the
+Playwright and node that ran it, the settings it reads — keys differently from
+what passed (`tools/dist-key.mjs`; `tools/dtp.sh` and `deploy.sh` say how the
+key is minted and checked). Same bytes, same verdict; anything else and it
+runs. A standalone `./deploy.sh` always runs it. Everything else in this table
 runs under `npm test`, which is what `tdtp` puts in front of a release; the
 `swiftc` row went with the watch, so nothing here needs a Swift compiler any
 more, and only `./desktop/smoke.sh` needs a Rust one. "Outside the gate" is
