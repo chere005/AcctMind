@@ -51,9 +51,16 @@ echo "desktop smoke (macOS)"
 sh "$ROOT/desktop/check-assets.sh" | sed 's/^/  /'
 
 if [ "$BUILD" = 1 ]; then
+  # A cargo compile is a heavy build, so it waits its turn under the
+  # machine-wide lock (tools/heavy-lock.sh says why). The build alone: the
+  # launch below is not heavy, and --no-build takes no lock at all, which is
+  # what lets tools/build-platforms.sh call this from inside its own.
+  . "$ROOT/tools/heavy-lock.sh"
+  heavy_lock "desktop smoke build" || exit 1
   echo "==> building"
   (cd "$ROOT/desktop" && npx tauri build --bundles app > "$ROOT/desktop/.smoke-build.log" 2>&1) \
     || { echo "  FAIL the shell builds"; tail -20 "$ROOT/desktop/.smoke-build.log"; exit 1; }
+  heavy_unlock
   ok "the shell builds"
 else
   # Said out loud, so a log never reads as though this run built anything.

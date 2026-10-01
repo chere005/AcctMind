@@ -87,6 +87,27 @@ if [ "$DRY" = 1 ]; then
   exit 0
 fi
 
+# ------------------------------------------------------------ one at a time
+# Every platform block below runs under the machine-wide heavy-build lock,
+# tools/heavy-lock.sh — CoreMind's canon/tools/heavy-lock.sh, byte for byte,
+# so fix it there and never here. "One heavy build at a time" was a rule
+# every AGENTS.md stated and nothing kept: on 2026-09-30 one session's gradle
+# ran beside another's xcodebuild, and this repo's own dtp --quick took 689 s
+# and then 1574 s instead of 246 (cargo 84 s instead of 18, gradle 412 s
+# instead of 95). Now a block that finds any other build running — this
+# repo's, another app's, another session's — waits for it and says whose it
+# is, instead of running beside it.
+#
+# Taken around each BLOCK, because a block is the unit the lane runs one at a
+# time (--mac before the tag, --ios and --android after the push), the same
+# shape as CoreMind's bin/build-platforms.sh. Let go explicitly at each
+# block's end; every `exit 1` inside one lets go through the helper's EXIT
+# trap, and a kill -9 through the next waiter's takeover. desktop/smoke.sh
+# takes it too, but only when it builds — under the macOS block it is called
+# with --no-build, and a heavy block inside a heavy block is refused (it
+# would wait for itself).
+. "$ROOT/tools/heavy-lock.sh"
+
 # The export the desktop shell stages: a CLEAN one, through export:web.
 #
 # export:web is the export PLUS tools/patch-web-html.mjs — the head patch and
@@ -126,6 +147,7 @@ prebuild_ios() {
 # ------------------------------------------------------------------- macOS
 if [ "$WANT_MAC" = 1 ]; then
   echo "==> macOS desktop bundle"
+  heavy_lock "macOS desktop bundle" || exit 1
   ensure_dist || exit 1
   # The last run's bundle goes first. The smoke below checks this build
   # rather than making its own, so a .app an earlier run left here must never
@@ -221,11 +243,13 @@ if [ "$WANT_MAC" = 1 ]; then
     # again, now with a reassuring line printed over it. Say what is true.
     echo "WARNING: $APPNAME never quit — the window on screen is the build from BEFORE this install; quit and reopen it to see this one" >&2
   fi
+  heavy_unlock
 fi
 
 # --------------------------------------------------------------------- iOS
 if [ "$WANT_IOS" = 1 ]; then
   echo "==> iOS"
+  heavy_lock "iOS" || exit 1
 
   # THE PHONES THIS APP BELONGS ON. A release is not "install to the phone",
   # and it is not "install to whatever is plugged in" either: every app in
@@ -461,11 +485,13 @@ PY
   # No watch branch: the watch is out, for now (AGENTS.md) — the target,
   # the bridge module and core's watch.ts were removed on Sean's 2026-08-21
   # word, so there is nothing to install to a paired watch.
+  heavy_unlock
 fi
 
 # ----------------------------------------------------------------- Android
 if [ "$WANT_ANDROID" = 1 ]; then
   echo "==> Android"
+  heavy_lock "Android" || exit 1
   # ANDROID_HOME exported, not assumed: `expo run:android` sets it, a bare
   # ./gradlew does not, and the failure ("SDK location not found") reads like
   # a broken project rather than a missing variable (ARCHITECTURE.md).
@@ -542,4 +568,5 @@ if [ "$WANT_ANDROID" = 1 ]; then
   done
   [ "$RUNNING" = 1 ] || { echo "installed and launched but never showed up running" >&2; exit 1; }
   echo "    installed and running: $PKG on $SERIAL"
+  heavy_unlock
 fi

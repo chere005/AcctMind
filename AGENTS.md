@@ -245,6 +245,15 @@ lane instead of building anything itself. It also tells "shipped, a device
 build is owed" from "did not ship" by looking for a tag at HEAD, so a non-zero
 AcctMind lane does not stop the batch.
 
+**One heavy build at a time is a lock, not a convention** (2026-10-01). Every
+block of `tools/build-platforms.sh`, and `desktop/smoke.sh` when it builds,
+runs under `tools/heavy-lock.sh` — CoreMind's `canon/tools/heavy-lock.sh`, an
+`exact` row, so a fix goes there and never here. A block that finds another
+build running anywhere on this machine waits for it, says whose it is in the
+lane's output and on its status card, and gives up after 30 minutes. A heavy
+block inside a heavy block is refused at once rather than waited on — which is
+one more reason the macOS block calls the smoke with `--no-build`.
+
 ## tauri.conf.json takes no notes, so its notes live here
 
 - **NO `dmg` in `bundle.targets`.** create-dmg's `bundle_dmg.sh` needs Finder

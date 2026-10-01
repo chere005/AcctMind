@@ -118,6 +118,7 @@ REPORT_DONE=0
 # repo in the suite (2026-09-18). The sandbox lanes carried this shape
 # already; this is the copy-across.
 BEAT_PID=""
+PHASE_FILE=""
 # ERREXIT-PROOF, and it was not. The first shape — `[ -n "$BEAT_PID" ] &&
 # { kill …; wait …; }` — puts the brace group LAST in an AND list, which is
 # the one place `set -e` still applies; `wait` on a process just killed
@@ -131,6 +132,10 @@ beat_stop() {
     kill "$BEAT_PID" >/dev/null 2>&1 || true
     wait "$BEAT_PID" 2>/dev/null || true
     BEAT_PID=""
+  fi
+  if [ -n "$PHASE_FILE" ]; then
+    rm -f "$PHASE_FILE"
+    PHASE_FILE=""
   fi
   return 0
 }
@@ -146,8 +151,28 @@ if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   # "running" through a multi-minute build; a beat every 60s keeps the page
   # showing the run alive, and a hung run then shows as a stamp that stops
   # moving. Only when this lane OWNS the run — under `dtp all` the parent beats.
+  #
+  # WHAT THE BEAT SAYS comes from a file, not a constant, so that a build
+  # step waiting for the machine-wide heavy-build lock (tools/heavy-lock.sh)
+  # can say so: the helper writes "waiting for the heavy-build lock, held by
+  # …" into MIND_PHASE_FILE while it waits and puts this line back when it
+  # has the lock. Without it a lane queued behind another session's
+  # xcodebuild read "shipping" on the card for the whole wait. CoreMind's
+  # batch does the same with its own file, and under it this branch never
+  # runs, so the batch's MIND_PHASE_FILE is the one inherited. A file that
+  # cannot be made or is empty only means the beat says "shipping", as
+  # before — never a stopped lane.
   if [ -n "$RUN_ID" ]; then
-    ( while :; do sleep 60; sh "$REPORTER" beat "$RUN_ID" "shipping — $KIND" >/dev/null 2>&1 || true; done ) &
+    PHASE_FILE=$(mktemp -t acctmind-phase 2>/dev/null) || PHASE_FILE=""
+    if [ -n "$PHASE_FILE" ] && printf '%s' "shipping — $KIND" >"$PHASE_FILE" 2>/dev/null; then
+      MIND_PHASE_FILE="$PHASE_FILE"; export MIND_PHASE_FILE
+    fi
+    ( while :; do
+        sleep 60
+        MSG=$(cat "$PHASE_FILE" 2>/dev/null) || MSG=""
+        [ -n "$MSG" ] || MSG="shipping — $KIND"
+        sh "$REPORTER" beat "$RUN_ID" "$MSG" >/dev/null 2>&1 || true
+      done ) &
     BEAT_PID=$!
   fi
 fi
@@ -316,7 +341,9 @@ fi
 # thing to be told about, not a failed release to unpick.
 #
 # One at a time, never in parallel: two heavy build/device processes at once
-# has caused real failures on this machine twice.
+# has caused real failures on this machine twice. These two run in turn here,
+# and tools/build-platforms.sh's heavy-build lock keeps every OTHER session's
+# builds from running beside them (tools/heavy-lock.sh).
 DEVICE_FAILED=""
 if [ "$WANT_IOS" = 1 ]; then
   sh tools/build-platforms.sh --ios || DEVICE_FAILED="$DEVICE_FAILED --ios"
