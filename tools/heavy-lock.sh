@@ -1,6 +1,7 @@
 # shellcheck shell=sh
-# The heavy-build lock: ONE heavy build at a time on this machine, kept by the
-# machine rather than by whoever remembers the rule. Sourced, never run:
+# The heavy-build lock: ONE heavy build at a time among the builds that take
+# it, kept by the machine rather than by whoever remembers the rule. Sourced,
+# never run:
 #
 #   . tools/heavy-lock.sh
 #   heavy_lock "iOS"      waits its turn, then holds the lock
@@ -24,6 +25,12 @@
 # session is handed its own. `owner` inside it says who holds it (pid, that
 # pid's start time, when, which repo, which step), so a waiter can say what it
 # is waiting for and can tell a holder that has gone.
+#
+# WHAT IT DOES NOT SEE: any build that does not take it. It looks for no
+# xcodebuild, gradle or cargo process — a build is seen only by holding the
+# lock — so a script that never sources this file, a build run by hand from a
+# terminal, or one started from Xcode's own window runs beside a held lock
+# unnoticed, and a block here starts beside it.
 #
 # A WAIT, NOT A FAILURE. A step that finds the lock held waits for it, saying
 # who holds it every 30 s and looking every 2. After MIND_HEAVY_WAIT seconds
@@ -61,9 +68,14 @@ _hl_tab=$(printf '\t')
 _hl_held=0
 
 # The start time of pid $1, one space between words, or "-" when ps cannot
-# say. Compared as a string, so both sides go through this one function.
+# say. Compared as a string, so both sides go through this one function — and
+# printed in ONE zone and locale, never the caller's. ps formats it with the
+# caller's TZ and LC_TIME: the same moment is "Thu Oct 1 09:29:29 2026" in one
+# session, "14:29:29" under TZ=UTC and "jeu. 1 oct." under a French locale.
+# A waiter whose environment differed from its holder's read a LIVE holder as a
+# recycled pid, took its lock, and built beside it.
 _hl_start() {
-  _hl_s=$(ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//') || _hl_s=""
+  _hl_s=$(LC_ALL=C TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null | sed 's/  */ /g; s/^ //; s/ $//') || _hl_s=""
   printf '%s\n' "${_hl_s:--}"
 }
 
@@ -185,32 +197,48 @@ _hl_read_traps() {
 # by the unlock) is run here, with that $?, and then cleared. dash runs no EXIT
 # trap on a fatal signal, so under dash neither does this.
 #
+# Two corners of bash's own this cannot copy, since nothing in a trap can tell
+# them apart: under `set -e`, a Ctrl-C that kills an UNGUARDED command makes
+# bash skip the EXIT trap altogether, and after `if ! cmd` bash hands that trap
+# the negated 0. Here the caller's EXIT trap runs either way, with the killed
+# command's own status — a cleanup bash would have skipped, and no caller of
+# this file reads $? in its EXIT trap. The run still dies of the signal, which
+# is the part a parent acts on.
+#
 # One thing a trap changes that cannot be helped: bash runs one only after its
 # foreground command finishes, so a TERM sent to a script mid-xcodebuild now
 # takes effect when xcodebuild ends rather than orphaning it. For this lock
 # that is the right order — the build is still running, so the lock is still
 # held. (Ctrl-C reaches the whole foreground group, xcodebuild included, so it
 # is not delayed.)
+#
+# UNDER `set -e`, WHICH IS EVERY CALLER. The caller's handler has to see the
+# $? it would have seen, and the only way to hand it that is a command that
+# returns it — but a bare command returning non-zero trips errexit right here
+# in the trap. The shell then exits on the spot: the caller's EXIT handler is
+# never run, a handled INT or TERM never reaches its handler, and an unhandled
+# Ctrl-C exits 130 instead of dying of SIGINT, so a parent lane takes it for
+# a failed step and goes on (CalMind's would go from its iOS step on into its
+# Android build). So $? is set as the condition of an `if`, where errexit does
+# not look, and the handler runs in whichever branch follows: in both, $? is
+# still the condition's status, and errexit is back on for the handler itself.
 _hl_on() {
   _hl_rc=$?
   eval "_hl_hs=\$_hl_c_s_$1; _hl_ht=\$_hl_c_t_$1"
   if [ "$1" != EXIT ] && [ "$_hl_hs" = set ]; then
-    _hl_return "$_hl_rc"
-    eval "$_hl_ht"
+    if _hl_return "$_hl_rc"; then eval "$_hl_ht"; else eval "$_hl_ht"; fi
     return
   fi
   heavy_unlock
   if [ "$1" = EXIT ]; then
     trap - EXIT
     [ "$_hl_hs" = set ] || return 0
-    _hl_return "$_hl_rc"
-    eval "$_hl_ht"
+    if _hl_return "$_hl_rc"; then eval "$_hl_ht"; else eval "$_hl_ht"; fi
     return
   fi
   if [ -n "${BASH_VERSION:-}" ] && _hl_read_traps && [ "$_hl_s_EXIT" = set ]; then
     trap - EXIT
-    _hl_return "$_hl_rc"
-    eval "$_hl_t_EXIT"
+    if _hl_return "$_hl_rc"; then eval "$_hl_t_EXIT"; else eval "$_hl_t_EXIT"; fi
   fi
   trap - "$1"
   kill -s "$1" $$
