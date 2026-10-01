@@ -312,6 +312,13 @@ thought of. The host's address is not in this repo at all; it lives in
 where anything is written. Every guard is re-proven on each run of
 `npm run test:deploy` by breaking a copy of the script and watching it stop.
 
+A deploy reaches the host over ONE SSH connection (2026-10-01): the first
+`ssh` opens a master on a socket private to that run, and every later `ssh`
+and `rsync` rides it, so twelve handshakes become one. Only the transport is
+shared — every command line, path and check is the one it was — and a master
+that has gone is replaced by a fresh connection, never a failure. `deploy.sh`
+carries the why next to the code.
+
 `npm run dtp` and `npm run tdtp` are the release lanes — deploy, tag, push,
 with the full test run in front for `tdtp`. `AGENTS.md` carries both in full,
 along with the version files, the hand-bumped iOS build number, and which

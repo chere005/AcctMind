@@ -192,6 +192,48 @@ else
   fi
 fi
 
+# ------------------------------------------------------- one SSH connection
+# Each instance is four rsyncs and two ssh calls, and each of those used to
+# open its own connection to the host: TCP, key exchange, auth and NFSN's
+# session setup, about a second or two apiece, a dozen times a deploy. Now
+# the first one opens a master and the rest ride it (ControlMaster), which
+# changes HOW a command reaches the host and nothing about WHAT it does:
+# every ssh and rsync line below is the same line, with the same paths,
+# flags and checks, and a master that has gone is replaced by a fresh
+# connection, never a failure (ControlMaster=auto).
+#
+# THIS DEPLOY'S OWN SOCKET, in a private directory made for this run and
+# removed with it — never ~/.ssh/config, so no other ssh on this machine
+# rides along, and never a fixed path, so a second deploy running at the
+# same time cannot have its transfer cut off by this one's `-O exit`. Under
+# /tmp, not $TMPDIR: a socket path must fit in 104 bytes, ssh adds 17 more
+# while it binds one, and $TMPDIR is 49 on its own here — longer in some
+# sessions. If the directory cannot be made, each command connects on its
+# own, exactly as before.
+#
+# HERE and not earlier: the guards above run first, so a broken copy in
+# tools/check-deploy-guards.sh refuses before this exists, and every ssh it
+# could reach still goes through `command ssh`, the PATH's ssh — the
+# neutered stub, in those copies.
+SSH_MUX=""
+MUX_DIR=$(mktemp -d /tmp/acctmind-ssh.XXXXXX 2>/dev/null) || MUX_DIR=""
+if [ -n "$MUX_DIR" ]; then
+  SSH_MUX="-o ControlMaster=auto -o ControlPath=$MUX_DIR/m -o ControlPersist=120"
+  RSYNC_RSH="ssh $SSH_MUX"
+  export RSYNC_RSH
+else
+  echo "   (could not make a private socket directory — one SSH connection per transfer, as before)"
+fi
+ssh() { command ssh $SSH_MUX "$@"; }
+mux_close() {
+  if [ -n "$MUX_DIR" ]; then
+    command ssh $SSH_MUX -O exit "$SSH_DEST" >/dev/null 2>&1 || true
+    case "$MUX_DIR" in /tmp/acctmind-ssh.*) rm -rf "$MUX_DIR" ;; esac
+  fi
+  return 0
+}
+trap mux_close EXIT
+
 # --------------------------------------------------------------------- upload
 for inst in $INSTANCES; do
   case "$inst" in
