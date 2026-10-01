@@ -393,7 +393,14 @@ been watched failing on purpose:
   returning a fresh object for an empty selection instead of the store it
   was handed (which would tell the app the ledger had changed and write the
   file again over nothing), and `pickTap` ignoring a parked delete. Each
-  reddened exactly one test and no others.
+  reddened exactly one test and no others;
+- the pad taking the keyboard (`budget.spec.ts`), twice over: the two
+  tests that open it as the category sheet slides away failed 20 runs out
+  of 20 across both projects before OpAmount's focus hold existed, and the
+  plain tap-and-type test went red on both projects with `autoFocus` taken
+  off the pad. They type with `page.keyboard`, deliberately — `fill()` and
+  `pressSequentially()` focus the field before typing, which is why none of
+  the pad tests before them could see a field that opened unfocused.
 
 A check nobody has seen fail is a check nobody should trust. Five green
 checks in CalMind turned out to be worthless in a single session.

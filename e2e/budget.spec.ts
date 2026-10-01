@@ -132,6 +132,85 @@ test('the pad defaults to +', async ({ page }) => {
   await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
 });
 
+/**
+ * Open the category sheet, close it, and tap an amount BEFORE it has finished
+ * sliding away.
+ *
+ * Not a contrivance: it is Done on the sheet and then the number you made the
+ * category for, which is one movement. And it is the opening the pad lost
+ * its keyboard on. react-native-web's sheet keeps its focus trap for the
+ * whole of its 250ms slide-out, so the pad's field took focus and was pulled
+ * straight back into the sheet on its way out, then parked on the pad's own
+ * backdrop — the field never knew it had been touched.
+ *
+ * Fast on purpose. A tap that lands after the slide-out has nothing to test,
+ * and this would pass without the bug; before the fix it failed every run,
+ * both projects, which is the evidence the window is reached.
+ */
+async function tapAmountAsSheetCloses(page: Page, id: string): Promise<void> {
+  await page.getByTestId('section-pick').click();
+  await page.getByTestId('section-manage').click();
+  await expect(page.getByTestId('manage-done')).toBeVisible();
+  await page.getByTestId('manage-done').click();
+  await tapAmount(page, id, 'budgeted');
+}
+
+test('the pad takes the keyboard the moment it opens', async ({ page }) => {
+  // Tap a number, start typing: that is the whole gesture. Every other test
+  // in here types with `fill()` or `pressSequentially()`, and both of those
+  // FOCUS the field before typing — which is why none of them could see the
+  // field opening unfocused. `page.keyboard` types into whatever has focus
+  // and nothing else, which is what a person's keyboard does.
+  //
+  // A beat before typing, because a field focused at open and robbed a frame
+  // later fails a person just the same.
+  const line = await seed(page);
+  await tapAmount(page, line, 'budgeted');
+  await expect(page.getByTestId('pad-amount')).toBeFocused();
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId('pad-amount')).toBeFocused();
+
+  await page.keyboard.type('20');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  expect(await assignedIn(page, line)).toBe(27000);
+});
+
+test('…and still does when it opens as the category sheet closes', async ({ page }) => {
+  // Found 2026-09-30 by an audit, Chromium and WebKit both: the field opened
+  // showing the value at rest, focus on the backdrop, and typed digits went
+  // nowhere. See `tapAmountAsSheetCloses`.
+  const line = await seed(page);
+  await tapAmountAsSheetCloses(page, line);
+  await expect(page.getByTestId('pad-amount')).toBeFocused();
+  await page.waitForTimeout(400);
+  await expect(page.getByTestId('pad-amount')).toBeFocused();
+
+  await page.keyboard.type('20');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$270.00');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  expect(await assignedIn(page, line)).toBe(27000);
+});
+
+test('choosing = first leaves the keyboard in the field', async ({ page }) => {
+  // The other order: tap, `=`, type. The operator buttons keep focus where
+  // it is rather than taking it (KEEP_FOCUS), which is only worth anything
+  // if focus was in the field to begin with — the audit pressed `=` and
+  // typed into nothing.
+  const line = await seed(page);
+  await tapAmountAsSheetCloses(page, line);
+  await page.getByTestId('pad-amount-op-set').click();
+  await expect(page.getByTestId('pad-amount')).toBeFocused();
+
+  await page.keyboard.type('80');
+  await expect(page.getByTestId('pad-amount-result')).toHaveText('$80.00');
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('pad-amount')).toBeHidden();
+  expect(await assignedIn(page, line)).toBe(8000);
+});
+
 test('= replaces the value', async ({ page }) => {
   const line = await seed(page);
   await tapAmount(page, line, 'budgeted');

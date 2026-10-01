@@ -16,8 +16,8 @@
  * One component, used by the pad on the Budget page and by the line editor,
  * because two copies of a rule about money is two chances for them to drift.
  */
-import { useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 /** `preventDefault` on mousedown, so a tap on a button beside the field does
  *  not move focus out of it. See BudgetScreen's KEEP_FOCUS for the history. */
@@ -54,6 +54,41 @@ export function OpAmount({
   const [text, setText] = useState('');
   const [base, setBase] = useState(value);
   const [editing, setEditing] = useState(false);
+  const field = useRef<TextInput>(null);
+
+  /*
+   * `autoFocus` puts the caret in the field; on the web it does not keep it
+   * there. For the first quarter second, the field takes focus back from
+   * whatever took it.
+   *
+   * What took it, found 2026-09-30: react-native-web's Modal traps focus,
+   * and a sheet that is sliding OUT keeps its trap until the slide ends. So
+   * Done on the category sheet and a tap on an amount inside its 250ms meant
+   * the field focused, the departing sheet pulled focus back into itself, and
+   * the pad's own trap then parked it on the first focusable thing it holds,
+   * the backdrop. The field never saw a focus event and still showed the value
+   * at rest; digits typed next went nowhere, and `=` could not help, because
+   * the buttons keep focus where it is (KEEP_FOCUS) and it was not here.
+   *
+   * Polled a frame at a time rather than answered on blur, the way the
+   * budget's NameField answers it: here the field may never get focus at
+   * all, so there is no blur to answer. The window is the same 250ms and for
+   * NameField's reason: the theft is over within a frame or two of opening,
+   * and a person cannot tap, aim at something else and land it inside a
+   * quarter second. After that, focus goes where they send it, Tab included.
+   *
+   * Web only. Native has no focus trap to lose to, and native's autoFocus
+   * is left exactly as it was.
+   */
+  useEffect(() => {
+    if (!autoFocus || Platform.OS !== 'web') return undefined;
+    const opened = Date.now();
+    let frame = requestAnimationFrame(function hold() {
+      if (field.current !== null && !field.current.isFocused()) field.current.focus();
+      if (Date.now() - opened < 250) frame = requestAnimationFrame(hold);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocus]);
 
   /** What the field says, applied to `from` under `o`. One sum, reached by
    *  typing a digit or by choosing an operator. */
@@ -110,6 +145,7 @@ export function OpAmount({
     <View style={compact ? styles.fieldCompact : styles.field}>
       {label !== undefined && <Text style={styles.label}>{label}</Text>}
       <TextInput
+        ref={field}
         // Editing shows what is being TYPED; at rest it shows the value.
         value={editing ? text : formatAmount(value)}
         onChangeText={type}

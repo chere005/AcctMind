@@ -312,6 +312,21 @@ removed it, plus the plugin line in `app.config.js`.
   inheriting, because the cost of believing it is a whole feature with no
   coverage.
 
+- **A react-native-web `Modal` that is sliding OUT still traps focus, and
+  `fill()` cannot see it.** RNW's Modal keeps its focus trap until its exit
+  animation ends, so a Modal opened inside that 250ms has its `autoFocus`
+  pulled back into the one leaving, then parked by its own trap on the first
+  focusable thing it holds — for the amount pad, the backdrop. Done on the
+  category sheet and a tap on an amount is one movement, and the field
+  opened at rest with keys going nowhere (audit, 2026-09-30). OpAmount now
+  takes focus back for its first 250ms; any other `autoFocus` inside a Modal
+  can lose it the same way.
+
+  Why every pad test stayed green: `locator.fill()` and
+  `pressSequentially()` FOCUS the field before typing, so they test the
+  typing and never the focus. A test about where the keyboard goes types with
+  `page.keyboard`, which goes wherever focus actually is.
+
 - **Backticks inside `git commit -m "…"` are command substitution.** A message
   reading ``runs the same `submit` the button does`` was committed and pushed
   as "runs the same  the button does" — the shell ran `submit`, found nothing,
