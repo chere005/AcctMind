@@ -55,8 +55,6 @@ echo "==> app icons (full-bleed cut — the OS applies its own mask)"
 render 1024 "$ROOT/assets/icon.png"                    "$SQ"
 render 1024 "$ROOT/apps/app/assets/icon.png"           "$SQ"
 render 1024 "$ROOT/apps/app/assets/adaptive-icon.png"  "$SQ"
-# The watch target's own; @bacons/apple-targets reads it from there.
-render 1024 "$ROOT/apps/app/targets/watch/icon.png"    "$SQ"
 
 echo "==> picture cuts (rounded — nothing masks these)"
 render 512  "$ROOT/assets/logo-512.png"

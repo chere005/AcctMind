@@ -27,7 +27,6 @@ declare class PeerSyncNative extends NativeModule<Events> {
   forgetSecret(): boolean;
   start(hex: string, serviceType: string, maxBytes: number): boolean;
   stop(): void;
-  peerCount(): number;
   send(peer: string, json: string): boolean;
 }
 
@@ -89,14 +88,6 @@ export function stop(): void {
     native?.stop();
   } catch {
     // Stopping something that is not running is not a failure.
-  }
-}
-
-export function peerCount(): number {
-  try {
-    return native?.peerCount() ?? 0;
-  } catch {
-    return 0;
   }
 }
 

@@ -267,7 +267,8 @@ FOR NOW is the operative phrase and the reason nothing below was deleted with
 it. The watch traps in this file stay: every one of them cost time, none of
 them is about code that still exists, and all of them will be true again the
 day the target comes back. Restoring is one `git revert` of the commit that
-removed it, plus the plugin line in `app.config.js`.
+removed it, plus the plugin line in `app.config.js` and the watch render line
+in `tools/make-icons.sh`.
 
 ## Traps that have cost real time HERE
 

@@ -223,8 +223,6 @@ export function stillNeeded(line: { budget: number; needs: number; snoozed: bool
 /** Which of the three the bar pressed. */
 export type AssignMode = 'zero' | 'needs' | 'spent';
 
-export const ASSIGN_MODES: readonly AssignMode[] = ['zero', 'needs', 'spent'];
-
 /**
  * What one line's ASSIGNED becomes, or null when that is not an amount.
  *

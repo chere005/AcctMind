@@ -42,8 +42,3 @@ export async function load(): Promise<LoadResult> {
 export async function save(store: Store): Promise<void> {
   await AsyncStorage.setItem(KEY, serialize(store));
 }
-
-/** For the harnesses, and for a person who wants a clean device. */
-export async function clear(): Promise<void> {
-  await AsyncStorage.removeItem(KEY);
-}

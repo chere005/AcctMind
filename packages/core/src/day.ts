@@ -50,11 +50,6 @@ export function dayToDate(day: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** Days sort as strings — ISO order is calendar order. Kept named for intent. */
-export function compareDay(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 /** Shift a day by whole days, staying on the local calendar. */
 export function addDays(day: string, n: number): string {
   const d = dayToDate(day);

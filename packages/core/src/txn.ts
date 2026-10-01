@@ -265,8 +265,8 @@ export type SortMode = 'custom' | 'date' | 'amount';
  * Sparse on purpose. Dropping a row between two others takes the midpoint of
  * their orders, so one row is rewritten rather than every row after it — and
  * every rewrite is a merge-clock bump that has to cross a network. With a
- * gap of 1024 a list can be rearranged about ten times in the same spot
- * before the midpoints collide and `respace` is needed.
+ * gap of 1024 a list can be rearranged dozens of times in the same spot
+ * before the midpoints collide.
  */
 export const REORDER_GAP = 1024;
 
@@ -454,18 +454,6 @@ export function moveTxnTo(
   const order = orderAbove(into, txn.id, beforeId, 'desc');
   if (txn.account === account && txn.order === order) return null;
   return touch({ ...txn, account, order }, now);
-}
-
-/**
- * Give every row a fresh, evenly spaced order in the order currently shown.
- *
- * Needed when repeated drags into one spot have halved the gap to nothing.
- * Rewrites everything, so it is a last resort rather than a routine step —
- * every row it touches is a row that has to travel.
- */
-export function respace(shown: readonly Txn[], now: number): Txn[] {
-  const n = shown.length;
-  return shown.map((t, i) => touch({ ...t, order: (n - i) * REORDER_GAP }, now));
 }
 
 /**

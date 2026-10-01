@@ -453,11 +453,6 @@ export function addTxn(store: Store, txn: Txn): Store {
   return { ...store, txns: [...store.txns, txn] };
 }
 
-/** Remove by id. A miss is not an error — the row is gone either way. */
-export function removeTxn(store: Store, id: string): Store {
-  return { ...store, txns: store.txns.filter((t) => t.id !== id) };
-}
-
 /** Replace one in place, by id. Used by an edit; a miss changes nothing. */
 export function updateTxn(store: Store, txn: Txn): Store {
   return { ...store, txns: store.txns.map((t) => (t.id === txn.id ? txn : t)) };

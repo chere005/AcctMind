@@ -1201,9 +1201,9 @@ function LineRow({
 
         ABSOLUTE, and that is the point: in the flow it would be 26 more
         points on a line that already spends 300 of a phone's 307 on four
-        money columns, and the columns shrink first (see `colName`). A
-        truncated number is the one thing this row must never draw, so the
-        control that is not a number is the one taken out of the flex line.
+        money columns, and the columns shrink first. A truncated number is
+        the one thing this row must never draw, so the control that is not a
+        number is the one taken out of the flex line.
 
         A checkbox rather than a menu because it is a per-line yes/no flipped
         often, and it is the one control here that changes nothing about the
@@ -1575,16 +1575,6 @@ const styles = StyleSheet.create({
   // numbers below it. It was a Text with uppercase letter-spacing until the
   // labels stopped fitting.
   colLabel: { width: COL, flexShrink: 1, alignItems: 'flex-end', justifyContent: 'center' },
-  /*
-   * A FLOOR under the name, and columns that give way instead.
-   *
-   * With `minWidth: 0` the name is the only flexible thing in the row, so the
-   * fourth money column (Needs, 2026-09-15) plus the snooze box took it to
-   * ZERO on a 375-point phone: the rename target was in the tree, laid out,
-   * and impossible to hit — which is how it failed, as a click timing out on
-   * an element that "resolved" fine. The numbers shrink first now.
-   */
-  colName: { flex: 1, minWidth: 0, textAlign: 'left' },
   // The row is a COLUMN of two lines now, not a row of seven things.
   //
   // No padding of its own: the grip and the gap after it ARE the indent, so

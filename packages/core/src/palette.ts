@@ -19,8 +19,6 @@ export const PALETTE = [
   '#929aaa', // grey
 ] as const;
 
-export type PaletteColor = (typeof PALETTE)[number];
-
 /**
  * The anchors of the "everything" rainbow, as an ANGULAR sweep.
  *

@@ -83,9 +83,6 @@ final class PeerLink {
   var onPeerReady: ((String) -> Void)?
   var onPeerGone: ((String) -> Void)?
 
-  var peerCount: Int { queue.sync { conns.count } }
-  var isRunning: Bool { queue.sync { listener != nil } }
-
   // MARK: - Lifecycle
 
   /// Begin advertising and browsing. Idempotent: a second call restarts.

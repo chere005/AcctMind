@@ -91,8 +91,6 @@ public class PeerSyncModule: Module {
 
     Function("stop") { () in self.link.stop() }
 
-    Function("peerCount") { () -> Int in self.link.peerCount }
-
     /// Hand one frame to one peer. False means it did not go.
     Function("send") { (peer: String, json: String) -> Bool in
       self.link.send(peer: peer, json: json)

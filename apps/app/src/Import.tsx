@@ -38,7 +38,6 @@ import { SPACE, T, TAP } from './theme';
 
 /** What the file turned into, before anyone has agreed to file it. */
 type Loaded = {
-  name: string;
   rows: readonly CsvRow[];
   problems: readonly CsvProblem[];
   /** Read fine and left out on purpose — voided rows. Reported apart from
@@ -76,10 +75,10 @@ export function Import({ visible, store, accounts, onClose, onImport }: {
     setAccount((a) => a ?? accounts[0]?.id ?? null);
   }, [visible, accounts]);
 
-  const take = (name: string, text: string) => {
+  const take = (text: string) => {
     const read = readCsv(text);
     setError(read.rows.length === 0 ? 'No transactions found in that file.' : null);
-    setLoaded({ name, rows: read.rows, problems: read.problems, skipped: read.skipped });
+    setLoaded({ rows: read.rows, problems: read.problems, skipped: read.skipped });
     setArmed(false);
     setArmedAdd(false);
   };
@@ -129,7 +128,7 @@ export function Import({ visible, store, accounts, onClose, onImport }: {
                 testID="import-paste"
               />
               <Pressable
-                onPress={() => take('pasted', pasted)}
+                onPress={() => take(pasted)}
                 style={styles.btn}
                 accessibilityRole="button"
                 testID="import-read-paste"
@@ -317,7 +316,7 @@ export function Import({ visible, store, accounts, onClose, onImport }: {
  * idea what an input is — hence the cast, kept in one place rather than
  * sprinkled through the screen.
  */
-function createFileInput(take: (name: string, text: string) => void): React.ReactNode {
+function createFileInput(take: (text: string) => void): React.ReactNode {
   const Input = 'input' as unknown as React.ElementType;
   return (
     <Input
@@ -328,7 +327,7 @@ function createFileInput(take: (name: string, text: string) => void): React.Reac
       onChange={(e: { target: { files: { 0?: File } | null } }) => {
         const file = e.target.files?.[0];
         if (file === undefined) return;
-        void file.text().then((text: string) => take(file.name, text));
+        void file.text().then(take);
       }}
     />
   );

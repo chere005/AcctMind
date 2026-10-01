@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   STORE_VERSION, addTxn, budgetIn, emptyStore, live, mergeStores, normalizeTxn, parseStore,
-  INCOME, budgetStart, putBudgetStart, removeTxn, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
+  INCOME, budgetStart, putBudgetStart, serialize, tombstone, tombstoneMany, undoTo, updateTxn,
 } from '../src/index';
 import type { Store, Txn } from '../src/index';
 
@@ -136,15 +136,8 @@ describe('editing a store', () => {
     const before = addTxn(emptyStore(), txn());
     const snapshot = serialize(before);
     addTxn(before, txn({ id: 'b' }));
-    removeTxn(before, 'a');
     updateTxn(before, txn({ name: 'changed' }));
     expect(serialize(before)).toBe(snapshot);
-  });
-
-  it('removes by id, and shrugs at a miss', () => {
-    const store = addTxn(addTxn(emptyStore(), txn()), txn({ id: 'b' }));
-    expect(removeTxn(store, 'a').txns.map((t) => t.id)).toEqual(['b']);
-    expect(removeTxn(store, 'nope').txns).toHaveLength(2);
   });
 
   it('updates by id, and shrugs at a miss', () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DESC_MAX, NAME_MAX, applyDraft, draftOf, duplicateTxn, emptyDraft, isValid, makeTxn,
   REORDER_GAP, SWIPE_CLAIM_PX, SWIPE_ARM_PX, claimsSwipe, filterByName, newId,
-  clearedTotal, moveTxnTo, orderAbove, orderBetween, pickTap, reorder, respace, rowTap,
+  clearedTotal, moveTxnTo, orderAbove, orderBetween, pickTap, reorder, rowTap,
   selectedTotal, setCleared, sortTxns, swipeArms,
   toggleSelected, total,
   txnText, validateDraft,
@@ -350,15 +350,6 @@ describe('sorting and hand ordering', () => {
       // Between two, direction cannot matter: it is the midpoint.
       const b = t('b', { order: 200 });
       expect(orderBetween(b, a, 'asc')).toBe(orderBetween(b, a, 'desc'));
-    });
-
-    it('respace re-opens the gaps without changing the order', () => {
-      // Repeated drops into one spot halve the gap; this is the way out.
-      const tight = [t('a', { order: 2 }), t('b', { order: 1 }), t('c', { order: 0 })];
-      const spaced = respace(tight, 5000);
-      expect(sortTxns(spaced, 'custom').map((r) => r.id)).toEqual(['a', 'b', 'c']);
-      const gaps = spaced.map((r) => r.order);
-      expect(gaps[0]! - gaps[1]!).toBe(REORDER_GAP);
     });
   });
 });

@@ -571,8 +571,6 @@ function Section({
   onReconcile: (account: string, stated: number | null, what: Reconciled) => void;
   swipedId: string | null;
   setSwipedId: (id: string | null) => void;
-  /** Open the CSV import. Absent where the ledger is read-only. */
-  onImport?: (() => void) | undefined;
   onAction?: ((action: RowAction, txn: Txn) => void) | undefined;
   /** The screen's one drag, over every drawn entry. */
   drag: RowDrag;
@@ -1481,26 +1479,8 @@ const BESIDE_HAMMER = HEAD_GAP - HAMMER_PAD;
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: T.bg },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACE.lg, paddingTop: SPACE.sm, paddingBottom: SPACE.md,
-  },
-  title: { color: T.text, fontSize: 32, fontWeight: '700', letterSpacing: -0.5 },
-  total: { color: T.dim, fontSize: 15, marginTop: 2 },
   barTools: { flexDirection: 'row', alignItems: 'center', gap: SPACE.xs },
   totalUp: { color: T.positive },
-  // Drawn at TAP, not padded up to it: hitSlop does nothing on the web.
-  add: {
-    width: TAP, height: TAP, borderRadius: TAP / 2, backgroundColor: T.accent,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  addText: { color: '#ffffff', fontSize: 28, lineHeight: 32, fontWeight: '300' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: SPACE.sm },
-  devices: {
-    width: TAP, height: TAP, borderRadius: TAP / 2,
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: T.card, borderWidth: StyleSheet.hairlineWidth, borderColor: T.cardEdge,
-  },
   share: { alignItems: 'center', justifyContent: 'center' },
   shareArrow: { color: T.text, fontSize: 17, lineHeight: 18, fontWeight: '600' },
   shareTray: {
@@ -1515,10 +1495,6 @@ const styles = StyleSheet.create({
     position: 'absolute', top: -1, right: -1, width: 8, height: 8,
     borderRadius: 4, backgroundColor: T.positive,
     borderWidth: 1.5, borderColor: T.bg,
-  },
-  pickRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: SPACE.lg, paddingBottom: SPACE.sm,
   },
   // 18 between sections, CalMind's number, and the reason it is that large:
   // a section head is a LABEL over a group, and with 8 either side it reads
@@ -1778,7 +1754,6 @@ const styles = StyleSheet.create({
   // one colour the app uses for "you did this" is the accent.
   boxPicked: { backgroundColor: T.accent, borderColor: T.accent },
   boxTick: { color: T.bg, fontSize: 10, lineHeight: 12 },
-  emptyWrap: { flexGrow: 1, justifyContent: 'center' },
   empty: { alignItems: 'center', gap: SPACE.xs, padding: SPACE.xl },
   emptyTitle: { color: T.text, fontSize: 17 },
   emptyBody: { color: T.dim, fontSize: 15 },
