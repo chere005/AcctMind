@@ -254,8 +254,13 @@ AcctMind lane does not stop the batch.
 block of `tools/build-platforms.sh`, and `desktop/smoke.sh` when it builds,
 runs under `tools/heavy-lock.sh` — CoreMind's `canon/tools/heavy-lock.sh`, an
 `exact` row, so a fix goes there and never here. A block that finds another
-build running anywhere on this machine waits for it, says whose it is in the
-lane's output and on its status card, and gives up after 30 minutes. A heavy
+build holding the same lock waits for it, says whose it is in the lane's
+output and on its status card, and gives up after 30 minutes. "The same lock"
+means the lanes that have adopted that canon helper; a heavy build from one
+that has not — the TestMindSuite sandbox forks (`TestAcctMind`'s
+`tools/build-platforms.sh` runs xcodebuild, gradle and tauri with none) and
+WriteMind's xcodebuilds — runs beside an AcctMind block unseen, so for those
+one-at-a-time is still a rule to remember. A heavy
 block inside a heavy block is refused at once rather than waited on — which is
 one more reason the macOS block calls the smoke with `--no-build`.
 

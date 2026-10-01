@@ -48,7 +48,19 @@ bad() { FAIL=$((FAIL+1)); echo "  FAIL $1"; if [ -n "$2" ]; then echo "       $2
 
 echo "desktop smoke (macOS)"
 
-sh "$ROOT/desktop/check-assets.sh" | sed 's/^/  /'
+# Captured, not piped. `check-assets.sh | sed` took the pipe's status from
+# sed, and sh has no pipefail, so every FAIL check-assets printed — the window
+# url against the export's base, the 404 this file exists for, and the CSP —
+# still ended in a smoke that passed (2026-10-01). The binary check below
+# cannot stand in for it: the embedded asset key satisfies its grep whatever
+# the window url says. So the indent stays and the status is kept.
+if CA=$(sh "$ROOT/desktop/check-assets.sh" 2>&1); then
+  printf '%s\n' "$CA" | sed 's/^/  /'
+  ok "the desktop assets check passes"
+else
+  printf '%s\n' "$CA" | sed 's/^/  /'
+  bad "the desktop assets check passes" "its own FAIL lines are just above"
+fi
 
 if [ "$BUILD" = 1 ]; then
   # A cargo compile is a heavy build, so it waits its turn under the
