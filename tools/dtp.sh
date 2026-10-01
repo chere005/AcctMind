@@ -141,13 +141,36 @@ beat_stop() {
   fi
   return 0
 }
+# THE LANE'S WAY OUT, on EXIT and on a signal alike, and the one place the
+# card is closed `failed`. EXACTLY ONCE: REPORT_DONE goes to 1 BEFORE the
+# reporter runs, so the EXIT after a signal, a second ^C, and the foot of the
+# lane all find the card already closed.
+lane_stopped() {
+  beat_stop
+  if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then
+    REPORT_DONE=1
+    sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
 
 if [ -f "$REPORTER" ] && [ -z "${MIND_RUN_ID:-}" ]; then
   KIND=dtp; [ "$FULL" = 1 ] && KIND=tdtp
   RUN_ID=$(sh "$REPORTER" start "$KIND" AcctMind 2>/dev/null || true)
   # A lane that dies anywhere — a failed deploy, a refused push, a Ctrl-C —
   # must not leave this repo purple on the page for ever.
-  trap 'beat_stop; if [ -n "$RUN_ID" ] && [ "$REPORT_DONE" != 1 ]; then sh "$REPORTER" finish "$RUN_ID" failed 3 "stopped before finishing" >/dev/null 2>&1 || true; fi' EXIT INT TERM
+  #
+  # AND A CTRL-C MUST END IT. This was one trap for EXIT, INT and TERM, and a
+  # signal trap that returns RESUMES the script: ^C during the iOS build killed
+  # xcodebuild, closed the card `failed`, and the lane went straight on into
+  # the Android build and then closed the same card again, `ok` (found
+  # 2026-10-01). So INT and TERM close the card and then die of their own
+  # signal, as an untrapped shell would. A caller then sees "killed by SIGINT"
+  # and stops too; `exit 130` would read to it as a child that handled the ^C,
+  # and it would carry on. tools/heavy-lock.sh's handler ends the same way.
+  trap 'lane_stopped' EXIT
+  trap 'lane_stopped; trap - EXIT INT; kill -s INT $$; exit 130' INT
+  trap 'lane_stopped; trap - EXIT TERM; kill -s TERM $$; exit 143' TERM
   # A BEAT A MINUTE — Sean, 2026-09-07: "make sure during dtp that status is
   # updated every minute at least". start/finish alone leave the card frozen at
   # "running" through a multi-minute build; a beat every 60s keeps the page
