@@ -94,9 +94,14 @@ fi
 # every AGENTS.md stated and nothing kept: on 2026-09-30 one session's gradle
 # ran beside another's xcodebuild, and this repo's own dtp --quick took 689 s
 # and then 1574 s instead of 246 (cargo 84 s instead of 18, gradle 412 s
-# instead of 95). Now a block that finds any other build running — this
-# repo's, another app's, another session's — waits for it and says whose it
-# is, instead of running beside it.
+# instead of 95). Now a block that finds another build holding the lock —
+# this repo's, another app's, another session's — waits for it and says
+# whose it is, instead of running beside it.
+#
+# It sees only builds that TAKE it: the suite's build-platforms.sh, MyCalMind's
+# deploy-device.sh, AcctMind's building smoke and CoreMind's fallback. WriteMind,
+# the TestMindSuite forks, a hand-typed xcodebuild/gradle/cargo and an Xcode
+# window's build are not seen.
 #
 # Taken around each BLOCK, because a block is the unit the lane runs one at a
 # time (--mac before the tag, --ios and --android after the push), the same

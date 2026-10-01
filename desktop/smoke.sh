@@ -64,7 +64,7 @@ fi
 
 if [ "$BUILD" = 1 ]; then
   # A cargo compile is a heavy build, so it waits its turn under the
-  # machine-wide lock (tools/heavy-lock.sh says why). The build alone: the
+  # suite's heavy-build lock (tools/heavy-lock.sh says why). The build alone: the
   # launch below is not heavy, and --no-build takes no lock at all, which is
   # what lets tools/build-platforms.sh call this from inside its own.
   . "$ROOT/tools/heavy-lock.sh"
