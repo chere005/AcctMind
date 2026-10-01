@@ -109,6 +109,73 @@ test('and it is not part of the ledger', async ({ page }) => {
   expect(JSON.stringify(store)).not.toContain('amountMode');
 });
 
+test('Whole dollars typed one key at a time', async ({ page }) => {
+  // Sean, 2026-09-30: "whole dollars is broken on macos". Every Whole-dollars
+  // test above FILLS the field, which sets it wholesale and never lands a key
+  // on what the field draws. Typed by hand, `1` drew as `$1.00`, the `4`
+  // arrived as `$1.004`, and 1, 4, 5, 0 was $1,004,005,000.00 — saved. Not a
+  // Mac bug: every keyboard sends one key at a time; only fill() does not. The
+  // drawing now never shows a dot nobody typed (core's `amountField`).
+  await fresh(page);
+  await toggleWhole(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').fill('Rent');
+  const field = page.getByTestId('amount-input');
+  await field.pressSequentially('1450', { delay: 40 });
+  await expect(field).toHaveValue('$1,450');
+  // Backspace takes off the last digit typed — it used to GROW the amount.
+  await field.press('Backspace');
+  await expect(field).toHaveValue('$145');
+  // A typed dot is drawn as typed, so the key after it is a cent.
+  await field.pressSequentially('.5', { delay: 40 });
+  await expect(field).toHaveValue('$145.5');
+  await setSign(page, false);
+  await expect(page.getByTestId('amount-preview')).toHaveText('$145.50');
+
+  await page.getByTestId('save-button').click();
+  await expect(page.getByTestId('save-button')).toBeHidden();
+  const store = await stored(page) as { txns: { amount: number }[] };
+  expect(store.txns[0]?.amount).toBe(14550);
+});
+
+test('and cents mode, typed one key at a time, is the till it always was', async ({ page }) => {
+  // The control for the test above: the same keys, the default mode, and the
+  // drawing every cents user already knows.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  const field = page.getByTestId('amount-input');
+  await field.pressSequentially('1450', { delay: 40 });
+  await expect(field).toHaveValue('$14.50');
+  await field.press('Backspace');
+  await expect(field).toHaveValue('$1.45');
+});
+
+test('a round amount reopens in Whole dollars as dollars', async ({ page }) => {
+  // `1450.00` drawn as `$1,450.00` would make the next key a third decimal,
+  // so a round amount opens as `$1,450` (core's `amountSeed`) and the keys
+  // after it mean dollars, like every other key in that mode.
+  await fresh(page);
+  await toggleWhole(page);
+  await addTransaction(page, { name: 'Rent', amount: '-1450' });
+  await page.getByTestId('edit-toggle').click();
+  await page.getByTestId('row-edit').first().click();
+  const field = page.getByTestId('amount-input');
+  await expect(field).toHaveValue('$1,450');
+  await expect(page.getByTestId('amount-preview')).toHaveText('-$1,450.00');
+  // The edit form focuses the NAME, so the caret is put at the end of the
+  // amount by hand — where a click after the last digit lands. `End` will
+  // not do it: WebKit on a Mac scrolls the page with it instead.
+  await field.click();
+  await field.evaluate((el) => {
+    const input = el as HTMLInputElement;
+    input.setSelectionRange(input.value.length, input.value.length);
+  });
+  await page.keyboard.press('Backspace');
+  await expect(field).toHaveValue('$145');
+  await page.keyboard.type('0', { delay: 40 });
+  await expect(field).toHaveValue('$1,450');
+});
+
 test('a typed dot beats Whole dollars', async ({ page }) => {
   await fresh(page);
   await toggleWhole(page);

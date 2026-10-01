@@ -9,7 +9,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
-  addDays, addMonths, amountDigits, applyOp, assignedFor, availableOf, budgetFor, dayOf,
+  addDays, addMonths, amountDigits, amountField, amountKeyed, amountSeed, applyOp, assignedFor, availableOf, budgetFor, dayOf,
   type AssignMode,
   importKey, lineTone, parseDelimited, reconcileAdjustment, stillNeeded, usDate,
   wellsFargoName,
@@ -112,6 +112,96 @@ describe('spec/money.json — typing an amount', () => {
           if (cents === null) continue;
           expect(parseAmount(formatAmount(cents)), `${typed} in ${mode}`).toBe(cents);
         }
+      }
+    }
+  });
+});
+
+describe('spec/money.json — one key at a time', () => {
+  const m = spec<{
+    entry: Record<AmountMode, [string, string, number | null][]>;
+    key: {
+      draw: [string, string, string][];
+      read: [AmountMode, string, string][];
+      keys: [AmountMode, string, string, string, number | null][];
+      seed: [string, string, string][];
+    };
+  }>('money');
+
+  /**
+   * Keys pressed at the END of the field, as a keyboard delivers them: each
+   * arrives as what the field DRAWS with that key on it, or with its last
+   * character gone for '⌫'. This is the gesture `fill()` never makes.
+   */
+  const press = (mode: AmountMode, start: string, keys: string): string => {
+    let digits = start;
+    for (const k of keys) {
+      const shown = amountField(digits, mode);
+      digits = amountKeyed(k === '⌫' ? shown.slice(0, -1) : shown + k, mode);
+    }
+    return digits;
+  };
+
+  it('draws the digits it holds, in each mode', () => {
+    for (const [digits, inCents, inWhole] of m.key.draw) {
+      expect(amountField(digits, 'cents'), `${JSON.stringify(digits)} in cents`).toBe(inCents);
+      expect(amountField(digits, 'whole'), `${JSON.stringify(digits)} in whole`).toBe(inWhole);
+    }
+  });
+
+  it('reads back the text the field hands it', () => {
+    for (const [mode, next, kept] of m.key.read) {
+      expect(amountKeyed(next, mode), `${JSON.stringify(next)} in ${mode}`).toBe(kept);
+    }
+  });
+
+  it('types one key at a time, the way a keyboard does and fill() does not', () => {
+    for (const [mode, start, keys, shown, cents] of m.key.keys) {
+      const digits = press(mode, start, keys);
+      const label = `${JSON.stringify(start)} then ${keys} in ${mode}`;
+      expect(amountField(digits, mode), label).toBe(shown);
+      expect(entryCents(digits, mode), label).toBe(cents);
+    }
+  });
+
+  it('opens an edit on digits that mean the stored amount, in either mode', () => {
+    for (const [amount, inCents, inWhole] of m.key.seed) {
+      expect(amountSeed(amount, 'cents'), `${JSON.stringify(amount)} in cents`).toBe(inCents);
+      expect(amountSeed(amount, 'whole'), `${JSON.stringify(amount)} in whole`).toBe(inWhole);
+      // Whatever it opens on reads as the amount that was stored, unsigned.
+      const stored = amount === '' ? null : Math.abs(parseAmount(amount) ?? NaN);
+      for (const mode of ['cents', 'whole'] as const) {
+        expect(entryCents(amountSeed(amount, mode), mode), `${amount} in ${mode}`).toBe(stored);
+      }
+    }
+  });
+
+  it('whatever the field draws reads back as the same amount, and parseAmount agrees', () => {
+    // format -> parse for the FIELD: the property the whole module rests on,
+    // one level down. Every digit string any vector holds, in both modes.
+    const held = [
+      ...m.key.draw.map(([digits]) => digits),
+      ...m.entry.cents.map(([, kept]) => kept),
+      ...m.entry.whole.map(([, kept]) => kept),
+    ];
+    for (const mode of ['cents', 'whole'] as const) {
+      for (const digits of held) {
+        const cents = entryCents(digits, mode);
+        const drawn = amountField(digits, mode);
+        expect(entryCents(amountKeyed(drawn, mode), mode), `${JSON.stringify(digits)} in ${mode}`).toBe(cents);
+        if (cents !== null) expect(parseAmount(drawn), `${JSON.stringify(drawn)} in ${mode}`).toBe(cents);
+      }
+    }
+  });
+
+  it('in Whole dollars a key on the end of the drawing is that key on the end of the digits', () => {
+    // The property the report broke: `1` drew as `$1.00`, so `4` arrived as
+    // `$1.004` and was read as $1,004.00.
+    for (const [, kept] of m.entry.whole) {
+      if (entryCents(kept, 'whole') === null) continue;
+      for (const k of '0123456789.') {
+        expect(entryCents(press('whole', kept, k), 'whole'), `${JSON.stringify(kept)} + ${k}`)
+          .toBe(entryCents(amountDigits(kept + k), 'whole'));
       }
     }
   });

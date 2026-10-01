@@ -251,3 +251,97 @@ export function signedCents(
 ): number | null {
   return entryCents(negative ? `-${digits}` : digits, mode);
 }
+
+/* ------------------------------------------------------------------ *
+ * Drawing the field, and reading it back
+ *
+ * The add form does not draw what was typed; it draws what it MEANS — `450`
+ * is `$4.50` in the cell. So every key after the first is an edit to the
+ * DRAWING, and what arrives is that drawing with one key added. The drawing
+ * is therefore held to one property, the field's own round trip: read back
+ * in the same mode, it gives the amount it was drawn from. `amountField`
+ * draws, `amountKeyed` reads, and spec/money.json's `key` vectors type into
+ * the pair one key at a time.
+ *
+ * Whole dollars broke exactly that. Sean, 2026-09-30: "whole dollars is
+ * broken on macos". The cell drew `1` as `$1.00`, the next key arrived as
+ * `$1.004`, and stripping the punctuation read `1004` — so 1, 4, 5, 0 typed
+ * by hand was $1,004,005,000.00. Every vector was green, because every
+ * vector, and every Whole-dollars end-to-end test, delivered the whole string
+ * at once. Not a Mac bug: every keyboard sends one key at a time, and only a
+ * test's fill() does not.
+ *
+ *  · CENTS draws the till's `$0.45`. Its dot is DECORATION, and its digit
+ *    stream — `045` — is the cents with leading zeros, so stripping the
+ *    punctuation reads it back. This half is exactly what the screen did
+ *    before the rule moved here, character for character.
+ *
+ *  · WHOLE DOLLARS never draws a dot nobody typed. Bare digits are `$1,450`.
+ *    Once a dot is typed, it and the fraction are drawn AS TYPED — `$12.`,
+ *    `$12.3`, `$12.34` — and never padded to `$12.30`, because the next key
+ *    lands on the end of the drawing and `$12.30` plus `4` is a third
+ *    decimal. So every dot a Whole-dollars drawing shows is real, and
+ *    reading it back is `amountDigits`: the digits, and the dot where it
+ *    stands.
+ *
+ * Whatever is not an amount yet — empty, a lone `.`, a refused `1.005`, past
+ * MAX_CENTS — is drawn as the raw digits in both modes, so the person sees
+ * what they typed rather than a number it is not.
+ * ------------------------------------------------------------------ */
+
+/**
+ * What an amount field DRAWS for the digits it holds — unsigned, because the
+ * − button beside the field is the sign. `digits` is what `amountDigits`
+ * kept: digits and at most one dot.
+ */
+export function amountField(digits: string, mode: AmountMode): string {
+  const cents = entryCents(digits, mode);
+  if (cents === null) return digits;
+  if (mode === 'cents') return formatAmount(cents);
+  // Whole dollars: the whole part grouped, then the dot and the fraction
+  // exactly as typed, or nothing at all when no dot was typed.
+  const dot = digits.indexOf('.');
+  return '$' + group(Math.trunc(cents / 100)) + (dot < 0 ? '' : digits.slice(dot));
+}
+
+/**
+ * What the field holds after an edit: the text it handed back — its own
+ * drawing with a key added or taken away, or anything pasted over it — read
+ * in the mode it was drawn in. Returns what `amountDigits` would keep.
+ *
+ * The caret is not an input. A key typed mid-field arrives in place and is
+ * read in place (digits keep their order; in Whole dollars, or in text that
+ * was never a drawing, a dot keeps its position — a cents drawing's dot is
+ * its own punctuation and is dropped, as it always was),
+ * and the redrawn value puts the caret back at the end, as replacing a
+ * controlled value does on the web, in WebKit and in WKWebView alike.
+ */
+export function amountKeyed(next: string, mode: AmountMode): string {
+  // Whole dollars draws no dot of its own, and text with no `$` was never a
+  // drawing (pasted, refused, typed before the drawing caught up). In both,
+  // a dot is real and WHERE it stands is the meaning: `12.3` is $12.30.
+  if (mode === 'whole' || (!next.includes('$') && next.includes('.'))) {
+    return amountDigits(next);
+  }
+  // A cents drawing: its dot is punctuation, its digits are the cents, and
+  // a dot typed at the END is someone saying "that was the whole part".
+  const only = next.replace(/[^0-9]/g, '');
+  return next.trimEnd().endsWith('.') ? only + '.' : only;
+}
+
+/**
+ * The digits an edit OPENS with, from a stored amount as `amountInput`
+ * writes it (`-1450.00`): unsigned, because the − button holds the sign.
+ *
+ * The canonical string carries its own dot, so it reads the same in either
+ * mode — `4.50` is $4.50 under cents and under Whole dollars alike, where a
+ * bare `450` would reopen at $4.50 having saved $450.00. The one exception
+ * is Whole dollars on a ROUND amount: `1450.00` would draw `$1,450.00`, and
+ * a key on the end of that is a third decimal, so the edit opens on `1450`
+ * instead — the same $1,450.00, drawn `$1,450`, with the keys after it
+ * meaning dollars like every other key in that mode.
+ */
+export function amountSeed(amount: string, mode: AmountMode): string {
+  const digits = amountDigits(amount);
+  return mode === 'whole' && digits.endsWith('.00') ? digits.slice(0, -3) : digits;
+}

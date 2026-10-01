@@ -8,11 +8,11 @@ import {
   TextInput, View, type PanResponderInstance,
 } from 'react-native';
 import {
-  INCOME, INCOME_NAME, LONG_PRESS_MS, amountDigits, amountInput, claimsSwipe, clearedTotal, dropTarget, foldLevel,
+  INCOME, INCOME_NAME, LONG_PRESS_MS, amountDigits, amountInput, amountSeed, claimsSwipe, clearedTotal, dropTarget, foldLevel,
   formatAmount, formatDay, parseAmount, pickTap, rowTap,
   selectedTotal, slotEntries,
   signedCents, sortTxns, swipeArms, toggleSelected, total,
-  type Account, type Category, type Line, type SortMode, type Txn,
+  type Account, type AmountMode, type Category, type Line, type SortMode, type Txn,
 } from '@acctmind/core';
 import { CategoryMenu, NO_CATEGORY } from './CategoryPick';
 import { Dot } from './Dot';
@@ -80,6 +80,13 @@ type Props = {
   /** How the rows are ordered inside each account. */
   sort: SortMode;
   onSort: (mode: SortMode) => void;
+  /**
+   * How bare digits are read when a row's amount is edited in place — the
+   * add form's pref and the add form's rule. InlineAmount said 'cents' as a
+   * literal until 2026-09-30, so with Whole dollars on, a row selected and
+   * typed over with 50 wrote $0.50.
+   */
+  amountMode: AmountMode;
   /** Which accounts are folded shut, by id. */
   collapsed: readonly string[];
   onCollapsed: (ids: readonly string[]) => void;
@@ -118,7 +125,7 @@ type Props = {
 
 export function TransactionsScreen({
   txns, onAdd, onAction, onDevices, peers = 0, menu, undo, accounts,
-  sort, onSort, collapsed, onCollapsed, onMove, onManage, lines, categories, onReconcile,
+  sort, onSort, amountMode, collapsed, onCollapsed, onMove, onManage, lines, categories, onReconcile,
   onInline, onDate, onCleared, onDeleteMany,
 }: Props) {
   // Ordering is core's, not the list's — see spec/sort.json.
@@ -432,6 +439,7 @@ export function TransactionsScreen({
             onPick={(id) => setPicked((p) => toggleSelected(p, id))}
             inline={inline}
             setInline={setInline}
+            amountMode={amountMode}
             onInline={onInline}
             onDate={onDate}
             onCleared={onCleared}
@@ -525,7 +533,7 @@ export function TransactionsScreen({
  */
 function Section({
   account, rows, shut, onToggle, onFoldAll, onAdd, edit, onEdited, picked, onPick,
-  inline, setInline, onInline, onDate, onCleared, lineName, lines, categories,
+  inline, setInline, amountMode, onInline, onDate, onCleared, lineName, lines, categories,
   swipedId, setSwipedId, onAction, drag, canMove, headIdx, flatIdxOf,
   reconciling, onReconcileOpen, onReconcile,
 }: {
@@ -545,6 +553,8 @@ function Section({
   onPick: (id: string) => void;
   inline: { id: string; field: 'name' | 'amount' } | null;
   setInline: (next: { id: string; field: 'name' | 'amount' } | null) => void;
+  /** How a row's amount, edited in place, reads bare digits. */
+  amountMode: AmountMode;
   onInline?: ((txn: Txn, patch: InlinePatch) => void) | undefined;
   onDate?: ((txn: Txn) => void) | undefined;
   /** The cleared box on a row was flipped. Absent where the ledger is read-only. */
@@ -768,6 +778,7 @@ function Section({
             inline={inline?.id === t.id ? inline.field : null}
             onOpenInline={(field) => setInline({ id: t.id, field })}
             onCloseInline={() => setInline(null)}
+            amountMode={amountMode}
             onInline={onInline === undefined ? undefined : (patch) => onInline(t, patch)}
             onDate={onDate === undefined ? undefined : () => onDate(t)}
             onCleared={onCleared === undefined ? undefined : (c) => onCleared(t, c)}
@@ -791,7 +802,7 @@ function Section({
 }
 
 function Row({
-  txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, onInline, onDate, onCleared,
+  txn, edit, picked, onPick, inline, onOpenInline, onCloseInline, amountMode, onInline, onDate, onCleared,
   onAction, grip, lifted, dy, swiped, parked, lineName, lines, categories, onDismiss, onSwipe,
 }: {
   txn: Txn;
@@ -805,6 +816,8 @@ function Row({
   inline: 'name' | 'amount' | null;
   onOpenInline: (field: 'name' | 'amount') => void;
   onCloseInline: () => void;
+  /** How the amount, edited in place, reads bare digits. */
+  amountMode: AmountMode;
   /** Commit an in-place edit. Absent where the ledger is read-only. */
   onInline?: ((patch: InlinePatch) => void) | undefined;
   /** The date was tapped. */
@@ -1043,6 +1056,7 @@ function Row({
       {inline === 'amount' && onInline !== undefined ? (
         <InlineAmount
           value={txn.amount}
+          mode={amountMode}
           onDone={(next) => { onCloseInline(); if (next !== null && next !== txn.amount) onInline({ amount: next }); }}
           testID="txn-amount-input"
         />
@@ -1274,7 +1288,8 @@ function InlineText({ value, style, onDone, testID }: {
  * disagree, which they would the moment the sign became a second piece of
  * state.
  *
- * Seeded with the CANONICAL string and read back through the entry rules —
+ * Seeded from the canonical string (`amountSeed` — a round amount opens as
+ * bare dollars under Whole dollars) and read back through the entry rules —
  * the same pair the add form uses, so a number typed here and one typed there
  * mean the same thing. An unparseable value commits nothing rather than
  * writing a zero.
@@ -1297,8 +1312,10 @@ const KEEP_FOCUS = {
   onMouseDown: (e: { preventDefault: () => void }) => e.preventDefault(),
 } as unknown as Record<string, unknown>;
 
-function InlineAmount({ value, onDone, testID }: {
+function InlineAmount({ value, mode, onDone, testID }: {
   value: number;
+  /** How bare digits are read — the add form's pref, the add form's rule. */
+  mode: AmountMode;
   onDone: (next: number | null) => void;
   testID: string;
 }) {
@@ -1315,7 +1332,18 @@ function InlineAmount({ value, onDone, testID }: {
    * minus like any other stray character) and the button holds a boolean, and
    * `signedCents` is the one place they are put back together.
    */
-  const [digits, setDigits] = useState(() => amountDigits(amountInput(value)));
+  /*
+   * The mode is read ONCE, when the editor opens, and both halves use that.
+   *
+   * Seeded like the add form's edit: `4.50` in either mode, and a round
+   * amount as `1450` under Whole dollars — see core's `amountSeed`. So the
+   * digits only mean what they say in the mode they were seeded in. On a
+   * phone the cog sits outside the list and a tap on it does not blur this
+   * field: turn Whole dollars off with a $1,450.00 row open, and a commit
+   * reading the CURRENT mode wrote `1450` as cents — $14.50, synced.
+   */
+  const [openMode] = useState(mode);
+  const [digits, setDigits] = useState(() => amountSeed(amountInput(value), openMode));
   const [negative, setNegative] = useState(value < 0);
   const field = useRef<TextInput>(null);
   /*
@@ -1328,7 +1356,7 @@ function InlineAmount({ value, onDone, testID }: {
    * the same machinery for the same reason.
    */
   const flipping = useRef(false);
-  const done = () => onDone(signedCents(digits, negative, 'cents'));
+  const done = () => onDone(signedCents(digits, negative, openMode));
 
   return (
     <View style={styles.inlineAmountRow}>

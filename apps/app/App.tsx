@@ -698,6 +698,9 @@ export default function App() {
               accounts={live(phase.store.accounts)}
               sort={prefs.sort}
               onSort={(m) => setPref('sort', m)}
+              // The cog's Whole dollars, for a row's amount edited in place —
+              // the same pref the add form below is handed.
+              amountMode={prefs.amountMode}
               collapsed={prefs.collapsed}
               onCollapsed={(ids) => setPref('collapsed', [...ids])}
               onManage={() => setManaging('accounts')}

@@ -13,8 +13,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  amountDigits, amountInput, draftOf, emptyDraft, formatAmount, formatDay, isValid,
-  signedCents, today, validateDraft,
+  amountDigits, amountField, amountInput, amountKeyed, amountSeed, draftOf, emptyDraft,
+  formatAmount, formatDay, isValid, signedCents, today, validateDraft,
   type AmountMode, type Category, type Draft, type DraftErrors, type Line, type Txn,
 } from '@acctmind/core';
 import { CategoryPick } from './CategoryPick';
@@ -99,9 +99,12 @@ export function AddTransaction({
        *
        * An EDIT is seeded from the canonical string instead: '4.50' carries
        * its own dot and so reads the same under either entry mode, where
-       * '450' would reopen at $4.50 having saved $450.00.
+       * '450' would reopen at $4.50 having saved $450.00. Core's
+       * `amountSeed` makes the one exception: a round amount under Whole
+       * dollars opens as '1450', drawn '$1,450', so the next key is dollars
+       * rather than a third decimal.
        */
-      setDigits(amountDigits(start.amount));
+      setDigits(amountSeed(start.amount, mode));
       setNegative(editing === undefined ? true : start.amount.trimStart().startsWith('-'));
     }
   }
@@ -259,46 +262,30 @@ export function AddTransaction({
                 />
                 <TextInput
                   /*
-                   * The FORMATTED value, in the cell, and UNSIGNED — the − to
-                   * the left of it is what says negative. `formatAmount` puts
-                   * a minus on a negative, so the sign is taken off again
-                   * here rather than drawn twice.
+                   * What the digits MEAN, drawn in the cell, and UNSIGNED —
+                   * the − to the left of it is what says negative. Core's
+                   * `amountField` draws it and `amountKeyed` reads the next
+                   * keystroke back off that drawing, and the pair is held to
+                   * one property (spec/money.json `key`): the drawing reads
+                   * back as the same amount, in the same mode.
+                   *
+                   * That property is the fix for Sean's "whole dollars is
+                   * broken on macos", 2026-09-30. This cell drew
+                   * `formatAmount` in both modes, so Whole dollars drew `1`
+                   * as `$1.00`, the next key arrived as `$1.004`, and the
+                   * digits read off it were $1,004.00 — 1, 4, 5, 0 typed by
+                   * hand was $1,004,005,000.00. Every Whole-dollars test
+                   * filled the field wholesale, which is why none saw it. Whole
+                   * dollars now draws `$1,450`, and a typed dot as typed
+                   * (`$12.3`); cents mode draws exactly what it always did.
                    *
                    * The raw digits stay in `digits` and are what the rules
                    * read; this is only what is drawn.
                    */
-                  value={cents === null ? digits : formatAmount(Math.abs(cents))}
-                  onChangeText={(next) => {
-                    /*
-                     * Two kinds of text arrive here and they mean different
-                     * things.
-                     *
-                     * Editing what is DRAWN — the value carries a '$', because
-                     * that is what `formatAmount` puts there — is a digit
-                     * gesture: typing appends a digit and backspace removes
-                     * one, and the dot on screen is punctuation this code
-                     * added, not something the person typed. Reading it as a
-                     * decimal point would make every keystroke past two
-                     * decimals a refusal.
-                     *
-                     * Anything without a '$' is raw: typed before formatting
-                     * caught up, or pasted. There the dot is REAL and its
-                     * POSITION is the whole meaning — `12.3` is $12.30 and
-                     * `1.005` is refused, and both must survive the trip.
-                     */
-                    const only = next.replace(/[^0-9]/g, '');
-                    const dot = next.indexOf('.');
-                    const raw = next.includes('$') || dot < 0
-                      ? only + (next.trimEnd().endsWith('.') ? '.' : '')
-                      : (() => {
-                          const after = next.slice(dot + 1).replace(/[^0-9]/g, '').length;
-                          const cut = only.length - after;
-                          return only.slice(0, cut) + '.' + only.slice(cut);
-                        })();
-                    // The sign is not typed and is not read back out of the
-                    // text: it rides along untouched from the button.
-                    setAmount(raw, negative);
-                  }}
+                  value={amountField(digits, mode)}
+                  // The sign is not typed and is not read back out of the
+                  // text: it rides along untouched from the button.
+                  onChangeText={(next) => setAmount(amountKeyed(next, mode), negative)}
                   style={[styles.input, styles.amountField]}
                   placeholder={mode === 'whole' ? '0' : '0.00'}
                   placeholderTextColor={T.faint}
@@ -314,8 +301,9 @@ export function AddTransaction({
                   testID="amount-input"
                 />
               </View>
-              {/* Kept for the tests and the screen reader: the cell shows the
-                  amount now, so this is the same string, not a second one. */}
+              {/* Kept for the tests and the screen reader: the whole amount,
+                  signed and with its cents — `-$1,450.00` where Whole dollars
+                  draws `$1,450` in the cell beside the − button. */}
               <Text
                 style={styles.previewHidden}
                 accessibilityElementsHidden

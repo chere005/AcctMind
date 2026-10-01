@@ -14,7 +14,7 @@
  * an absence.
  */
 import { expect, test, type Page } from '@playwright/test';
-import { addTransaction, fresh, pickSort, reload, rows, stored, storedTxns, swipeRow } from './helpers';
+import { addTransaction, fresh, pickSort, reload, rows, stored, storedTxns, swipeRow, toggleWhole } from './helpers';
 
 type Stored = { txns: { id: string; name: string; amount: number; deleted?: true }[] };
 
@@ -668,6 +668,25 @@ test('a tap on the amount edits it in place, under the same entry rules', async 
   await page.getByTestId('txn-amount-input').press('Enter');
   await expect(page.getByTestId('txn-amount')).toHaveText('-$12.75');
   await expect(page.getByTestId(/^account-total-/)).toHaveText('-$12.75');
+});
+
+test('the amount edited in place reads Whole dollars too', async ({ page }) => {
+  // It said 'cents' as a literal until 2026-09-30, so with Whole dollars on,
+  // a row typed over with 50 became $0.50 while the add form beside it read
+  // the same 50 as $50.00. One setting, one rule, both fields.
+  await fresh(page);
+  await addTransaction(page, { name: 'Coffee', amount: '-450' });
+  await toggleWhole(page);
+  await page.getByTestId('txn-amount-tap').click();
+  // A dot the record carries is still a dot: $4.50 opens as 4.50.
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('4.50');
+  await page.getByTestId('txn-amount-input').fill('50');
+  await page.getByTestId('txn-amount-input').press('Enter');
+  await expect(page.getByTestId('txn-amount')).toHaveText('-$50.00');
+
+  // And a round amount opens as dollars, the way the add form's edit does.
+  await page.getByTestId('txn-amount-tap').click();
+  await expect(page.getByTestId('txn-amount-input')).toHaveValue('50');
 });
 
 test('an unreadable amount commits nothing rather than writing a zero', async ({ page }) => {
