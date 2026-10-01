@@ -279,13 +279,19 @@ export function AddTransaction({
                    * dollars now draws `$1,450`, and a typed dot as typed
                    * (`$12.3`); cents mode draws exactly what it always did.
                    *
+                   * Which is why the reader is handed `digits` too: cents
+                   * draws a typed `12.` as `$12.00`, and only the digits can
+                   * say those zeros are padding. Read off the drawing alone,
+                   * 1, 2, ., 5 was $120.05 — and Backspace on `$0.01` drew
+                   * `$0.00` for ever, never the placeholder.
+                   *
                    * The raw digits stay in `digits` and are what the rules
                    * read; this is only what is drawn.
                    */
                   value={amountField(digits, mode)}
                   // The sign is not typed and is not read back out of the
                   // text: it rides along untouched from the button.
-                  onChangeText={(next) => setAmount(amountKeyed(next, mode), negative)}
+                  onChangeText={(next) => setAmount(amountKeyed(next, digits, mode), negative)}
                   style={[styles.input, styles.amountField]}
                   placeholder={mode === 'whole' ? '0' : '0.00'}
                   placeholderTextColor={T.faint}

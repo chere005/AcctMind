@@ -150,6 +150,52 @@ test('and cents mode, typed one key at a time, is the till it always was', async
   await expect(field).toHaveValue('$1.45');
 });
 
+test('a dot typed in cents mode holds, one key at a time', async ({ page }) => {
+  // Found typing by hand, 2026-09-30, the same evening as the test above
+  // it: cents mode draws a typed `12.` as `$12.00`, so the `5` arrived as
+  // `$12.005` and was read as a till — 1, 2, ., 5 was $120.05, and
+  // 1, 2, ., 3, 4 was $1,200.34. Every cents case with a dot in it FILLS
+  // the field. Core's `amountKeyed` now reads the drawing alongside the
+  // digits it was drawn from, and knows its zeros are padding.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  await page.getByTestId('name-input').fill('Lunch');
+  const field = page.getByTestId('amount-input');
+  await field.pressSequentially('12.5', { delay: 40 });
+  await expect(field).toHaveValue('$12.50');
+  // Backspace takes off the 5 that was typed, not the drawing's padding.
+  await field.press('Backspace');
+  await expect(field).toHaveValue('$12.00');
+  await field.pressSequentially('34', { delay: 40 });
+  await expect(field).toHaveValue('$12.34');
+  await setSign(page, false);
+  await expect(page.getByTestId('amount-preview')).toHaveText('$12.34');
+
+  await page.getByTestId('save-button').click();
+  await expect(page.getByTestId('save-button')).toBeHidden();
+  const store = await stored(page) as { txns: { amount: number }[] };
+  expect(store.txns[0]?.amount).toBe(1234);
+});
+
+test('and Backspace empties a cents field, back to its placeholder', async ({ page }) => {
+  // `$0.01` less a key was `$0.0`, which read as zero and drew `$0.00`
+  // again — and again, for every Backspace after it.
+  await fresh(page);
+  await page.getByTestId('add-button').click();
+  const field = page.getByTestId('amount-input');
+  await field.pressSequentially('10', { delay: 40 });
+  await expect(field).toHaveValue('$0.10');
+  await field.press('Backspace');
+  await expect(field).toHaveValue('$0.01');
+  await field.press('Backspace');
+  await expect(field).toHaveValue('');
+  await expect(field).toHaveAttribute('placeholder', '0.00');
+  await expect(page.getByTestId('amount-preview')).toHaveText('');
+  // And an emptied field takes a key like a fresh one.
+  await field.pressSequentially('5', { delay: 40 });
+  await expect(field).toHaveValue('$0.05');
+});
+
 test('a round amount reopens in Whole dollars as dollars', async ({ page }) => {
   // `1450.00` drawn as `$1,450.00` would make the next key a third decimal,
   // so a round amount opens as `$1,450` (core's `amountSeed`) and the keys

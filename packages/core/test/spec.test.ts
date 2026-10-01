@@ -131,13 +131,14 @@ describe('spec/money.json — one key at a time', () => {
   /**
    * Keys pressed at the END of the field, as a keyboard delivers them: each
    * arrives as what the field DRAWS with that key on it, or with its last
-   * character gone for '⌫'. This is the gesture `fill()` never makes.
+   * character gone for '⌫', and is read alongside the digits it was drawn
+   * from, as the screen reads it. This is the gesture `fill()` never makes.
    */
   const press = (mode: AmountMode, start: string, keys: string): string => {
     let digits = start;
     for (const k of keys) {
       const shown = amountField(digits, mode);
-      digits = amountKeyed(k === '⌫' ? shown.slice(0, -1) : shown + k, mode);
+      digits = amountKeyed(k === '⌫' ? shown.slice(0, -1) : shown + k, digits, mode);
     }
     return digits;
   };
@@ -150,8 +151,10 @@ describe('spec/money.json — one key at a time', () => {
   });
 
   it('reads back the text the field hands it', () => {
+    // On its own, with nothing held: the way a paste over an empty field
+    // arrives, or select-all and a key.
     for (const [mode, next, kept] of m.key.read) {
-      expect(amountKeyed(next, mode), `${JSON.stringify(next)} in ${mode}`).toBe(kept);
+      expect(amountKeyed(next, '', mode), `${JSON.stringify(next)} in ${mode}`).toBe(kept);
     }
   });
 
@@ -188,7 +191,7 @@ describe('spec/money.json — one key at a time', () => {
       for (const digits of held) {
         const cents = entryCents(digits, mode);
         const drawn = amountField(digits, mode);
-        expect(entryCents(amountKeyed(drawn, mode), mode), `${JSON.stringify(digits)} in ${mode}`).toBe(cents);
+        expect(entryCents(amountKeyed(drawn, digits, mode), mode), `${JSON.stringify(digits)} in ${mode}`).toBe(cents);
         if (cents !== null) expect(parseAmount(drawn), `${JSON.stringify(drawn)} in ${mode}`).toBe(cents);
       }
     }
@@ -202,6 +205,19 @@ describe('spec/money.json — one key at a time', () => {
       for (const k of '0123456789.') {
         expect(entryCents(press('whole', kept, k), 'whole'), `${JSON.stringify(kept)} + ${k}`)
           .toBe(entryCents(amountDigits(kept + k), 'whole'));
+      }
+    }
+  });
+
+  it('in cents a key after a typed dot is that key on the end of the digits', () => {
+    // The cents half of the same report: `12.` drew as `$12.00`, so `5`
+    // arrived as `$12.005` and was read as a till — $120.05. While a typed
+    // dot's cents are still owed, the drawing's zeros are padding.
+    for (const [, kept] of m.entry.cents) {
+      if (!/\.\d?$/.test(kept)) continue;
+      for (const k of '0123456789.') {
+        expect(entryCents(press('cents', kept, k), 'cents'), `${JSON.stringify(kept)} + ${k}`)
+          .toBe(entryCents(amountDigits(kept + k), 'cents'));
       }
     }
   });

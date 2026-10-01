@@ -627,7 +627,7 @@
       null
     ]
   ],
-  "_key": "Typing into the amount field ONE KEY AT A TIME, which `entry` never reached: there the whole string arrives at once, the way Playwright's fill() delivers it, and every row stayed green while Whole dollars turned 1, 4, 5, 0 typed by hand into $1,004,005,000.00 (Sean, 2026-09-30: \"whole dollars is broken on macos\"). The field DRAWS the amount (`amountField`) and the next key arrives as that drawing with the key on it (`amountKeyed` reads it back), so the drawing must read back as the amount it was drawn from, in the same mode. Cents draws the till's '$0.45': its dot is decoration and its digit stream is the cents. Whole dollars never draws a dot nobody typed: bare digits are '$1,450', and a typed dot and its fraction are drawn exactly as typed, '$12.3' not '$12.30', because a key on the end of '$12.30' would be a third decimal. Anything not yet an amount is drawn as the raw digits. `draw` rows are [digits, drawn in cents mode, drawn in Whole dollars]. `read` rows are [mode, the text the field handed back, digits kept] — a paste, or select-all and a key, arrives this way too, as one new string. `keys` rows are [mode, digits already there, keys pressed at the END of the field, what it draws after, cents after]; '⌫' is Backspace. `seed` rows are [a stored amount as `amountInput` writes it, the digits an edit opens with in cents mode, and in Whole dollars]: a round amount opens as '1450' in Whole dollars, so the field draws '$1,450' and the keys after it are dollars. The cents rows pin what the screen already did; they are not a redesign of it.",
+  "_key": "Typing into the amount field ONE KEY AT A TIME, which `entry` never reached: there the whole string arrives at once, the way Playwright's fill() delivers it, and every row stayed green while Whole dollars turned 1, 4, 5, 0 typed by hand into $1,004,005,000.00 (Sean, 2026-09-30: \"whole dollars is broken on macos\"). The field DRAWS the amount (`amountField`) and the next key arrives as that drawing with the key on it (`amountKeyed` reads it back), so the drawing must read back as the amount it was drawn from, in the same mode. Cents draws the till's '$0.45': its dot is decoration and its digit stream is the cents. Whole dollars never draws a dot nobody typed: bare digits are '$1,450', and a typed dot and its fraction are drawn exactly as typed, '$12.3' not '$12.30', because a key on the end of '$12.30' would be a third decimal. Anything not yet an amount is drawn as the raw digits. `draw` rows are [digits, drawn in cents mode, drawn in Whole dollars]. Cents draws a typed '12.' as '$12.00' and '12.5' as '$12.50', so the reader is also handed the digits the drawing was drawn FROM: while a typed dot's cents are still owed, the zeros are padding, a key on the end is that key on the end of the digits, and Backspace takes off the last thing typed. Before that, 1, 2, ., 5 typed by hand was $120.05. Once both cents are in, nothing drawn is padding and '$12.34' is a till's drawing like any other, the next key shifting it, as a seeded '$4.50' and a pasted '$1,234.56' always have. And a Backspace that leaves zero leaves the field EMPTY — '$0.01' less a key used to draw '$0.00' for ever, and the placeholder never came back. `read` rows are [mode, the text the field handed back, digits kept] — a paste, or select-all and a key, arrives this way too, as one new string, read with nothing held. `keys` rows are [mode, digits already there, keys pressed at the END of the field, what it draws after, cents after]; '⌫' is Backspace. `seed` rows are [a stored amount as `amountInput` writes it, the digits an edit opens with in cents mode, and in Whole dollars]: a round amount opens as '1450' in Whole dollars, so the field draws '$1,450' and the keys after it are dollars. The cents rows pin what the screen already did, except for those two bugs; they are not a redesign of it.",
   "key": {
     "draw": [
       [
@@ -896,6 +896,118 @@
         "10000000000000⌫",
         "$10,000,000,000.00",
         1000000000000
+      ],
+      [
+        "cents",
+        "",
+        "12.5",
+        "$12.50",
+        1250
+      ],
+      [
+        "cents",
+        "",
+        "12.34",
+        "$12.34",
+        1234
+      ],
+      [
+        "cents",
+        "50.",
+        "5",
+        "$50.50",
+        5050
+      ],
+      [
+        "cents",
+        "",
+        "12.5⌫",
+        "$12.00",
+        1200
+      ],
+      [
+        "cents",
+        "",
+        "12.⌫",
+        "$0.12",
+        12
+      ],
+      [
+        "cents",
+        "",
+        "12.345",
+        "$123.45",
+        12345
+      ],
+      [
+        "cents",
+        "",
+        "12.34⌫",
+        "$1.23",
+        123
+      ],
+      [
+        "cents",
+        "1234.56",
+        "7",
+        "$12,345.67",
+        1234567
+      ],
+      [
+        "cents",
+        "",
+        "1⌫",
+        "",
+        null
+      ],
+      [
+        "cents",
+        "",
+        "0⌫",
+        "",
+        null
+      ],
+      [
+        "cents",
+        "",
+        "1450⌫⌫⌫⌫",
+        "",
+        null
+      ],
+      [
+        "cents",
+        "",
+        "10⌫",
+        "$0.01",
+        1
+      ],
+      [
+        "cents",
+        "",
+        "1⌫⌫5",
+        "$0.05",
+        5
+      ],
+      [
+        "cents",
+        "4.50",
+        "⌫⌫⌫",
+        "",
+        null
+      ],
+      [
+        "cents",
+        "0.00",
+        "⌫",
+        "",
+        null
+      ],
+      [
+        "cents",
+        "",
+        "12.5⌫⌫⌫⌫",
+        "",
+        null
       ],
       [
         "whole",

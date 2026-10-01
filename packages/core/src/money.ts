@@ -273,8 +273,11 @@ export function signedCents(
  *
  *  · CENTS draws the till's `$0.45`. Its dot is DECORATION, and its digit
  *    stream — `045` — is the cents with leading zeros, so stripping the
- *    punctuation reads it back. This half is exactly what the screen did
- *    before the rule moved here, character for character.
+ *    punctuation reads it back. The drawing is exactly what the screen drew
+ *    before the rule moved here, character for character — including a
+ *    typed `12.` as `$12.00`, whose zeros are padding nobody typed. That is
+ *    why reading a cents drawing back also takes the digits it was drawn
+ *    from: see `amountKeyed`.
  *
  *  · WHOLE DOLLARS never draws a dot nobody typed. Bare digits are `$1,450`.
  *    Once a dot is typed, it and the fraction are drawn AS TYPED — `$12.`,
@@ -307,7 +310,8 @@ export function amountField(digits: string, mode: AmountMode): string {
 /**
  * What the field holds after an edit: the text it handed back — its own
  * drawing with a key added or taken away, or anything pasted over it — read
- * in the mode it was drawn in. Returns what `amountDigits` would keep.
+ * in the mode it was drawn in. `held` is the digits that drawing was drawn
+ * FROM. Returns what `amountDigits` would keep.
  *
  * The caret is not an input. A key typed mid-field arrives in place and is
  * read in place (digits keep their order; in Whole dollars, or in text that
@@ -315,18 +319,48 @@ export function amountField(digits: string, mode: AmountMode): string {
  * its own punctuation and is dropped, as it always was),
  * and the redrawn value puts the caret back at the end, as replacing a
  * controlled value does on the web, in WebKit and in WKWebView alike.
+ *
+ * Cents mode needs `held`, because its drawing alone cannot say whether the
+ * cents in it were typed. Two bugs, both found typing by hand, 2026-09-30:
+ *
+ *  · A TYPED DOT was lost on the next key. `12.` draws `$12.00`, so the `5`
+ *    after it arrived as `$12.005` and was read as a till's digit stream —
+ *    1, 2, ., 5 was $120.05. The `00` is padding nobody typed. So while a
+ *    typed dot's cents are still owed (`12.`, `12.5`), a key on the end of
+ *    the drawing is that key on the end of `held`, and Backspace takes off
+ *    the last thing TYPED: `12.5` goes back to `12.`, and `12.` to `12` —
+ *    the drawing from before the key, every time. Once both cents are in,
+ *    nothing drawn is padding, and `$12.34` is a till's drawing like any
+ *    other: the next key shifts it, `$123.45`, exactly as a seeded `$4.50`
+ *    or a pasted `$1,234.56` always has.
+ *
+ *  · BACKSPACE never emptied the field. `$0.01` less its last character is
+ *    `$0.0`, which reads as zero and draws `$0.00` again, for ever, and the
+ *    placeholder never came back. A Backspace that leaves zero leaves
+ *    nothing: a zero typed on purpose (`0`) still draws `$0.00`.
  */
-export function amountKeyed(next: string, mode: AmountMode): string {
-  // Whole dollars draws no dot of its own, and text with no `$` was never a
-  // drawing (pasted, refused, typed before the drawing caught up). In both,
-  // a dot is real and WHERE it stands is the meaning: `12.3` is $12.30.
-  if (mode === 'whole' || (!next.includes('$') && next.includes('.'))) {
-    return amountDigits(next);
+export function amountKeyed(next: string, held: string, mode: AmountMode): string {
+  // Whole dollars draws no dot of its own, so every dot it shows is real and
+  // WHERE it stands is the meaning: `12.3` is $12.30.
+  if (mode === 'whole') return amountDigits(next);
+
+  const shown = amountField(held, mode);
+  const erased = next === shown.slice(0, -1);
+  // Anything that reads as zero after a Backspace is the field emptied.
+  const kept = (digits: string) => (erased && entryCents(digits, mode) === 0 ? '' : digits);
+
+  const dot = held.indexOf('.');
+  if (dot >= 0 && held.length - dot - 1 < FRAC_MAX) {
+    if (next.startsWith(shown)) return amountDigits(held + next.slice(shown.length));
+    if (erased) return kept(held.slice(0, -1));
   }
+  // Text with no `$` was never a drawing (pasted, refused, typed before the
+  // drawing caught up), so a dot in it is real, where it stands.
+  if (!next.includes('$') && next.includes('.')) return kept(amountDigits(next));
   // A cents drawing: its dot is punctuation, its digits are the cents, and
   // a dot typed at the END is someone saying "that was the whole part".
   const only = next.replace(/[^0-9]/g, '');
-  return next.trimEnd().endsWith('.') ? only + '.' : only;
+  return kept(next.trimEnd().endsWith('.') ? only + '.' : only);
 }
 
 /**
