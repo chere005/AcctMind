@@ -1626,9 +1626,6 @@ const styles = StyleSheet.create({
   // a shadow: the list is holding still around it, and the only question the
   // feedback has to answer is "which row am I holding".
   rowLifted: { opacity: 0.7, backgroundColor: T.card },
-  // `rowActions`, not `actions`: the header already has one of those, and a
-  // duplicate key in a StyleSheet is a typecheck error rather than a subtle
-  // wrong-looking row, which is the only reason this was noticed at once.
   /*
    * Absolutely positioned OVER the row, not under it.
    *

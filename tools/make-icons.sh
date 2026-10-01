@@ -5,7 +5,7 @@
 #
 # `assets/logo.svg` is the only source of truth for the mark. Nothing else is
 # drawn by hand, and no PNG in this repo should ever be edited directly —
-# re-run this instead, so a change to the mark reaches all six surfaces at
+# re-run this instead, so a change to the mark reaches every surface at
 # once and none of them drifts.
 #
 # WHY HEADLESS CHROME. This machine has no rsvg-convert, ImageMagick, Inkscape
