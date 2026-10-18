@@ -4,613 +4,54 @@ The baseline for all of Sean's repos lives in ~/GIT/AgentSuite/AGENTS.md
 and is imported here; this file holds only what is true of THIS repo.
 @../AgentSuite/AGENTS.md
 
-Sean's ledger. `README.md` is the short front door and `ARCHITECTURE.md` is
-the map; `TESTING.md` is what the tests are worth. This file is how to work in
-here.
+Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITECTURE.md, TESTING.md.
 
-Two lists below. The second is **inherited** — traps that cost real time in
-CalMind (`~/GIT/CalMind`), whose architecture this is, written down before
-they could be rediscovered. The first is what has cost time *here*. Anything
-learned goes in the commit that learns it.
+## Rules
 
-## Standing rules
-
-- **Behavior lives in `packages/core`.** A screen holds plumbing. If you can
-  describe a rule in a sentence — how an amount is parsed, how the list is
-  ordered, what a valid transaction is — it belongs in core, with a test.
-  Five surfaces means a rule written in a screen is a rule written wrong four
-  more times. `packages/core/tsconfig.json` sets `"types": []`, so core
-  cannot reach a Node, DOM or React Native API without the typecheck failing:
-  the neutrality is checked, not trusted.
-
-- **Money is integers.** Amounts are stored and computed in minor units
-  (cents), formatted only at the edge. Floats are for physics. A cent lost to
-  a rounding step is the one bug this product cannot have — which is also why
-  `parseAmount` REFUSES `1.005` rather than picking a rounding.
-
-- **The device is the only copy.** There is no server ledger to recover from.
-  A store that will not parse is never an empty store: `parseStore` returns
-  an error, the app renders it, and nothing writes until a person chooses to
-  discard. Before adding any code path that saves, ask what it does on top of
-  a failed load.
-
-- **`spec/` is the contract.** Changing what AcctMind does starts by changing
-  a vector, watching it go red, then making it green. A behaviour change that
-  touches no spec file is either not a behaviour change, or is not covered.
-
-- Every check in here has been watched failing on purpose, and `TESTING.md`
-  lists how.
-
-- **CalMind is the reference, not the source.** Grep it before inventing an
-  approach — the Expo/Tauri/PHP seams are solved there. But nothing is copied
-  without being read, and nothing is IMPORTED from it: another agent works in
-  that repo, and AcctMind must never depend on its state.
-
-- **The pick bar is SHARED, and this copy is the fork.** `apps/app/src/
-  PickBar.tsx` is ChefMind's `app/src/components/PickBar.tsx`, promoted to
-  `CoreMind/canon/app/src/components/PickBar.tsx` on 2026-09-21 with ChefMind
-  as the `exact` row and this one recorded as a `fork` — one palette, no
-  `themed()`, controls DRAWN at TAP rather than bought back with
-  `WebHitSlop`, and three things canon has no use for — `detail` (the
-  ledger's sum), `extras` (the Budget tab's three assign buttons) and an
-  OPTIONAL `onDelete`, omitted on the budget since 2026-09-21.
-
-  The line is MEANING, not presence. Two slots and a control the caller may
-  leave out do not change what All, Clear or a two-press Delete are; change
-  any of THOSE — the controls themselves, their order, the 2.5s fuse — and
-  the same change is owed to ChefMind and to canon, or the two bars start
-  disagreeing about what they mean.
-
-- **The Budget tab reads ONE MONTH, and there is no way to ask for
-  another.** Sean, 2026-09-21: "get rid of the view dropdown and all time…
-  always have a month selected", then "drop named views". `ViewPick.tsx`,
-  the `budgetView` pref, the `View` record and `viewSet`/`viewsOf` are all
-  gone; the set is `monthSet(prefs.budgetMonth)` and nothing else computes
-  one. `ALL_TIME` stays, because `Line.budget` is a real stored number that
-  key names.
-
-  **Nothing was migrated away, and that is the rule rather than the
-  leftover.** A file written while views existed still loads, still reports
-  zero dropped rows, and keeps its `v:` budget amounts where nothing reads
-  them — the store is still v4. This device is the only copy (see above);
-  dropping records because a feature went is how a bookkeeping change
-  becomes lost money. `store.test.ts` pins all four halves of that.
-
-- **The drop rule and the fold rule are CANON, byte for byte.**
-  `packages/core/src/rowslots.ts` is
-  `CoreMind/canon/app/src/components/rowslots.ts` — the same bytes CalMind,
-  ChefMind and MyCalMind carry (it imports nothing, which is what lets a core
-  with `"types": []` hold it). It arrived 2026-09-21 with dragging between
-  sections, and the bug it prevents was paid for in ChefMind two days
-  earlier. It was not the first: `packages/core/src/folds.ts` and
-  `packages/core/test/folds.test.ts` — `foldLevel` and `LONG_PRESS_MS`, the
-  long press that folds a whole level — have been canon's
-  `canon/packages/core/` bytes since they arrived on 2026-09-18, and import
-  nothing either. Do not edit any of the three here: a change goes to its
-  home repo, then to canon, then to every consumer, or `bin/check-drift.sh`
-  starts lying about all four at once. `orderAbove` and the `OrderDir` beside
-  it are OURS — canon's half answers "which section, above which row", ours
-  answers "what number is that".
-
-- **"Things about the app" live in the cog, not in the bar.** Sean,
-  2026-09-21: a cog top right, `AppMenu.tsx`, holding Import from CSV,
-  Export budget and Whole dollars. The bar above the rule is for the SCREEN;
-  anything that holds between screens and is pressed once a session belongs
-  behind the cog. Two controls for one setting is what the `.00` circle
-  became the moment the menu row existed, which is why it is gone rather
-  than kept as a shortcut.
-
-- **Nothing here may write CalMind's areas.** `/AcctMind` and
-  `/test/AcctMind` are this app's; nowhere else is. Destinations are guarded
-  constants, never variables, and the guards get proven by breaking copies of
-  the real script — never the real script.
-
-- **Deploy to both, for now.** `./deploy.sh` writes the sandbox and then
-  production. Sean's call, 2026-08-20, and it holds until he says to switch
-  to test-only — at which point the change is one line and the guards already
-  cover it.
-
-- **The lane ends non-zero when a device build is owed.** The release still
-  shipped — live, tagged, status card closed `ok` severity 2 — but a run that
-  skipped a build for want of a phone must not hand back a clean 0, or "it all
-  worked" gets read off an exit status that never checked. CoreMind's batch
-  catches it and still ships every repo after this one.
-
-## Versions and builds
-
-Two numbers answering two questions, and conflating them cost an evening.
-
-- **`version`** — which RELEASE this is. Semver, and it lives in SIX files
-  that `tools/check-version.mjs` holds together: the root `package.json`,
-  `apps/app/package.json`, `app.config.js`, `desktop/package.json`,
-  `desktop/src-tauri/tauri.conf.json` and `desktop/src-tauri/Cargo.toml`. It
-  said "three files" here until 2026-08-23, naming only the app-side half —
-  and the three desktop ones are exactly the half a person editing by hand
-  forgets. Tags match it. Patch tags are fine; CalMind has 0.8.1 and 0.13.2.
-
-- **`ios.buildNumber`** — which BUILD of that release is on the device.
-  HAND-bumped every time a build leaves this machine, not once per release.
-  CalMind's README says why and this repo proved it: with no build number
-  every install reads `1`, and "is the thing I just installed actually on the
-  device?" has no evidence either way. Four builds went onto a phone in one
-  evening, all reporting `0.4.0/1`, and telling them apart meant hunting for
-  features.
-
-**`app.config.js` is SOURCE; `apps/app/ios/` is prebuild output.** Bumping the
-config and building without `expo prebuild` installs a binary carrying the old
-number — the check goes green while the phone disagrees, because three source
-files agreeing with each other says nothing about the plist that ships.
-
-WHERE THAT IS CHECKED, since 2026-08-22: `npm run test:version:device`, run by
-this repo's own `tools/build-platforms.sh --ios` around the prebuild — the one
-moment the plist is both fresh and about to be installed. It is not one call: a
-stale plist gets ONE regeneration and a re-check, and only a second
-disagreement stops the install. `npm test` runs
-`test:version` (`--sources-only`), which holds the six source files together
-and says out loud that it skipped the plist.
-
-The split exists because the old arrangement blocked releases. The plist goes
-stale the instant a version bumps and stays stale until something prebuilds, so
-"stale" is the ORDINARY state between a release and the next device build — and
-`npm test` treating it as an error meant every release blocked the next one.
-0.14.0 died exactly there: version 0.13.0, plist 0.11.0, nothing shipped, the
-gate naming a real disagreement that no web deploy could ever have caused.
+- **Core owns behavior.** Any rule describable in a sentence (amount parsing, list order, valid transaction) lives in `packages/core` with a test; screens hold plumbing only. `packages/core/tsconfig.json` has `"types": []` so core cannot touch Node/DOM/RN APIs.
+- **Money is integers** (cents), formatted only at the edge. `parseAmount` REFUSES `1.005` rather than rounding.
+- **The device is the only copy.** A store that won't parse is never an empty store: `parseStore` returns an error, the app renders it, nothing writes until a person chooses to discard. Before adding any save path, ask what it does on top of a failed load.
+- **`spec/` is the contract.** Change a vector, watch it red, make it green; a behaviour change touching no spec file is uncovered.
+- **Tests with the change.** Change a feature, change its test in the same commit; new feature, new test; bug fix, the case that would have caught it. A quick deploy never skips a gate.
+- **CalMind is the reference, never a source.** Grep it before inventing an approach; read before copying; never IMPORT from it (another agent works there). Check `~/GIT/CalMind/apps/app/modules/watch-bridge` and `packages/core/src/sync.ts` (`Math.max(now, prev.updated + 1)` stamps every write, deletes included).
+- **Budget tab reads ONE month**: `monthSet(prefs.budgetMonth)` is the only set; no view dropdown, no `budgetView` pref, `View`, `viewSet`/`viewsOf`, `ViewPick.tsx`. `ALL_TIME` stays (key for `Line.budget`).
+- **Never migrate away records for a removed feature.** Old files still load, report zero dropped rows, keep `v:` budget amounts unread; store stays v4. `store.test.ts` pins this.
+- **Pick bar**: `apps/app/src/PickBar.tsx` is a `fork` of CoreMind `canon/app/src/components/PickBar.tsx` (ChefMind is the `exact` row). Ours: `detail`, `extras`, optional `onDelete` (omitted on budget). Changing All/Clear/two-press Delete (controls, order, 2.5s fuse) is owed to ChefMind and canon too.
+- **Canon bytes, do not edit here**: `packages/core/src/rowslots.ts`, `packages/core/src/folds.ts`, `packages/core/test/folds.test.ts`. Change goes home repo → canon → every consumer, or `bin/check-drift.sh` lies. `orderAbove`/`OrderDir` are ours.
+- **Cog, not bar**: app-wide, once-a-session controls (Import from CSV, Export budget, Whole dollars) live in `AppMenu.tsx` behind the top-right cog; the bar is per-screen. One setting, one control.
+- **Write only `/AcctMind` and `/test/AcctMind`** (CalMind's areas never). Destinations are guarded constants, never variables; prove guards by breaking copies of the script, never the real one.
+- **Deploy to both**: `./deploy.sh` writes sandbox then production until Sean says test-only (then one line changes).
+- **Lane exits non-zero when a device build is owed** though the release shipped (live, tagged, status card `ok` severity 2); CoreMind's batch still ships later repos.
+- **Versions**: `version` is semver in SIX files held by `tools/check-version.mjs`: root `package.json`, `apps/app/package.json`, `app.config.js`, `desktop/package.json`, `desktop/src-tauri/tauri.conf.json`, `desktop/src-tauri/Cargo.toml`. Tags match, BARE (no `v`); patch tags fine. `Cargo.lock` is not compared; `tools/sync-lock-versions.mjs` (run by the lane) syncs it.
+- **`ios.buildNumber`** is HAND-bumped every time a build leaves this machine; restarts at 1 with the minor bump. Verify bumps (a `sed` matching nothing reports success); check-version also compares the generated `Info.plist`.
+- **`app.config.js` is source; `apps/app/ios/` is prebuild output.** Bumping config without `expo prebuild` installs the old number. `npm run test:version:device` (run by `tools/build-platforms.sh --ios` around prebuild; one regeneration then re-check) guards it; `npm test` runs `test:version` (`--sources-only`), where a stale plist is the normal state.
+- **Heavy builds**: `tools/build-platforms.sh` blocks and `desktop/smoke.sh` (when building) run under `tools/heavy-lock.sh` (CoreMind `canon/tools/heavy-lock.sh`, `exact` row: fix it there). Waits up to 30 min; nested heavy blocks are refused (macOS block calls smoke with `--no-build`). Lockless lanes (TestMindSuite forks, PrivateApp xcodebuilds) are unseen: serialize by hand.
+- **No watch target.** Removed: `apps/app/targets/watch/`, `apps/app/modules/watch-bridge`, `packages/core/src/watch.ts`, `apps/app/src/watch.ts`, `tools/check-watch-feed.sh`, `test:watch`, `@bacons/apple-targets`. Restore = revert that commit + plugin line in `app.config.js` + watch render line in `tools/make-icons.sh`. Keep the watch traps below.
+- **`tauri.conf.json` takes NO extra keys** (a `"_note"` fails the schema); its notes live here. NO `dmg` in `bundle.targets` (create-dmg needs Finder/AppleScript, fails after a good `.app`). `msi`/`nsis` are config-only (no cross-compile).
 
 ## Shorthand
 
-- **One gesture each: `npm run dtp` / `npm run tdtp`** (tools/dtp.sh,
-  tools/tdtp.sh).
-
-  1. **Test** — tdtp only: `npm test`, the whole of it, before anything is
-     touched.
-  2. **Deploy** — `./deploy.sh --quick` for dtp, `./deploy.sh` (full) for
-     tdtp. Both write the sandbox and then production and run their own
-     gates on the way — the quick lane's gates are everything that costs
-     seconds plus the spot test, so a dtp is never an unverified deploy.
-     tdtp's deploy does not run the full gesture suite a second time on an
-     export byte-identical to the one step 1 just passed: `npm test` mints a
-     key of what it ran on (`tools/dist-key.mjs`), and `deploy.sh` repeats
-     the suite whenever its own export keys differently (2026-10-01, about
-     two minutes a tdtp).
-  3. **macOS** — `tools/build-platforms.sh --mac`, from a clean export of
-     what just shipped, and BEFORE the tag: a broken bundle leaves the
-     version untagged, and a re-run reuses it exactly as a failed deploy
-     does.
-  4. **Tag** — an annotated tag at the new version. BARE — this repo's tags
-     carry no `v`.
-  5. **Push** — `git push --atomic --follow-tags origin main`. Atomic because
-     a per-ref push can land the tag while `main` is rejected; on rejection
-     the local tag comes back off, so a re-run reuses the version. Then the
-     desktop-windows dispatch.
-  6. **Devices** — iOS onto the phone, Android onto the emulator, AFTER the
-     push and reported rather than fatal.
-
-  Naming a platform flag selects only it; naming none means all three;
-  `--web` is how you say "the release and no platform builds".
-
-  The deploy's own gates include `npm run test:server`, so either lane is
-  blocked whenever the server suite is red, and it should stay blocked: the
-  gate failing is the gate working.
-
-  The build number restarts at 1 with the minor bump (Sean, 2026-08-21).
-
-  Verify the bump rather than assuming it: a `sed` that matches nothing
-  reports success. `tools/check-version.mjs` compares all six version files AND
-  the generated `Info.plist`, including the build number — the field whose
-  whole job is telling two builds apart, and which nothing checked until it
-  slipped through once. (`Cargo.lock` carries the crate version as a seventh
-  place and is NOT compared; `tools/sync-lock-versions.mjs`, which the lane
-  runs, is what keeps it in step.)
+- **`npm run dtp` / `npm run tdtp`** (`tools/dtp.sh`, `tools/tdtp.sh`), in order:
+  1. **Test** (tdtp only): `npm test`, all of it, first.
+  2. **Deploy**: `./deploy.sh --quick` (dtp) or `./deploy.sh` (tdtp); both write sandbox then production, with gates (quick = seconds-cost gates plus spot test). tdtp skips the repeat gesture suite when the export keys (`tools/dist-key.mjs`) match what `npm test` ran.
+  3. **macOS**: `tools/build-platforms.sh --mac` from a clean export, BEFORE the tag (a broken bundle leaves the version untagged; a re-run reuses it).
+  4. **Tag**: annotated, at the new version, bare.
+  5. **Push**: `git push --atomic --follow-tags origin main` (on rejection the local tag comes off); then dispatch desktop-windows.
+  6. **Devices**: iOS to phone, Android to emulator, AFTER the push, reported not fatal.
+- A platform flag selects only it; none = all three; `--web` = release with no platform builds.
+- Deploy gates include `npm run test:server`; a red server suite blocks both lanes, correctly.
+- `sh bin/dtp.sh all --full --platforms` (from CoreMind) drives the suite's tdtp; AcctMind SELF-SHIPS (CoreMind detects `tools/build-platforms.sh`, passes `--platforms` through, and reads a tag at HEAD as "shipped, device build owed").
 
 ## Platforms
 
-Five surfaces, shipped by two different pipelines.
+- **Web**: prod `seancheren.com/AcctMind`, test `test.seancheren.com/AcctMind`; `./deploy.sh` writes both.
+- **Windows**: `.github/workflows/desktop-windows.yml` on a Windows runner, dispatched by the push step.
+- **macOS**: Tauri bundle in `desktop/`, built by `tools/build-platforms.sh --mac`, smoke-tested with `desktop/smoke.sh --no-build`, copied to `/Applications` and the copy verified. "My Mac (Designed for iPad)" from `apps/app/ios` is NOT this surface (Xcode GUI only).
+- **iOS**: `tools/build-platforms.sh --ios`; AcctMind goes on Sean's handset only (phone list by udid in the script). Switched-off phone skipped, refusing phone warned, fails only if none took it. Team 2LGYTL3FSJ is PAID: no per-phone app cap.
+- **Android**: `tools/build-platforms.sh --android` (local emulator).
+- **No watchOS.**
 
-- **Web** — this app's own server. Production at `seancheren.com/AcctMind`,
-  a separate test deploy at `test.seancheren.com/AcctMind`. `./deploy.sh`
-  writes both, sandbox first — see "Deploy to both, for now" above. This is
-  the surface `./deploy.sh` writes; `dtp`/`tdtp` ship it and then build
-  macOS, iOS and Android through `tools/build-platforms.sh`, and dispatch
-  Windows to CI.
-- **Windows** — built and smoke-tested on a Windows GitHub Actions runner,
-  `.github/workflows/desktop-windows.yml`, dispatched by `dtp`/`tdtp`'s push
-  step (above). Tauri can't cross-compile it — see "tauri.conf.json" below.
-- **macOS** — the Tauri desktop bundle in `desktop/`. Not built by
-  `./deploy.sh`; built by THIS repo's `tools/build-platforms.sh --mac`, which
-  the lane runs before the tag (smoke-tested with `desktop/smoke.sh
-  --no-build` — the bundle that step just built, not a second compile). No
-  `dmg` — see "tauri.conf.json" below. The script copies the bundle into
-  `/Applications` and verifies the copy — that step was missing until
-  2026-08-22, so every app's macOS build had succeeded and none of them was
-  installed. (`apps/app/ios` can separately be built as "My Mac (Designed for
-  iPad)". That is NOT the macOS surface — this one is Xcode GUI only and part
-  of no deploy.)
-- **iOS** — builds once and installs to every phone THIS app belongs on, via
-  `tools/build-platforms.sh --ios`. For AcctMind that is Sean's handset and
-  no other: Sean, 2026-09-21, *"the only apps installed on autumn's phone are
-  ChefMind and CalMind"*, *"patricia's phone only gets CalMind"*, *"my phone
-  gets all 6 (including the test ones)"*. The list is in the script, by udid.
-  A listed phone that is switched off is skipped with a note, a phone that
-  refuses is warned about, and the step fails only when none of them took it.
-
-  There is no per-phone app cap to spend. Apple's free-tier limit of 3 apps
-  on a device does not apply: the team (2LGYTL3FSJ) is PAID, its profile
-  carrying `TimeToLive 365` where a personal team's carries 7. Sean,
-  2026-09-21: "no more caps per phone."
-
-- **Android** — builds, installs and launches on a local emulator via
-  `tools/build-platforms.sh --android`.
-- **No watchOS target** — see "The watch is out, for now" below.
-
-`sh bin/dtp.sh all --full --platforms`, run from CoreMind, drives the whole
-suite's `tdtp` lane. It builds nothing for AcctMind any more: since 2026-08-23
-this repo SELF-SHIPS, CoreMind detects that by the presence of
-`tools/build-platforms.sh` and passes `--platforms` straight through to this
-lane instead of building anything itself. It also tells "shipped, a device
-build is owed" from "did not ship" by looking for a tag at HEAD, so a non-zero
-AcctMind lane does not stop the batch.
-
-**One heavy build at a time is a lock, not a convention** (2026-10-01). Every
-block of `tools/build-platforms.sh`, and `desktop/smoke.sh` when it builds,
-runs under `tools/heavy-lock.sh` — CoreMind's `canon/tools/heavy-lock.sh`, an
-`exact` row, so a fix goes there and never here. A block that finds another
-build holding the same lock waits for it, says whose it is in the lane's
-output and on its status card, and gives up after 30 minutes. "The same lock"
-means the lanes that have adopted that canon helper; a heavy build from one
-that has not — the TestMindSuite sandbox forks (`TestAcctMind`'s
-`tools/build-platforms.sh` runs xcodebuild, gradle and tauri with none) and
-PrivateApp's xcodebuilds — runs beside an AcctMind block unseen, so for those
-one-at-a-time is still a rule to remember. A heavy
-block inside a heavy block is refused at once rather than waited on — which is
-one more reason the macOS block calls the smoke with `--no-build`.
-
-## tauri.conf.json takes no notes, so its notes live here
-
-- **NO `dmg` in `bundle.targets`.** create-dmg's `bundle_dmg.sh` needs Finder
-  and AppleScript and dies on this machine, so `tauri build` failed AFTER
-  bundling a perfectly good `AcctMind.app` — the release had already shipped
-  and the desktop step reported a failure whose first 12 lines are all
-  successes. CalMind and ChefMind have excluded it for exactly this reason and
-  the note only ever got written down in ChefMind's rules, which is why this
-  one had to be rediscovered by watching it fail (2026-08-22).
-- **`msi`/`nsis` are config-only here.** Tauri does not cross-compile;
-  Windows builds on a windows runner — `.github/workflows/desktop-windows.yml`,
-  dispatched after a dtp's push.
-- **The file takes NO extra keys.** A `"_note"` beside the real ones fails the
-  schema outright: `Additional properties are not allowed`. Hence this section.
-
-## The watch is out, for now
-
-Sean, 2026-08-21: drop the watch component entirely for now. So
-`apps/app/targets/watch/`, `apps/app/modules/watch-bridge`,
-`packages/core/src/watch.ts`, `apps/app/src/watch.ts` and
-`tools/check-watch-feed.sh` are gone, along with the `test:watch` script, the
-`@bacons/apple-targets` plugin and its dependency.
-
-FOR NOW is the operative phrase and the reason nothing below was deleted with
-it. The watch traps in this file stay: every one of them cost time, none of
-them is about code that still exists, and all of them will be true again the
-day the target comes back. Restoring is one `git revert` of the commit that
-removed it, plus the plugin line in `app.config.js` and the watch render line
-in `tools/make-icons.sh`.
-
-## Traps that have cost real time HERE
-
-- **Two lists here order themselves in OPPOSITE directions, and one shared
-  helper did not know it.** The ledger sorts DESCENDING (a bigger `order`
-  draws higher — `sortTxns`); budget lines sort ASCENDING (`linesIn`).
-  `orderBetween` was written for the ledger and taken generic for the budget
-  with a comment saying so, so every line dragged to an END of its list went
-  to the opposite end: dropped at the top it got `below + GAP`, which in an
-  ascending list is the bottom. It survived because the MIDDLE of a list is a
-  midpoint either way, so the only broken drags were the two most obvious
-  ones. `OrderDir` is now an argument and both callers say which they are.
-  **Generic over a record is not generic over a convention** — if a helper
-  is reused across two lists, ask what the second list does differently
-  before reusing it, not after.
-
-- **A `Pressable` inside a row answers the tap BEFORE the row does, so a
-  mode the row is in has to be pushed down into every child.** The swipe
-  parks a delete, and a tap on the row put it away — except the name, the
-  amount and the date each sit in their own `Pressable`, on top, each with an
-  `onPress` that had never heard of the parked delete. Those three cover
-  nearly the whole row, so the only ways out of an armed delete were to use it
-  or to hit the few pixels of background between two fields. Sean found it on
-  the phone: "tap to exit the swipe delete."
-
-  The fix is not four handlers agreeing. It is ONE rule — core's `rowTap` —
-  read once per row, with the precedence stated in it, and every part of the
-  row deferring to that. Four `onPress` expressions is four chances to get an
-  ordering wrong, and two of them had.
-
-- **`PanResponder` ignores Playwright's synthetic MOUSE and obeys a real
-  TOUCH stream, and this repo wrote off the swipe over the difference.**
-  Three attempts drove it with `page.mouse`, nothing engaged, a 220-pixel drag
-  deleted nothing — so the tests passed while doing nothing, two were deleted,
-  and `TESTING.md` gained a section headed "what the harness cannot drive at
-  all". That section was wrong from the day it was written.
-
-  `Input.dispatchTouchEvent` over CDP drives it — `swipeRow` in
-  `e2e/helpers.ts`. Chromium only, since the mobile project is WebKit and has
-  no CDP session. **A gesture that cannot be driven one way has not been shown
-  undrivable**; and any such claim in here is worth re-testing rather than
-  inheriting, because the cost of believing it is a whole feature with no
-  coverage.
-
-- **A react-native-web `Modal` that is sliding OUT still traps focus, and
-  `fill()` cannot see it.** RNW's Modal keeps its focus trap until its exit
-  animation ends, so a Modal opened inside that 250ms has its `autoFocus`
-  pulled back into the one leaving, then parked by its own trap on the first
-  focusable thing it holds — for the amount pad, the backdrop. Done on the
-  category sheet and a tap on an amount is one movement, and the field
-  opened at rest with keys going nowhere (audit, 2026-09-30). OpAmount now
-  takes focus back for its first 250ms; any other `autoFocus` inside a Modal
-  can lose it the same way.
-
-  Why every pad test stayed green: `locator.fill()` and
-  `pressSequentially()` FOCUS the field before typing, so they test the
-  typing and never the focus. A test about where the keyboard goes types with
-  `page.keyboard`, which goes wherever focus actually is.
-
-- **Backticks inside `git commit -m "…"` are command substitution.** A message
-  reading ``runs the same `submit` the button does`` was committed and pushed
-  as "runs the same  the button does" — the shell ran `submit`, found nothing,
-  and dropped the word. Nothing failed; the commit succeeded with a hole in
-  it. Every message worth writing goes through a heredoc to a file and
-  `git commit -F`, which is what the long ones already do.
-
-
-- **A side effect inside a `setState` updater silently discards the other
-  updates batched with it.** `setPhase(p => { save(...); return next; })`
-  looks harmless. React treats a state update raised during an updater as a
-  render-phase update and RESTARTS the render — so the `setAdding(false)`
-  queued alongside it was thrown away, the transaction saved perfectly, and
-  the add form stayed open. Updaters are pure. Compute from current state in
-  the handler and call the effect there. Pinned by `e2e/add.spec.ts`.
-
-- **`npx expo run:ios` for a SIMULATOR never exits, and the processes it
-  leaves behind will eventually RACE each other.** It builds, installs,
-  launches — and then stays attached streaming the app's own log, so a script
-  ending in `echo "STATUS=$?"` never writes that line and a monitor waits out
-  its whole timeout while the app has been running for twenty minutes. The
-  giveaway in the log is RUNTIME chatter (`RCTScrollViewComponentView`,
-  `SyncedDefaults`) where build output should be.
-
-  The second half is worse. Every run leaves the process alive, and three of
-  them accumulated before two `xcodebuild`s collided:
-
-      unable to attach DB ... database is locked. Possibly there are two
-      concurrent builds running in the same filesystem location.
-
-  What that cost was not the failed build — it was half an hour spent
-  diagnosing a layout bug from a SCREENSHOT OF THE WRONG BINARY. With builds
-  racing, which app got installed is a coin toss, and the screen is then
-  evidence about code that is not the code in front of you. The placement
-  being debugged turned out to be correct; on-screen instrumentation printing
-  the measured numbers is what proved it.
-
-  **Do not use `expo run:ios` for the simulator.** Drive it the way the
-  DEVICE path does — `xcodebuild … build`, then an install step, then a
-  launch step — so it ends, reports a status per step, and kills leftovers
-  before touching the build database. That path is
-  `tools/build-platforms.sh --ios`, and it is device-only: **there is no
-  simulator script in this repo**, and never has been. This trap claimed one
-  existed until 2026-08-23, sending a reader after a file that has never been
-  in the tree. TESTING.md says the same from the other side — the simulator
-  run was done by hand, and nothing in the repo replays it. And when a screenshot disagrees with the code, check that
-  the build actually installed before believing either.
-
-- **`npx expo run:ios --device` HANGS on a locked phone, after a successful
-  build.** The build finishes, the install starts, and then it sits on
-  `Connecting to: iPhoooooone` for ever because the launch step cannot reach a
-  locked device. A background task waiting on that looks exactly like a build
-  still compiling. Build and install as two steps — `xcodebuild … build`, then
-  `xcrun devicectl device install app` — and `devicectl` will install onto a
-  locked phone quite happily; it is only the LAUNCH that needs it awake.
-
-- **CocoaPods dies with `Encoding::CompatibilityError` unless `LANG` is
-  UTF-8.** `Unicode Normalization not appropriate for ASCII-8BIT`, thrown from
-  `Pod::Config#installation_root`, with a stack trace and no mention of the
-  locale except one `export LANG=en_US.UTF-8` buried in its own advice. Every
-  script here that runs `pod install` exports it.
-
-- **A build script that ends in `echo` reports success no matter what
-  happened.** A backgrounded `xcodebuild` was reported as exit code 0 while
-  its log said `'ios/AcctMind.xcworkspace' does not exist` — a relative path
-  resolved from the wrong directory (the persisting-`cd` trap, again), and the
-  script's own last statement was the thing being asked for a status. Capture
-  the status of the command you care about into the log — `echo
-  "BUILD_STATUS=$?"` — and grep for THAT, never the task's exit code.
-
-- **A backdrop revealed by a gesture needs the thing in front of it to be
-  OPAQUE, and no visibility check can tell you it is not.** The swipe-to-
-  delete layer is absolutely positioned behind every row. The row had no
-  background, so the red showed through at rest: the whole ledger drew solid
-  red with `Delete` printed across each amount. Sean found it on the phone
-  and described it as "transactions don't show up well under a section" — a
-  sentence that sounds like spacing.
-
-  What makes it worth writing down is why 147 green checks said nothing. The
-  backdrop is CORRECTLY present and CORRECTLY visible in both the broken app
-  and the fixed one; so is the row. `toBeVisible()` and `toBeHidden()` cannot
-  separate the two states, and neither can a screenshot diff nobody takes.
-  The only difference is whether the row PAINTS, so that is what
-  `rowactions.spec.ts` reads — `getComputedStyle(...).backgroundColor` is not
-  `rgba(0, 0, 0, 0)`. **When two states differ only in a computed style, the
-  assertion has to be about that style.**
-
-- **`react-native-web` leaves a hidden `Modal` in the DOM.** So
-  `querySelector('[data-testid="save-button"]')` finds the add form long
-  after it has closed, and a presence check reports "still open" forever —
-  passing with the bug present and with it absent. That check cost a round of
-  debugging a bug that was already fixed. Assert on VISIBILITY:
-  Playwright's `toBeVisible()` / `toBeHidden()` read computed style.
-
-- **`set -e` is inherited by a command substitution's subshell.** So
-  `status=$(cmd; echo $?)` never reaches the `echo` when `cmd` fails: the
-  subshell dies first, the variable comes back empty, and the script exits
-  silently. `if cmd; then … else … fi` is the construct that suspends
-  errexit. This ate `tools/check-deploy-guards.sh` and made it print its
-  header and stop.
-
-- **Base-36 timestamps only sort lexicographically at a fixed width.**
-  `newId(1000)` is `'rs'` and `newId(2000)` is `'1jk'`, so the later id sorts
-  first. Every real timestamp is 8 characters today, so this would have
-  looked correct for another thirty years and then quietly stopped. The
-  prefix is padded; do not unpad it.
-
-- **`render_login()` requires the CALLER to have defined `e()`.** It is an
-  implicit contract of the suite — every app in seancheren-site defines its
-  own copy at the top of its page. Without it the login screen dies halfway
-  through its own `<head>` with "Call to undefined function e()", which
-  renders as a broken page rather than an error because the status line has
-  already gone out. `server/public/index.php` defines it, guarded.
-
-- **An `index.html` in the web root walks straight around the sign-in.**
-  Apache's stock `DirectoryIndex` lists it before `index.php`. So the deploy
-  excludes it, the app shell lives OUTSIDE the web root entirely, the
-  `.htaccess` pins `DirectoryIndex index.php`, and the deploy checks the
-  server afterwards. Three locks, because the failure is silent and total.
-
-- **One export cannot serve both paths.** A bundle built for `/AcctMind` and
-  served under `/test/` requests the other instance's chunks — the sandbox
-  silently running production's code. `deploy.sh` exports once per instance
-  and refuses an export whose stamp names the wrong base.
-
-  Measured rather than assumed, 2026-08-20: today the two exports are a
-  byte-identical bundle differing only in `index.html`, because this app has
-  no lazy imports and so no async chunks for the path to land in. CalMind's
-  version of this note says the path is in the JS — true there, not yet true
-  here. It becomes true the moment anyone writes an `import()`, and
-  `index.html` differs regardless, so the per-instance export stays.
-
-- **Both of the bugs below were already solved correctly in CalMind, and
-  grepping it first would have cost two minutes.** The standing rule says
-  "CalMind is the reference — grep it before inventing an approach", and it
-  was not followed. `~/GIT/CalMind/apps/app/modules/watch-bridge` already had
-  the delegate as its own `NSObject`, and
-  `~/GIT/CalMind/packages/core/src/sync.ts` already stamped every write — deletes included — through
-  `Math.max(now, prev.updated + 1)`. AcctMind shipped a watch bridge that
-  could not compile and a `tombstone` that could lose a delete on merge.
-  Reading first is cheaper than mutation-testing your way back to the same
-  answer.
-
-- **An Expo `Module` is not an `NSObject`, so it cannot be a delegate.**
-  `WatchBridgeModule: Module, WCSessionDelegate` looks obvious and does not
-  compile — `WCSessionDelegate` inherits `NSObjectProtocol` and Swift refuses
-  the conformance. What made it expensive is WHERE the error surfaced: the
-  watch bridge sat in the tree for a whole commit without ever being built,
-  because nothing had triggered a full iOS compile since it was added, and it
-  finally failed inside an unrelated feature's build. Give the delegate its
-  own `NSObject` subclass and hold it (WCSession keeps its delegate weakly).
-
-  **Swift that nothing has compiled is not written yet.** This file sat in
-  the tree for a whole commit looking finished. Compile a pod alone with
-  `xcodebuild -scheme <PodName>` — seconds against a full build's minutes.
-
-- **`NWBrowser` omits the TXT record unless you ask, and the default costs
-  you the whole feature.** The descriptor you want is
-  `.bonjourWithTXTRecord(type:domain:)`; with plain `.bonjour(type:domain:)`
-  `result.metadata` is never `.bonjour(...)`. The peer filter
-  read it to tell this device from another, found nothing, and skipped every
-  result with a `continue`. What that looks like: both devices advertise,
-  both browsers report `ready`, `dns-sd -B _acctmind1._tcp` on a Mac lists
-  both instances — and the two apps never see each other, with no error
-  anywhere in the log. Found only by browsing from the host and asking why
-  something visible from outside was invisible from inside.
-
-  The general shape, worth remembering beyond this API: **when a filter's
-  input is missing, `continue` is indistinguishable from "no match".** If a
-  guard skipping an item would mean the feature silently does nothing, it
-  needs to be loud.
-
-- **`-destination 'generic/platform=iOS Simulator'` builds the WATCH target
-  against the iOS SDK, and everything it then reports is a lie.** Reaching
-  for the generic destination to be thorough produced two convincing errors
-  in `targets/watch/`: `WatchSession` "does not conform to WCSessionDelegate"
-  (demanding `sessionDidBecomeInactive`/`sessionDidDeactivate`, which are the
-  PHONE's half and are not required on watchOS), and an `AppIcon` that "did
-  not have any applicable content" (the icon is a valid opaque 1024×1024
-  PNG). Both files were correct. Half an hour went into fixing code that had
-  nothing wrong with it, and a wrong explanation was nearly committed with
-  the fix.
-
-  Build the app the way Expo does — `-destination 'platform=iOS
-  Simulator,id=<udid>'`, a SPECIFIC device — and build the watch on its own
-  platform: `-scheme AcctMindWatch -destination 'platform=watchOS
-  Simulator,id=<udid>'`. If a target's errors look absurd, check which SDK it
-  is being compiled against before believing them.
-
-- **A test that mutates a hard-coded value tests nothing once the algorithm
-  changes.** `peer.test.ts` proved the pairing checksum caught every adjacent
-  transposition by mutating a literal code. Replace Luhn with a plain sum —
-  which genuinely does NOT catch transpositions — and the test stayed green,
-  because the literal no longer parsed under the new algorithm, so every
-  mutation of it was refused for the wrong reason. DERIVE the fixture from
-  the code under test, and assert the underived fixture is valid first. That
-  guard line is the whole difference between the two versions.
-
-- **A frame counter is not a rate limit.** The peer link first capped each
-  connection at eight frames, to stop a runaway exchange. Eight is also what
-  a person adding eight transactions sends, so the cap would have made sync
-  stop working and look exactly like sync being broken. What needs bounding
-  is arrival RATE, not lifetime count: a token bucket costs the same ten
-  lines and does not punish real use.
-
-- **Core's imports are extensionless, and two toolchains disagree about
-  that.** Metro cannot resolve `./money.js` in TypeScript source; Node's ESM
-  cannot resolve `./money`. Core is written extensionless for Metro, and
-  `tools/register-ts.mjs` is what lets a Node script import it.
-
-## Traps, inherited from CalMind
-
-
-- **A `click()` on a control that has gone does not fail fast.** It waits out
-  the whole test budget and reads as a hang. Hence `actionTimeout` in the
-  Playwright config, and a short explicit timeout on anything speculative.
-
-- **`hitSlop` is a no-op under react-native-web.** A control is exactly as
-  big as it is drawn on the web and bigger on native — the two disagree
-  silently, in the direction that hurts Safari on a phone. Controls here are
-  DRAWN at `TAP` (44pt); do not shrink one and add `hitSlop`.
-
-- **A React Native `Modal` is its own window, outside the safe area.**
-  Anything positioned in one sits under the clock on a phone, and it is
-  invisible in every browser test because a browser has no status bar to hide
-  under. All NINE modals here re-apply `useSafeAreaInsets` for that reason —
-  Add, AmountPad, CategoryPick, DayPicker, Devices, LineEditor, Manage,
-  SectionPick, SortPick. It said "both" until 2026-08-23, which is an
-  invitation to write a tenth without them.
-
-- **Comments state intent; the code may have drifted.** Two real CalMind bugs
-  came from reading one against the other.
-
-- **`dist` holds more than one `index-*.js`** — in CalMind, where this trap
-  comes from. Read the entry name out of `dist/index.html` rather than
-  `find | head -1`, which is what `desktop/smoke.sh` and
-  `desktop/check-assets.sh` both do. AcctMind's own export holds exactly one:
-  `expo export` wipes `dist` before each run, and this app has no `import()`
-  and so no async chunks — see "One export cannot serve both paths" above,
-  which measured the same thing. It becomes true here the moment anyone
-  writes one.
-
-- **Ask what happens when a write fails.** The worst bugs CalMind found were
-  all silent. Search for `.catch(() => {})` and triage each by what is lost.
-
-## The bargain on tests
-
-Change a feature, change its test in the same commit. Add a feature, add a
-test with it. Fix a bug, add the case that would have caught it.
-
-The quick lane exists so a small fix is cheap to ship. It stays honest by
-keeping every gate that costs seconds and swapping only the ones that cost
-minutes for a spot check. A quick deploy that skips a gate to be quick is
-just a deploy with a gate missing.
-
-### Running one test
-
-`npm test` is the whole of it and takes minutes. While actually working on
-something, run the narrowest thing that can still fail:
+## Commands
 
 ```sh
 npm -w @acctmind/core run test -- --run txn          # one core file, by path fragment
@@ -620,14 +61,38 @@ npx playwright test e2e/money.spec.ts --project=chromium -g 'minus KEY'
 npx playwright test --ui                             # watchable
 ```
 
-**The e2e suite refuses to run against a stale export** — `e2e/freshness.ts`
-compares `dist/build.json`'s digest against the source on disk and names the
-files that moved. So `npx playwright test` on its own is only valid until the
-next source edit; after one, it is `npm run export:web` first (or
-`npm run test:e2e`, which is the export plus the run). `test:e2e:fast` skips
-the export deliberately, for re-running against a dist you just built.
+- Run the narrowest test that can still fail; `npm test` takes minutes.
+- e2e refuses a stale export (`e2e/freshness.ts` vs `dist/build.json`): after any source edit run `npm run export:web` first, or `npm run test:e2e`; `test:e2e:fast` skips the export.
+- No linter or formatter. `npm run typecheck` = three projects (core, core tests, app).
 
-There is no linter and no formatter. `npm run typecheck` is the only static
-check, and it is three projects rather than one — core, core's tests, and the
-app — because core's own tsconfig sets `"types": []` and that is what makes
-its platform-neutrality a checked property instead of a promise.
+## Traps
+
+- **Ledger sorts DESCENDING (`sortTxns`), budget lines ASCENDING (`linesIn`)** → `orderBetween` sent drags to an END to the opposite end → `OrderDir` is an argument; ask what the second list does differently before reusing a helper.
+- **A child `Pressable` answers the tap before the row** → modes (parked swipe delete) must reach every child → one rule, core's `rowTap`, read once per row.
+- **`PanResponder` ignores Playwright `page.mouse`** → drive swipes with CDP `Input.dispatchTouchEvent` (`swipeRow` in `e2e/helpers.ts`; Chromium only, mobile project is WebKit). Re-test any "cannot be driven" claim.
+- **RNW `Modal` sliding out still traps focus ~250ms** → `autoFocus` in a new Modal is pulled away (OpAmount re-takes focus for 250ms). `fill()`/`pressSequentially()` focus first and hide it; test with `page.keyboard`.
+- **Backticks in `git commit -m "…"` are command substitution** → word silently dropped → message via heredoc to file, `git commit -F`.
+- **Side effect inside a `setState` updater restarts the render and discards batched updates** (add form stayed open) → updaters pure; call the effect in the handler. Pinned by `e2e/add.spec.ts`.
+- **`npx expo run:ios` (simulator) never exits and leaves processes that race (`database is locked`)** → screenshots of the wrong binary → never use it; there is NO simulator script (TESTING.md: simulator run was by hand). Use `tools/build-platforms.sh --ios` (device-only). If screenshot and code disagree, check the build installed.
+- **`npx expo run:ios --device` hangs on a locked phone after the build** → `xcodebuild … build` then `xcrun devicectl device install app` (installs when locked; only launch needs it awake).
+- **CocoaPods `Encoding::CompatibilityError`** → `export LANG=en_US.UTF-8` before `pod install`.
+- **Script ending in `echo` reports success** (relative path from wrong cwd) → log `echo "BUILD_STATUS=$?"` and grep that, never the task's exit code.
+- **Backdrop revealed by a gesture needs an OPAQUE row** (swipe-delete red showed through at rest; `toBeVisible()` can't tell) → assert computed style: `rowactions.spec.ts` checks `backgroundColor` is not `rgba(0, 0, 0, 0)`.
+- **RNW leaves a hidden `Modal` in the DOM** → `querySelector` presence checks lie → assert `toBeVisible()`/`toBeHidden()`.
+- **`set -e` is inherited by `$(…)` subshells** → `status=$(cmd; echo $?)` exits silently on failure → `if cmd; then … else … fi` (bit `tools/check-deploy-guards.sh`).
+- **Base-36 timestamps sort lexicographically only at fixed width** → `newId` prefix is padded; do not unpad.
+- **`render_login()` needs the caller to define `e()`** (else dies mid-`<head>`, renders broken page) → `server/public/index.php` defines it, guarded.
+- **An `index.html` in web root bypasses sign-in** (Apache `DirectoryIndex` lists it first) → deploy excludes it, app shell lives outside web root, `.htaccess` pins `DirectoryIndex index.php`, deploy checks the server afterwards.
+- **One export cannot serve both paths** (`/AcctMind` bundle under `/test/` loads the other instance's chunks) → `deploy.sh` exports once per instance and refuses an export whose stamp names the wrong base. Today the bundles differ only in `index.html` (no `import()`, no async chunks); the first `import()` makes it real.
+- **Expo `Module` is not an `NSObject`** → cannot be a `WCSessionDelegate` → own `NSObject` subclass, held (WCSession holds delegates weakly). Uncompiled Swift is unwritten: `xcodebuild -scheme <PodName>` compiles a pod alone.
+- **`NWBrowser` omits the TXT record by default** → peer filter finds nothing, both sides `ready` and `dns-sd -B _acctmind1._tcp` lists both, apps never see each other, no error → use `.bonjourWithTXTRecord(type:domain:)`. A filter's `continue` on missing input looks like "no match": make it loud.
+- **`-destination 'generic/platform=iOS Simulator'` builds the watch target against the iOS SDK** → absurd errors → `-destination 'platform=iOS Simulator,id=<udid>'`; watch via `-scheme AcctMindWatch -destination 'platform=watchOS Simulator,id=<udid>'`.
+- **A test mutating a hard-coded value dies when the algorithm changes** (`peer.test.ts`, Luhn → sum stayed green) → DERIVE the fixture from the code under test and assert the underived fixture is valid first.
+- **A frame counter is not a rate limit** (peer link's 8-frame cap broke real sync) → bound arrival RATE with a token bucket.
+- **Core imports are extensionless** (Metro can't resolve `./money.js`, Node ESM can't resolve `./money`) → `tools/register-ts.mjs` lets Node scripts import core.
+- **`click()` on a gone control waits out the whole test budget** → `actionTimeout` in the Playwright config, short explicit timeout on speculative clicks.
+- **`hitSlop` is a no-op under react-native-web** → draw controls at `TAP` (44pt); never shrink and add `hitSlop`.
+- **RN `Modal` is its own window outside the safe area** (under the clock; invisible in browser tests) → all NINE modals re-apply `useSafeAreaInsets`: Add, AmountPad, CategoryPick, DayPicker, Devices, LineEditor, Manage, SectionPick, SortPick. A tenth needs it too.
+- **Comments state intent; code may have drifted** → read one against the other.
+- **`dist` may hold several `index-*.js`** (CalMind) → read the entry from `dist/index.html`, not `find | head -1` (as `desktop/smoke.sh`, `desktop/check-assets.sh` do). Here `expo export` wipes `dist` and there is one; true until the first `import()`.
+- **Ask what a failed write does**; grep `.catch(() => {})` and triage by what is lost.
