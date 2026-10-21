@@ -17,7 +17,7 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
 - **Budget tab reads ONE month**: `monthSet(prefs.budgetMonth)` is the only set; no view dropdown, no `budgetView` pref, `View`, `viewSet`/`viewsOf`, `ViewPick.tsx`. `ALL_TIME` stays (key for `Line.budget`).
 - **Never migrate away records for a removed feature.** Old files still load, report zero dropped rows, keep `v:` budget amounts unread; store stays v4. `store.test.ts` pins this.
 - **Pick bar**: `apps/app/src/PickBar.tsx` is a `fork` of CoreMind `canon/app/src/components/PickBar.tsx` (ChefMind is the `exact` row). Ours: `detail`, `extras`, optional `onDelete` (omitted on budget). Changing All/Clear/two-press Delete (controls, order, 2.5s fuse) is owed to ChefMind and canon too.
-- **Canon bytes, do not edit here**: `packages/core/src/rowslots.ts`, `packages/core/src/folds.ts`, `packages/core/test/folds.test.ts`. Change goes home repo → canon → every consumer, or `bin/check-drift.sh` lies. `orderAbove`/`OrderDir` are ours.
+- **Canon bytes, do not edit here**: `packages/core/src/rowslots.ts`, `packages/core/src/folds.ts`, `packages/core/test/folds.test.ts`. Change goes home repo → canon → every consumer, or CoreMind's `bin/check-drift.sh` lies (it lives there, not here). `orderAbove`/`OrderDir` are ours.
 - **Cog, not bar**: app-wide, once-a-session controls (Import from CSV, Export budget, Whole dollars) live in `AppMenu.tsx` behind the top-right cog; the bar is per-screen. One setting, one control.
 - **Write only `/AcctMind` and `/test/AcctMind`** (CalMind's areas never). Destinations are guarded constants, never variables; prove guards by breaking copies of the script, never the real one.
 - **Deploy to both**: `./deploy.sh` writes sandbox then production until Sean says test-only (then one line changes).
@@ -92,7 +92,7 @@ npx playwright test --ui                             # watchable
 - **Core imports are extensionless** (Metro can't resolve `./money.js`, Node ESM can't resolve `./money`) → `tools/register-ts.mjs` lets Node scripts import core.
 - **`click()` on a gone control waits out the whole test budget** → `actionTimeout` in the Playwright config, short explicit timeout on speculative clicks.
 - **`hitSlop` is a no-op under react-native-web** → draw controls at `TAP` (44pt); never shrink and add `hitSlop`.
-- **RN `Modal` is its own window outside the safe area** (under the clock; invisible in browser tests) → all NINE modals re-apply `useSafeAreaInsets`: Add, AmountPad, CategoryPick, DayPicker, Devices, LineEditor, Manage, SectionPick, SortPick. A tenth needs it too.
+- **RN `Modal` is its own window outside the safe area** (under the clock; invisible in browser tests) → all TEN modals re-apply `useSafeAreaInsets`: AddTransaction, AmountPad, AppMenu, CategoryPick, DayPicker, Devices, Import, Manage, SectionPick, SortPick. An eleventh needs it too. (Listed as nine with `LineEditor` until 2026-10-21 — that file went with the budget's edit screen, and the list had missed AppMenu and Import, the two newest and so the two a reader is most likely writing beside.)
 - **Comments state intent; code may have drifted** → read one against the other.
 - **`dist` may hold several `index-*.js`** (CalMind) → read the entry from `dist/index.html`, not `find | head -1` (as `desktop/smoke.sh`, `desktop/check-assets.sh` do). Here `expo export` wipes `dist` and there is one; true until the first `import()`.
 - **Ask what a failed write does**; grep `.catch(() => {})` and triage by what is lost.
