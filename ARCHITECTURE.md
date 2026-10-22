@@ -138,7 +138,8 @@ starts negative, because almost everything in a ledger is money going out.
 
 **On the device.** There is no API and no database. The web app keeps its
 ledger in the browser's own storage; the phone and the desktop
-shells keep theirs on the machine.
+shells keep theirs on the machine. On Apple, the iPhone and the Mac also share
+one iCloud Drive file (see Sync, below); Windows, Android and web do not sync.
 
 That has one consequence worth stating plainly, because the code is shaped
 around it: **the device is the only copy**, so a store that will not parse is
@@ -151,42 +152,47 @@ edge; days are local `YYYY-MM-DD` strings. Both live in `packages/core`.
 ## Sync, and what each transport actually does
 
 Two links, neither of which needs Sean's server, both optional — every
-surface is a working app with both switched off. What merges is
-one function (`mergeStores`), proven commutative, associative and idempotent,
-so any of them can deliver in any order, twice, or years late.
+surface is a working app with both switched off. What merges is one function
+(`mergeStores`), proven commutative, associative and idempotent, so any link
+can deliver in any order, twice, or years late.
 
 | Link | Between | Needs | State |
 | --- | --- | --- | --- |
-| Local network | iPhone ⇄ Mac ⇄ iPad | A free Apple team | **On** |
-| iCloud key-value | Any Apple devices | A **paid** membership | Written, off |
+| Local network | iOS binaries — iPhone, iPad | A free Apple team | **On** |
+| iCloud Drive file | iPhone ⇄ Mac (Tauri) | A **paid** Apple team | **On** |
+
+Windows, Android and the web build have neither link: their ledger is the one
+on that device.
 
 **Local network** is Bonjour discovery and a TLS connection carrying whole
 ledgers, `apps/app/modules/peer-sync/`. Two devices pair once by typing a
-25-character code; that code is 120 bits from the system CSPRNG and becomes
-the pre-shared key, which is why it is long rather than six friendly
-characters — a short one could be ground out offline by anyone who recorded a
-handshake off the wifi.
+25-character code — 120 bits from the system CSPRNG, which becomes the
+pre-shared key (a short code could be ground out offline from a recorded
+handshake). The link is TLS 1.2 with `TLS_PSK_WITH_AES_128_GCM_SHA256`, which
+is what Apple's PSK support negotiates; nobody on the network can read the
+ledger or feed it rows. It has **no forward secrecy**: someone who records a
+session and later gets the code could read it, and the code lives in the
+Keychain, so that means having the device (`PeerLink.swift` has the full note).
+**Both devices must be awake, on the same network, with AcctMind open** — iOS
+suspends a backgrounded app, and a suspended app holds no listener.
 
-The link is TLS, authenticated by that code — measured as TLS 1.2 with
-`TLS_PSK_WITH_AES_128_GCM_SHA256`, which is what Apple's pre-shared-key
-support negotiates and cannot be talked out of. So nobody on the network can
-read the ledger or feed it invented rows. It has **no forward secrecy**,
-which is worth knowing precisely: someone who both records a session and
-later gets the pairing code could read what they recorded. The code never
-crosses the network and lives in the Keychain, so that means having the
-device. `PeerLink.swift` carries the full note.
+**iCloud Drive file** is one document, `store.json`, in the container
+`iCloud.com.seancheren.acctmind`, shown to the user as an **AcctMind** folder in
+iCloud Drive. A file rather than the key-value store, which caps at 1 MB when
+the ledger was 1.26 MB (the key-value path was removed 2026-09-22).
+`planSync` in core decides what to read, merge and write; the surfaces only move
+the string.
 
-Its other limit is real and the app says so rather than showing a tick:
-**both devices have to be awake, on the same network, with AcctMind open.** iOS
-suspends a backgrounded app and a suspended app holds no listener. A
-transaction added on a phone in a café reaches the Mac the next time both are
-open together.
-
-**iCloud** removes that limit — a device that was switched off gets the write
-on its next launch — but the key-value entitlement needs a paid Apple
-Developer Program membership. The code is written and tested; it is gated
-behind `ACCTMIND_ICLOUD=1` and off by default, so a free team builds
-everything.
+- **iPhone**: the `icloud-file` Expo module (FileManager + NSFileCoordinator),
+  with a metadata query that wakes it when the file changes.
+- **Mac**: the Tauri shell has no native modules, so Rust reads and writes
+  `~/Library/Mobile Documents/iCloud~com~seancheren~acctmind/Documents/store.json`
+  by path (`desktop/src-tauri/src/main.rs`, macOS only; elsewhere it reports no
+  container). It reads on launch and after its own writes — macOS sends no
+  change event. It will not create the container: the phone has to launch once.
+- **Cost**: iCloud needs a paid Apple Developer membership (the team is).
+  `ACCTMIND_ICLOUD=1` requests the entitlements; `tools/build-platforms.sh`
+  defaults it on, `app.config.js` defaults it off so a free team can still build.
 
 ## The sign-in, and what it is for
 
@@ -198,8 +204,8 @@ being signed into the suite signs you into this.
 That is the entire server side. `server/public/index.php` decides whether to
 hand over the page and serves it; there is nothing else there, and no user
 data for it to hold. **No other surface has a login** — the phone
-and both desktop shells read a ledger that never left the machine, and a
-password on those would protect nothing.
+and both desktop shells read a ledger kept on the device (on Apple, also in the
+user's own iCloud Drive), and a password on those would protect nothing.
 
 ## The map
 
@@ -218,8 +224,8 @@ apps/app/        One Expo app -> iOS, Android and web. Screens, gestures and
                  styling only; every rule is imported from core.
 apps/app/modules/
                  Two small native modules, both Apple-only and both no-ops
-                 elsewhere: peer-sync (Bonjour + TLS) and icloud-sync
-                 (key-value store). Each moves opaque strings; neither of
+                 elsewhere: peer-sync (Bonjour + TLS) and icloud-file
+                 (the iCloud Drive document). Each moves opaque strings; neither of
                  them merges anything.
 server/          The doorway, in plain PHP — index.php, an .htaccess that
                  pins DirectoryIndex, and the suite that tests them. Under

@@ -18,12 +18,15 @@ sh desktop/check-assets.sh     # the same proofs without the 70-second Rust buil
 
 **No sign-in here.** The doorway gates the *web* app because the web app is
 on the open internet. The desktop shell carries its own copy of the bundle
-and reads a ledger that never leaves the machine, so there is nothing for a
-password to protect.
+and reads a ledger kept on the machine — on macOS also shared through one iCloud
+Drive file (see ARCHITECTURE.md) — so there is nothing for a password to
+protect.
 
 **Windows** builds on the manual `desktop-windows` GitHub Actions job — Tauri
 cannot cross-compile from a Mac. Same source, same export, a `.msi` and an
-`.exe` at the end of it.
+`.exe` at the end of it. The Windows app has no iCloud path yet
+(`store_path()` in `src-tauri/src/main.rs` answers none off macOS), so its
+ledger is local to that machine.
 
 ## The one bug this directory is shaped around
 
