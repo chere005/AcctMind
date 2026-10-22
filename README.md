@@ -9,10 +9,11 @@ Android, macOS and Windows. Two tabs: transactions grouped by account, and a
 two-level budget. Every rule the product has is written once, in TypeScript
 (`packages/core`), and every surface renders it.
 
-There is no API and no database. The device is the only copy, and the two
-sync links are optional — every surface is a working app with both switched
-off. Only the web build asks who you are, because only the web build is on
-the open internet; it reuses the suite's own sign-in.
+There is no API and no database. The device holds the ledger, and sync is
+optional: iPhone and iPad pair over the local network, and iPhone and Mac
+share one file in iCloud Drive. Windows, Android and web do not sync. Only
+the web build asks who you are, because only the web build is on the open
+internet; it reuses the suite's own sign-in.
 
 ## Running it
 
