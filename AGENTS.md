@@ -18,6 +18,7 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
 - **Never migrate away records for a removed feature.** Old files still load, report zero dropped rows, keep `v:` budget amounts unread; store stays v4. `store.test.ts` pins this.
 - **Pick bar**: `apps/app/src/PickBar.tsx` is a `fork` of CoreMind `canon/app/src/components/PickBar.tsx` (ChefMind is the `exact` row). Ours: `detail`, `extras`, optional `onDelete` (omitted on budget). Changing All/Clear/two-press Delete (controls, order, 2.5s fuse) is owed to ChefMind and canon too.
 - **Canon bytes, do not edit here**: `packages/core/src/rowslots.ts`, `packages/core/src/folds.ts`, `packages/core/test/folds.test.ts`. Change goes home repo → canon → every consumer, or CoreMind's `bin/check-drift.sh` lies (it lives there, not here). `orderAbove`/`OrderDir` are ours.
+- **iCloud is the only cloud link**: the ledger is `store.json` in the iCloud Drive container, decided by core's `planSync` (`ubiquity.ts`); the iPhone moves it through `modules/icloud-file`, the Mac Tauri shell by path (`desktop/src-tauri/src/main.rs`, macOS only). Windows, Android and web have no sync. `server/` is the web doorway and holds no data.
 - **Cog, not bar**: app-wide, once-a-session controls (Import from CSV, Export budget, Whole dollars) live in `AppMenu.tsx` behind the top-right cog; the bar is per-screen. One setting, one control.
 - **Write only `/AcctMind` and `/test/AcctMind`** (CalMind's areas never). Destinations are guarded constants, never variables; prove guards by breaking copies of the script, never the real one.
 - **Deploy to both**: `./deploy.sh` writes sandbox then production until Sean says test-only (then one line changes).
@@ -45,7 +46,7 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
 ## Platforms
 
 - **Web**: prod `seancheren.com/AcctMind`, test `test.seancheren.com/AcctMind`; `./deploy.sh` writes both.
-- **Windows**: `.github/workflows/desktop-windows.yml` on a Windows runner, dispatched by the push step.
+- **Windows**: `.github/workflows/desktop-windows.yml` on a Windows runner, dispatched by the push step. Local ledger only: no iCloud path (`store_path()` is macOS-only).
 - **macOS**: Tauri bundle in `desktop/`, built by `tools/build-platforms.sh --mac`, smoke-tested with `desktop/smoke.sh --no-build`, copied to `/Applications` and the copy verified. "My Mac (Designed for iPad)" from `apps/app/ios` is NOT this surface (Xcode GUI only).
 - **iOS**: `tools/build-platforms.sh --ios`; AcctMind goes on Sean's handset only (phone list by udid in the script). Switched-off phone skipped, refusing phone warned, fails only if none took it. Team 2LGYTL3FSJ is PAID: no per-phone app cap.
 - **Android**: `tools/build-platforms.sh --android` (local emulator).

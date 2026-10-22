@@ -268,12 +268,16 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
 
 ## What nobody is watching
 
-- **The Mac app, at all.** It compiles for `platform=macOS,variant=Designed
-  for iPad` and has never been LAUNCHED — not once, by anyone. A shell cannot
-  do it (see ARCHITECTURE.md), so it takes Xcode and a person. Everything said about
-  phone-to-Mac sync is therefore reasoning, not observation: the two
-  simulators proved the transport, and the Mac has never been one of the two
-  ends.
+- **The iOS binary on the Mac ("Designed for iPad").** It compiles for
+  `platform=macOS,variant=Designed for iPad` and has never been LAUNCHED. A
+  shell cannot do it (see ARCHITECTURE.md), so it takes Xcode and a person.
+  Anything said about the local-network link with a Mac at one end is therefore
+  reasoning, not observation: two simulators proved the transport.
+- **iCloud actually carrying the file.** `ubiquity.test.ts` pins the path and
+  `sync.test.ts` pins `planSync`. Nothing automates iCloud
+  delivering `store.json` between a phone and the Mac, or macOS letting the
+  Tauri shell read the container — `icloud_status` on the Devices screen is
+  the tell.
 
 - **That the desktop window actually RENDERS.** A window showing an error page
   launches, survives eight seconds and quits exactly like a working one. The
@@ -343,12 +347,13 @@ visibility assertion reads. Both are in `rowactions.spec.ts` and
   stops the lane. So a release can be tagged and pushed with neither device
   build having succeeded, and the report is the only place that says so.
 
-- **The Windows bundle, on THIS machine.** The workflow has run — at least
-  three times; commit 3dd5c36 fixed a smoke step that had blamed the bundle
-  for an install it never checked. It installs the MSI, finds the binary,
-  launches it and requires a window titled *AcctMind*. What nobody watches is
-  the window's CONTENTS: a Windows Tauri shell that comes up blank would pass
-  that check, and no one here has a Windows machine to look at.
+- **The Windows bundle's contents.** The workflow installs the MSI, finds the
+  binary, launches it and requires a window titled *AcctMind* (commit 3dd5c36
+  fixed a smoke step that had blamed the bundle for an install it never
+  checked). The 0.54.0 setup `.exe` was also installed and launched by hand on
+  Windows 10 on 2026-10-21: it ran with that window title. Nobody compares the
+  window's CONTENTS — a blank Tauri shell would pass both — and Windows has no
+  iCloud link, so its ledger is local only.
 
 ## Before you trust a new check
 
