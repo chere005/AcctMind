@@ -281,11 +281,34 @@ refuses it: `open` says "incorrect executable format", and registering it with
 open `apps/app/ios/AcctMind.xcworkspace`, choose **My Mac (Designed for
 iPad)**, Run. There is no command-line equivalent.
 
-The alternative, if a double-clickable Mac app is ever wanted, is Mac
-Catalyst. Expo sets `SUPPORTS_MACCATALYST = NO` and turning it on is a real
-piece of work rather than a flag — it needs a config plugin (prebuild
-regenerates the project) and every Pod has to tolerate the Catalyst SDK. It
-has not been attempted.
+The alternative, if a double-clickable Mac app is wanted, is Mac Catalyst.
+Ticket #60's spike built a Release AcctMind Catalyst app for arm64 on
+2026-10-22. The checked-in config plugin at
+`apps/app/plugins/withMacCatalyst.js` enables the destination in the generated
+project and Podfile; a plain setting in `ios/` would be erased by prebuild.
+
+Expo's default prebuilt frameworks do not include a Catalyst slice in this
+SDK set, so a plain prebuild followed by an arm64 build fails at
+`ExpoModulesCore`. Build its dependencies from source instead. The proven
+spike used a disposable copy of the repo, then:
+
+```sh
+EXPO_USE_PRECOMPILED_MODULES=0 RCT_USE_PREBUILT_RNCORE=0 \
+  LANG=en_US.UTF-8 npx expo prebuild --platform ios --clean --no-install
+cd apps/app/ios
+EXPO_USE_PRECOMPILED_MODULES=0 RCT_USE_PREBUILT_RNCORE=0 \
+  LANG=en_US.UTF-8 pod install
+xcodebuild -quiet -workspace AcctMind.xcworkspace -scheme AcctMind \
+  -configuration Release \
+  -destination 'platform=macOS,variant=Mac Catalyst,arch=arm64' \
+  ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO build
+```
+
+That compile produced `AcctMind.app` and its JavaScript bundle. It was
+unsigned and was not launched, installed, or submitted to the App Store; this
+proves the Catalyst build path, not signing, iCloud behavior, desktop UX, or
+distribution readiness. Keep the clean prebuild inside a disposable checkout
+until a repeatable build script is added, since it replaces generated `ios/`.
 
 ### Android
 

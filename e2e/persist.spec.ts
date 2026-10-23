@@ -55,7 +55,11 @@ test.describe('a damaged store', () => {
     await page.getByTestId('start-fresh-confirm').click();
     // STORE_VERSION, not a literal: this said `v: 1` after the store went to
     // v2 and nothing noticed, because the gesture suite had not been re-run.
-    await expect.poll(async () => (await stored(page) as { txns: unknown[] }).txns).toEqual([]);
+    await expect.poll(async () => (await stored(page) as { txns: unknown[] }).txns, {
+      message: 'the confirmed empty store was not persisted',
+      timeout: 20_000,
+      intervals: [100, 250, 500, 1_000],
+    }).toEqual([]);
   });
 
   test('a version this build cannot read is damage, not an upgrade', async ({ page }) => {

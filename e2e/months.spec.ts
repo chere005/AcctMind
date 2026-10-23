@@ -62,6 +62,12 @@ async function assign(page: Page, line: string, amount: string): Promise<void> {
   await expect(page.getByTestId('pad-amount')).toBeVisible();
   await page.getByTestId('pad-amount-op-set').click();
   await page.getByTestId('pad-amount').fill(amount);
+  // Read the calculation back before submitting. On a busy machine the
+  // input event can reach the DOM before React has committed the value that
+  // `onDone` reads from its state closure; Enter must submit what the test
+  // just typed, not the previous amount.
+  const want = Math.round(Number(amount) * 100);
+  await expect(page.getByTestId('pad-amount-result')).toHaveText(`$${(want / 100).toFixed(2)}`);
   await page.getByTestId('pad-amount').press('Enter');
   await expect(page.getByTestId('pad-amount')).toBeHidden();
   /*
@@ -85,7 +91,6 @@ async function assign(page: Page, line: string, amount: string): Promise<void> {
    * that reading would go green on a pad writing into the wrong month —
    * which is the one thing `assignedIn` exists to catch.
    */
-  const want = Math.round(Number(amount) * 100);
   await expect
     .poll(() => assignedIn(page, line), {
       message: `the ${amount} never reached this month's record`, timeout: 15_000,

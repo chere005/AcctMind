@@ -361,6 +361,9 @@ test('every row shows its controls at once, not just the one you touched', async
 });
 
 test('nothing offers actions until the pencil is pressed', async ({ page }) => {
+  // The point is the held pointer, not 700ms of wall-clock scheduling. This
+  // keeps the gesture deterministic when other builds are loading the Mac.
+  await page.clock.install();
   await fresh(page);
   await addTransaction(page, { name: 'Coffee', amount: '450' });
   await expect(page.getByTestId('row-actions')).toHaveCount(0);
@@ -368,7 +371,7 @@ test('nothing offers actions until the pencil is pressed', async ({ page }) => {
   const box = await page.getByTestId('txn-row-body').first().boundingBox();
   await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
   await page.mouse.down();
-  await page.waitForTimeout(700);
+  await page.clock.fastForward(700);
   await page.mouse.up();
   await expect(page.getByTestId('row-actions')).toHaveCount(0);
 });

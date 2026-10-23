@@ -201,14 +201,8 @@ module.exports = {
     experiments: {
       baseUrl,
     },
-    /*
-     * No `plugins` here since the watch went.
-     *
-     * `@bacons/apple-targets` existed to generate the watchOS target from
-     * `targets/watch/` at prebuild. With that directory gone the plugin has
-     * nothing to generate, and left in it adds an extra target to every
-     * prebuild for no reason. Sean, 2026-08-21: drop the watch for now — so
-     * this comes back with it, together with the dependency.
-     */
+    // Catalyst is generated into ios/ by this plugin so a clean prebuild
+    // preserves the macOS destination. See plugins/withMacCatalyst.js.
+    plugins: ['./plugins/withMacCatalyst.js'],
   },
 };
