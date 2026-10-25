@@ -378,3 +378,60 @@ The dependency tree is MIT/ISC/Apache/BSD throughout, with no copyleft that
 would conflict with the App Store's terms. `node-forge` reports
 `BSD-3-Clause OR GPL-2.0`; it is dual-licensed, the BSD side applies, and it
 is build tooling that never reaches the binary.
+
+## Releases
+
+Pushing a version tag releases the desktop apps. The tag is bare (`0.56.0`, no `v`) and
+`.github/workflows/release.yml` does the rest on GitHub's own runners:
+
+1. checks that the tag equals the version in every file that carries it (the six
+   `tools/check-version.mjs` holds together) and that the release is not already
+   published, then opens a **draft** GitHub release named `AcctMind <version>`, with
+   the tag's annotation as its notes;
+2. builds on Windows (typecheck, core suite, web export, Tauri build, and an
+   install-and-launch smoke of the `.msi`) and on macOS (Apple silicon), attaching
+   each build's files to that draft;
+3. when every expected file is on the draft, writes `SHA256SUMS.txt` and publishes
+   the release (Latest; a version with a `-` is a pre-release). If a file is missing,
+   the release stays a draft.
+
+The assets, for version `X`:
+
+| Platform | File |
+| --- | --- |
+| Windows (x64) | `AcctMind_X_x64_en-US.msi`, `AcctMind_X_x64-setup.exe` |
+| macOS (Apple silicon) | `AcctMind_X_aarch64.dmg` |
+| All | `SHA256SUMS.txt` |
+
+There is no Linux build and nothing for Intel Macs.
+
+**Cutting one.** `npm run dtp` (or `npm run tdtp`, with the full test run in front)
+bumps the version, deploys, runs the preflight, tags, pushes, then finds the Release
+run the tag started, watches it, and prints its URL and the published release's. If
+that run fails after the tag, the deploy stands: the lane says so, prints
+`gh run rerun <id> --failed`, and exits non-zero.
+
+**Releasing a tag that already exists** (the first release of a past version, or a
+retry once a fix is on the tag's commit):
+
+```sh
+gh workflow run release.yml -f tag=0.55.0
+```
+
+**Preflight.** `sh tools/preflight.sh` runs the same jobs against HEAD before it is
+tagged: it pushes HEAD to a throwaway `preflight/<sha>` branch, starts the workflow
+there with `preflight=true`, prints PASS or the failing jobs and steps, and deletes the
+branch. In preflight mode every job has `continue-on-error`, so a red job does not make
+the run red (GitHub mails failed runs), and nothing is created, uploaded or published.
+The lane does this before every tag; `--skip-preflight` leaves it out. The workflow
+must already be on the default branch to be started by name.
+
+**Why no build artifacts.** The workflow never uses `actions/upload-artifact`: this
+account's Actions artifact storage quota is full, and every run that tried to upload
+one failed. Release assets do not count against it, so each build uploads straight to
+the release with `gh release upload`.
+
+**Installing.** The builds are not code-signed. On first run Windows SmartScreen says
+"Windows protected your PC": choose *More info*, then *Run anyway*. macOS Gatekeeper
+stops an app that is not notarized: right-click it and choose *Open*, or use System
+Settings > Privacy & Security > *Open Anyway*.
