@@ -11,12 +11,13 @@ A ledger: transactions by account, and a two-level budget.
 - Optional sync: iPhone and iPad over the local network, iPhone and Mac via iCloud Drive.
 - Only the web build signs in, with a CalMind account.
 
-## Screens
-
-| Budget | Transactions | Add a transaction |
-| --- | --- | --- |
-| ![Budget](docs/screenshots/acctmind-budget-mobile.png) | ![Transactions](docs/screenshots/acctmind-transactions-mobile.png) | ![Add a transaction](docs/screenshots/acctmind-add-transaction-mobile.png) |
-| Adjust an allocation and see its target, spent and remaining. | Income and expenses by account, with balances. | Name, date, category, description, amount. |
+<table>
+<tr>
+<td align="center" valign="top"><img src="docs/screenshots/acctmind-budget-mobile.png" width="240" alt="Budget"><br><sub><b>Budget.</b> Adjust an allocation and see its target, spent and remaining.</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/acctmind-transactions-mobile.png" width="240" alt="Transactions"><br><sub><b>Transactions.</b> Income and expenses by account, with balances.</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/acctmind-add-transaction-mobile.png" width="240" alt="Add a transaction"><br><sub><b>Add a transaction.</b> Name, date, category, description, amount.</sub></td>
+</tr>
+</table>
 
 ## Run
 
