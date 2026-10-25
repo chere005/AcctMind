@@ -25,19 +25,19 @@ Feel free to deploy this on your own website, build and deploy the iOS version, 
 
 Categories with lines under them. Adjust an allocation and see its target, spent and remaining.
 
-<img src="docs/screenshots/acctmind-budget-mobile.png" width="320" alt="Budget">
+<picture><img src="docs/screenshots/acctmind-budget-mobile.png" width="320" alt="Budget"></picture>
 
 ### Transactions
 
 Income and expenses by account, with dates, categories, balances and cleared status.
 
-<img src="docs/screenshots/acctmind-transactions-mobile.png" width="320" alt="Transactions">
+<picture><img src="docs/screenshots/acctmind-transactions-mobile.png" width="320" alt="Transactions"></picture>
 
 ### Add a transaction
 
 Name, date, category, description, amount.
 
-<img src="docs/screenshots/acctmind-add-transaction-mobile.png" width="320" alt="Add a transaction">
+<picture><img src="docs/screenshots/acctmind-add-transaction-mobile.png" width="320" alt="Add a transaction"></picture>
 
 ## Notes
 
