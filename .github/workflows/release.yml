@@ -1,0 +1,430 @@
+# Releases AcctMind's desktop apps on ONE GitHub Release. A pushed version tag (bare, no "v": 0.56.0) or a manual run
+# naming an existing tag runs four jobs:
+#
+#   prepare  (ubuntu)    the tag must be the version in EVERY file that carries it (the six tools/check-version.mjs holds
+#                        together); a published release for the tag stops the run; the notes are the tag's annotation (or
+#                        its commit's message) plus an "Installing" block; a DRAFT release "AcctMind <version>" is made
+#                        (a draft left by an earlier run is reused).
+#   windows  (windows)   typecheck, core suite, web export, tauri build: the .msi and the NSIS .exe (x64), smoke-tested by
+#                        installing the .msi on the runner; both go into the draft.
+#   macos    (macos-15)  Apple silicon only (macos-15 runners are arm64 Macs): web export, tauri build with the dmg bundle
+#                        asked for HERE (tauri.conf.json's bundle.targets stays app/msi/nsis: create-dmg does not work on
+#                        the Mac the release lane runs on); the .dmg goes into the draft. Not notarized.
+#   publish  (ubuntu)    every expected file is on the draft; SHA256SUMS.txt is added; then the release is published
+#                        (Latest; a version with a "-" is a pre-release). A missing file leaves it a DRAFT.
+#
+# Nothing here uses actions/upload-artifact or download-artifact: the account's Actions artifact storage quota is full
+# ("Failed to CreateArtifact: Artifact storage quota has been hit" failed every desktop-windows run on 2026-10-22/23), and
+# release assets do not count against it. Files go straight to the release with `gh release upload`.
+#
+# PREFLIGHT: a manual run with preflight=true (tools/preflight.sh does it, from the commit about to be tagged) runs the
+# same jobs with continue-on-error on each, so a red job does not make the RUN red (GitHub mails a failed run), and
+# creates, uploads and publishes nothing. Each job writes its result to the run summary.
+#
+# A failed windows or macos job leaves the release a DRAFT: fix the cause, then `gh run rerun <id> --failed` (publish runs
+# after it). README.md ("Releases") says how to cut one.
+name: Release
+
+on:
+  push:
+    tags: ["[0-9]+.[0-9]+.[0-9]+*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "An EXISTING tag to release, e.g. 0.55.0 (also how a past version gets its first release). Blank only with preflight, which builds the dispatched ref and only checks this tag against the files."
+        required: false
+        type: string
+      preflight:
+        description: "Build everything, publish nothing, and do not fail the run (tools/preflight.sh)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  # Empty only for a preflight run on a branch: prepare then derives the tag from the version in the files.
+  TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  PREFLIGHT: ${{ inputs.preflight == true && 'true' || 'false' }}
+  GH_REPO: ${{ github.repository }}
+
+jobs:
+  prepare:
+    name: Tag, notes and the draft release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: ${{ inputs.preflight == true }}
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      ref: ${{ steps.version.outputs.ref }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ (env.TAG != '' && inputs.preflight != true) && format('refs/tags/{0}', env.TAG) || github.sha }}
+          fetch-depth: 0
+
+      - name: The tag is the version in every file
+        id: version
+        run: |
+          set -euo pipefail
+          semver='^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'
+          if [ -n "$TAG" ] && ! [[ "$TAG" =~ $semver ]]; then
+            echo "::error title=Not a version tag::'$TAG' is not <major>.<minor>.<patch>[-pre] (AcctMind's tags carry no v)."
+            exit 1
+          fi
+          if [ -z "$TAG" ] && [ "$PREFLIGHT" != "true" ]; then
+            echo "::error title=No tag::A real run needs a tag (the tag input, or a pushed tag). Only preflight may leave it blank."
+            exit 1
+          fi
+          # Every file that carries the version (tools/check-version.mjs holds the same six). Cargo.lock is not
+          # compared: the lane's `cargo update` follows the crate, and a build does not need the lock to agree.
+          versions=$(node <<'EOF'
+          const fs = require('fs');
+          const out = [];
+          for (const f of ['package.json', 'apps/app/package.json', 'desktop/package.json', 'desktop/src-tauri/tauri.conf.json']) {
+            out.push([f, JSON.parse(fs.readFileSync(f, 'utf8')).version]);
+          }
+          const rx = (f, re) => { const m = re.exec(fs.readFileSync(f, 'utf8')); out.push([f, m ? m[1] : '(not found)']); };
+          rx('apps/app/app.config.js', /^\s*version:\s*'([^']*)'/m);
+          rx('desktop/src-tauri/Cargo.toml', /^version\s*=\s*"([^"]*)"/m);
+          for (const [f, v] of out) console.log(f + '\t' + v);
+          EOF
+          )
+          printf '%s\n' "$versions"
+          version=$(printf '%s\n' "$versions" | head -1 | cut -f2)
+          want="${TAG:-$version}"
+          if ! [[ "$want" =~ $semver ]]; then
+            echo "::error title=Not a version::package.json says '$want', which is not <major>.<minor>.<patch>[-pre]."
+            exit 1
+          fi
+          bad=$(printf '%s\n' "$versions" | awk -F'\t' -v w="$want" '$2 != w { printf "%s says %s, ", $1, $2 }')
+          if [ -n "$bad" ]; then
+            echo "::error title=Tag and version differ::The tag is $want but ${bad}so the files disagree with it. Set every file to $want (tools/check-version.mjs lists them), commit, and tag that commit."
+            exit 1
+          fi
+          # A preflight run is on a branch, before the tag exists: it builds that commit and only checks the tag
+          # against the files.
+          if [ -n "$TAG" ] && [ "$PREFLIGHT" != "true" ]; then ref="refs/tags/$TAG"; else ref="$GITHUB_SHA"; fi
+          {
+            echo "tag=$want"
+            echo "version=$want"
+            echo "ref=$ref"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing AcctMind $want (tag $want)"
+
+      - name: Release notes from the tag's annotation (or its commit's message)
+        if: ${{ inputs.preflight != true }}
+        run: |
+          set -euo pipefail
+          # actions/checkout can leave an annotated tag as a lightweight one: fetch the tag object itself.
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          # The annotation when it says more than a title line; else the tagged commit's whole message.
+          body=$(git for-each-ref "refs/tags/$TAG" --format='%(contents:body)')
+          if [ -n "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+            notes=$(git for-each-ref "refs/tags/$TAG" --format='%(contents:subject)%0a%0a%(contents:body)')
+          else
+            notes=$(git log -1 --format=%B "${TAG}^{commit}")
+          fi
+          notes=$(printf '%s\n' "$notes" | grep -vE '^(Co-Authored-By|Signed-off-by):' || true)
+          if [ -z "$(printf '%s' "$notes" | tr -d '[:space:]')" ]; then notes="AcctMind ${VERSION}"; fi
+          {
+            printf '%s\n' "$notes"
+            cat <<'EOF'
+
+          ## Installing
+
+          These builds are not code-signed, so the first launch shows a warning.
+
+          - **Windows** (`.msi` or `-setup.exe`): SmartScreen says "Windows protected your PC". Choose **More info**, then **Run anyway**.
+          - **macOS, Apple silicon** (`.dmg`): open the dmg and drag AcctMind to Applications. The app is not notarized, so Gatekeeper stops the first open: right-click the app and choose **Open**, or go to System Settings > Privacy & Security and choose **Open Anyway**.
+
+          `SHA256SUMS.txt` lists the checksum of every file.
+          EOF
+          } > "$RUNNER_TEMP/release-notes.md"
+          cat "$RUNNER_TEMP/release-notes.md"
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+
+      - name: The draft release for the tag
+        if: ${{ inputs.preflight != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          title="AcctMind ${VERSION}"
+          # Every release for this tag, drafts included (a draft is not reachable by releases/tags/<tag>). The tag passed
+          # the version pattern above, so it is safe inside the filter.
+          filter='.[] | select(.tag_name == "'"$TAG"'") | .draft'
+          states=$(gh api "repos/$GH_REPO/releases?per_page=100" --paginate --jq "$filter") \
+            || { echo "::error::Could not list the releases of $GH_REPO"; exit 1; }
+          if printf '%s\n' "$states" | grep -qx false; then
+            echo "::error title=Already released::$TAG is a published release; it is never rebuilt. A new version needs a new tag (README.md, Releases)."
+            exit 1
+          fi
+          drafts=$(printf '%s\n' "$states" | grep -cx true || true)
+          if [ "$drafts" -gt 1 ]; then
+            echo "::error title=Two drafts::$drafts draft releases are waiting for $TAG: delete all but one on the Releases page, then re-run."
+            exit 1
+          fi
+          if [ "$drafts" -eq 1 ]; then
+            echo "Reusing the draft release for $TAG (an earlier run's)"
+            gh release edit "$TAG" --title "$title" --notes-file "$RUNNER_TEMP/release-notes.md"
+          else
+            gh release create "$TAG" --draft --verify-tag --title "$title" --notes-file "$RUNNER_TEMP/release-notes.md"
+          fi
+
+      - name: Result, for the preflight summary
+        if: ${{ always() && inputs.preflight == true }}
+        run: echo "- prepare (tag and version check) - ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    name: Windows installers (msi and exe) into the draft
+    needs: prepare
+    if: ${{ needs.prepare.outputs.version != '' }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    continue-on-error: ${{ inputs.preflight == true }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install deps
+        run: npm ci
+
+      # The gates that do not need a browser. A Windows bundle built from
+      # code that fails the typecheck is a bundle nobody should install.
+      # TWO STEPS, not one `run:` block with two lines. The default shell on a
+      # windows runner is pwsh, which fails the step on the LAST command's exit
+      # code only — so a broken typecheck would have been masked by a core
+      # suite that then passed, and the job would have gone green with a type
+      # error in it.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Core suite
+        run: npm run test:core
+
+      # export:web, not a bare `expo export` — the head patch and the build
+      # stamp ride in it, and the Windows bundle should carry the same
+      # index.html the site serves.
+      - name: Export the web app
+        run: npm run export:web
+
+      # Tauri cannot cross-compile, so the .msi and .exe are built here from the same web export the site serves.
+      # --bundles is passed HERE and not in tauri.conf.json, whose bundle.targets stays app/msi/nsis (AGENTS.md).
+      - name: Build the Windows bundles
+        run: npm -w @acctmind/desktop run tauri -- build --bundles "msi,nsis"
+
+      # The runner IS a Windows machine with a desktop session, so the smoke
+      # that would otherwise wait for a person runs here: install the MSI the
+      # way a user's machine would, launch what it installed, and hold it to
+      # the mac smoke's bar — it launches, it survives, it can be closed.
+      # A window showing an error page still passes, the same honest
+      # limitation desktop/smoke.sh states.
+      - name: Smoke the MSI on the runner
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem desktop/src-tauri/target/release/bundle/msi/*.msi | Select-Object -First 1
+          if (-not $msi) { throw 'no MSI to smoke' }
+          Write-Host "installing $($msi.Name)"
+          # msiexec's EXIT CODE, checked. Without -PassThru and this test a
+          # failed install walked on to the search below and reported "the MSI
+          # installed nothing named AcctMind.exe" — which blames the bundle for
+          # an install that never happened, and is what this job said for its
+          # first three runs.
+          $p = Start-Process msiexec -ArgumentList "/i `"$($msi.FullName)`" /qn" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "msiexec failed with exit $($p.ExitCode)" }
+          # BOTH names, and the three places Windows installs to. productName is
+          # AcctMind but the crate is acctmind-desktop, and which one names the
+          # binary is Tauri's business, not this script's.
+          $exe = Get-ChildItem "$env:ProgramFiles","${env:ProgramFiles(x86)}","$env:LOCALAPPDATA\Programs" -Recurse -Include AcctMind.exe,acctmind-desktop.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw 'the MSI reported success but installed no AcctMind binary' }
+          Write-Host "launching $($exe.FullName)"
+          $app = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Seconds 8
+          if ($app.HasExited) { throw "the installed app exited within 8 seconds (code $($app.ExitCode))" }
+          # The window takes a beat to be titled; three looks over six seconds.
+          $title = ''
+          foreach ($i in 1..3) {
+            $title = (Get-Process -Id $app.Id -ErrorAction SilentlyContinue).MainWindowTitle
+            if ($title -like '*AcctMind*') { break }
+            Start-Sleep -Seconds 2
+          }
+          if ($title -notlike '*AcctMind*') { throw "the app is running but shows no AcctMind window - got '$title'" }
+          Write-Host "window up: '$title' - stopping it"
+          Stop-Process -Id $app.Id
+
+      # The files this job will attach, by their exact names (publish expects the same ones). A name that is not there
+      # fails the job and lists what the build did make.
+      - name: List the files to attach
+        shell: pwsh
+        run: |
+          $dir = 'desktop/src-tauri/target/release/bundle'
+          $files = @("$dir/msi/AcctMind_${env:VERSION}_x64_en-US.msi", "$dir/nsis/AcctMind_${env:VERSION}_x64-setup.exe")
+          foreach ($f in $files) {
+            if (-not (Test-Path $f)) {
+              Write-Output "::error title=Expected file missing::$f was not built. The bundle directory holds:"
+              Get-ChildItem $dir -Recurse -File | ForEach-Object { Write-Output $_.FullName }
+              exit 1
+            }
+          }
+          Get-Item $files | Format-Table Name, Length
+
+      # Straight to the draft release, not through upload-artifact (the Actions artifact storage quota is full).
+      - name: Attach them to the draft release
+        if: ${{ inputs.preflight != true }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $dir = 'desktop/src-tauri/target/release/bundle'
+          gh release upload $env:RELEASE_TAG "$dir/msi/AcctMind_${env:VERSION}_x64_en-US.msi" "$dir/nsis/AcctMind_${env:VERSION}_x64-setup.exe" --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Result, for the preflight summary
+        if: ${{ always() && inputs.preflight == true }}
+        shell: pwsh
+        run: '"- windows - ${{ job.status }}" | Out-File -Append -Encoding utf8 $env:GITHUB_STEP_SUMMARY'
+
+  macos:
+    name: macOS dmg, Apple silicon, into the draft
+    needs: prepare
+    if: ${{ needs.prepare.outputs.version != '' }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    continue-on-error: ${{ inputs.preflight == true }}
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.ref }}
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 26
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Export the web app
+        run: npm run export:web
+
+      # The desktop checks that need no compiler (the staged export, the window's URL, the CSP).
+      - name: Desktop asset checks
+        run: sh desktop/check-assets.sh
+
+      # --bundles dmg is asked for HERE and not in tauri.conf.json, whose bundle.targets stays app/msi/nsis (AGENTS.md:
+      # create-dmg fails on the Mac the release lane runs on). The runner is arm64, so the dmg is aarch64; nothing is
+      # built for Intel. No signing identity is set, so the app is unsigned and not notarized.
+      - name: Build the dmg
+        run: npm -w @acctmind/desktop run tauri -- build --bundles dmg
+
+      - name: List the files to attach
+        run: |
+          dir=desktop/src-tauri/target/release/bundle
+          dmg="$dir/dmg/AcctMind_${VERSION}_aarch64.dmg"
+          if [ ! -f "$dmg" ]; then
+            echo "::error title=Expected file missing::$dmg was not built. The bundle directory holds:"
+            find "$dir" -type f | sort
+            exit 1
+          fi
+          ls -l "$dmg"
+
+      # Straight to the draft release, not through upload-artifact (the Actions artifact storage quota is full).
+      - name: Attach it to the draft release
+        if: ${{ inputs.preflight != true }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$RELEASE_TAG" "desktop/src-tauri/target/release/bundle/dmg/AcctMind_${VERSION}_aarch64.dmg" --clobber
+
+      - name: Result, for the preflight summary
+        if: ${{ always() && inputs.preflight == true }}
+        run: echo "- macos - ${{ job.status }}" >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    name: Every file is there; publish the release
+    needs: [prepare, windows, macos]
+    if: ${{ inputs.preflight != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Every expected file is on the draft
+        run: |
+          set -euo pipefail
+          expected=(
+            "AcctMind_${VERSION}_x64_en-US.msi"
+            "AcctMind_${VERSION}_x64-setup.exe"
+            "AcctMind_${VERSION}_aarch64.dmg"
+          )
+          names=$(gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name') \
+            || { echo "::error::No release for $RELEASE_TAG"; exit 1; }
+          echo "Assets: $(printf '%s' "$names" | tr '\n' ' ')"
+          missing=""
+          for f in "${expected[@]}"; do
+            printf '%s\n' "$names" | grep -qxF "$f" || missing="$missing $f"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error title=Release incomplete::Missing${missing}; the release stays a draft."
+            exit 1
+          fi
+
+      - name: SHA256SUMS.txt
+        run: |
+          set -euo pipefail
+          mkdir sums
+          cd sums
+          expected=(
+            "AcctMind_${VERSION}_x64_en-US.msi"
+            "AcctMind_${VERSION}_x64-setup.exe"
+            "AcctMind_${VERSION}_aarch64.dmg"
+          )
+          for f in "${expected[@]}"; do
+            gh release download "$RELEASE_TAG" --pattern "$f" --dir .
+          done
+          sha256sum "${expected[@]}" | tee SHA256SUMS.txt
+          gh release upload "$RELEASE_TAG" SHA256SUMS.txt --clobber
+
+      - name: Publish the release
+        run: |
+          set -euo pipefail
+          if [[ "$VERSION" == *-* ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --latest
+          fi
+          url=$(gh release view "$RELEASE_TAG" --json url --jq .url)
+          echo "$url"
+          echo "Published: $url" >> "$GITHUB_STEP_SUMMARY"

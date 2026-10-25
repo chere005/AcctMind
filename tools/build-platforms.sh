@@ -2,7 +2,8 @@
 # The platforms this repo ships that deploy.sh does not: the macOS desktop
 # bundle, an iOS build installed on every phone this app belongs on, and an
 # Android build on an emulator. Windows is CI's
-# (.github/workflows/desktop-windows.yml) — Tauri does not cross-compile.
+# (.github/workflows/release.yml, started by the version tag) — Tauri does not
+# cross-compile.
 #
 #   sh tools/build-platforms.sh              all three
 #   sh tools/build-platforms.sh --mac        just the desktop bundle
@@ -99,8 +100,8 @@ fi
 # whose it is, instead of running beside it.
 #
 # It sees only builds that TAKE it: the suite's build-platforms.sh, MyCalMind's
-# deploy-device.sh, AcctMind's building smoke and CoreMind's fallback. PrivateApp,
-# the TestMindSuite forks, a hand-typed xcodebuild/gradle/cargo and an Xcode
+# deploy-device.sh, AcctMind's building smoke and CoreMind's fallback. Any other
+# app's own build script, a hand-typed xcodebuild/gradle/cargo and an Xcode
 # window's build are not seen.
 #
 # Taken around each BLOCK, because a block is the unit the lane runs one at a

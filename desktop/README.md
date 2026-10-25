@@ -22,9 +22,10 @@ and reads a ledger kept on the machine — on macOS also shared through one iClo
 Drive file (see ARCHITECTURE.md) — so there is nothing for a password to
 protect.
 
-**Windows** builds on the manual `desktop-windows` GitHub Actions job — Tauri
-cannot cross-compile from a Mac. Same source, same export, a `.msi` and an
-`.exe` at the end of it. The Windows app has no iCloud path yet
+**Windows** builds in the `Release` GitHub Actions workflow (`.github/workflows/release.yml`,
+started by a version tag) — Tauri cannot cross-compile from a Mac. Same source,
+same export, a `.msi` and an `.exe` at the end of it, attached to the GitHub
+release with the Apple silicon `.dmg`. The Windows app has no iCloud path yet
 (`store_path()` in `src-tauri/src/main.rs` answers none off macOS), so its
 ledger is local to that machine.
 

@@ -26,9 +26,10 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
 - **Versions**: `version` is semver in SIX files held by `tools/check-version.mjs`: root `package.json`, `apps/app/package.json`, `app.config.js`, `desktop/package.json`, `desktop/src-tauri/tauri.conf.json`, `desktop/src-tauri/Cargo.toml`. Tags match, BARE (no `v`); patch tags fine. `Cargo.lock` is not compared; `tools/sync-lock-versions.mjs` (run by the lane) syncs it.
 - **`ios.buildNumber`** is HAND-bumped every time a build leaves this machine; restarts at 1 with the minor bump. Verify bumps (a `sed` matching nothing reports success); check-version also compares the generated `Info.plist`.
 - **`app.config.js` is source; `apps/app/ios/` is prebuild output.** Bumping config without `expo prebuild` installs the old number. `npm run test:version:device` (run by `tools/build-platforms.sh --ios` around prebuild; one regeneration then re-check) guards it; `npm test` runs `test:version` (`--sources-only`), where a stale plist is the normal state.
-- **Heavy builds**: `tools/build-platforms.sh` blocks and `desktop/smoke.sh` (when building) run under `tools/heavy-lock.sh` (CoreMind `canon/tools/heavy-lock.sh`, `exact` row: fix it there). Waits up to 30 min; nested heavy blocks are refused (macOS block calls smoke with `--no-build`). Lockless lanes (TestMindSuite forks, PrivateApp xcodebuilds) are unseen: serialize by hand.
+- **Heavy builds**: `tools/build-platforms.sh` blocks and `desktop/smoke.sh` (when building) run under `tools/heavy-lock.sh` (CoreMind `canon/tools/heavy-lock.sh`, `exact` row: fix it there). Waits up to 30 min; nested heavy blocks are refused (macOS block calls smoke with `--no-build`). Builds that do not take the lock (other apps' own scripts, hand-typed xcodebuild/gradle/cargo) are unseen: serialize by hand.
+- **Releases**: a bare version tag runs `.github/workflows/release.yml` (Windows msi + exe, macOS arm64 dmg, `SHA256SUMS.txt`, ONE GitHub release, published only when every file is there). Never `upload-artifact`/`download-artifact` (the Actions artifact quota is full); assets go to the release with `gh release upload`. Existing tag: `gh workflow run release.yml -f tag=<tag>`. README.md, "Releases".
 - **No watch target.** Removed: `apps/app/targets/watch/`, `apps/app/modules/watch-bridge`, `packages/core/src/watch.ts`, `apps/app/src/watch.ts`, `tools/check-watch-feed.sh`, `test:watch`, `@bacons/apple-targets`. Restore = revert that commit + plugin line in `app.config.js` + watch render line in `tools/make-icons.sh`. Keep the watch traps below.
-- **`tauri.conf.json` takes NO extra keys** (a `"_note"` fails the schema); its notes live here. NO `dmg` in `bundle.targets` (create-dmg needs Finder/AppleScript, fails after a good `.app`). `msi`/`nsis` are config-only (no cross-compile).
+- **`tauri.conf.json` takes NO extra keys** (a `"_note"` fails the schema); its notes live here. NO `dmg` in `bundle.targets` (create-dmg needs Finder/AppleScript, fails after a good `.app`); CI asks for it with `--bundles dmg` on its command line only. `msi`/`nsis` are config-only locally (no cross-compile); CI builds them on Windows.
 
 ## Shorthand
 
@@ -36,9 +37,10 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
   1. **Test** (tdtp only): `npm test`, all of it, first.
   2. **Deploy**: `./deploy.sh --quick` (dtp) or `./deploy.sh` (tdtp); both write sandbox then production, with gates (quick = seconds-cost gates plus spot test). tdtp skips the repeat gesture suite when the export keys (`tools/dist-key.mjs`) match what `npm test` ran.
   3. **macOS**: `tools/build-platforms.sh --mac` from a clean export, BEFORE the tag (a broken bundle leaves the version untagged; a re-run reuses it).
-  4. **Tag**: annotated, at the new version, bare.
-  5. **Push**: `git push --atomic --follow-tags origin main` (on rejection the local tag comes off); then dispatch desktop-windows.
-  6. **Devices**: iOS to phone, Android to emulator, AFTER the push, reported not fatal.
+  4. **Preflight**: `tools/preflight.sh` runs the Release workflow's jobs on GitHub against the commit about to be tagged, publishing nothing, no failed-run mail; red = no tag, a re-run reuses the version. `--skip-preflight` skips it.
+  5. **Tag**: annotated, at the new version, bare.
+  6. **Push**: `git push --atomic --follow-tags origin main` (on rejection the local tag comes off). The tag push starts `release.yml`; the lane watches it and prints the release URL. A failed Release run does not un-ship: loud message with `gh run rerun <id> --failed`, and the lane ends non-zero.
+  7. **Devices**: iOS to phone, Android to emulator, AFTER the push, reported not fatal.
 - A platform flag selects only it; none = all three; `--web` = release with no platform builds.
 - Deploy gates include `npm run test:server`; a red server suite blocks both lanes, correctly.
 - `sh bin/dtp.sh all --full --platforms` (from CoreMind) drives the suite's tdtp; AcctMind SELF-SHIPS (CoreMind detects `tools/build-platforms.sh`, passes `--platforms` through, and reads a tag at HEAD as "shipped, device build owed").
@@ -46,8 +48,8 @@ Sean's ledger, CalMind's architecture (`~/GIT/CalMind`). See README.md, ARCHITEC
 ## Platforms
 
 - **Web**: prod `seancheren.com/AcctMind`, test `test.seancheren.com/AcctMind`; `./deploy.sh` writes both.
-- **Windows**: `.github/workflows/desktop-windows.yml` on a Windows runner, dispatched by the push step. Local ledger only: no iCloud path (`store_path()` is macOS-only).
-- **macOS**: Tauri bundle in `desktop/`, built by `tools/build-platforms.sh --mac`, smoke-tested with `desktop/smoke.sh --no-build`, copied to `/Applications` and the copy verified. "My Mac (Designed for iPad)" from `apps/app/ios` is NOT this surface (Xcode GUI only).
+- **Windows**: built by `.github/workflows/release.yml` on a Windows runner (msi + nsis exe, x64; typecheck, core suite and an MSI smoke first), started by the tag. Local ledger only: no iCloud path (`store_path()` is macOS-only).
+- **macOS**: Tauri bundle in `desktop/`, built by `tools/build-platforms.sh --mac`, smoke-tested with `desktop/smoke.sh --no-build`, copied to `/Applications` and the copy verified. The downloadable dmg (Apple silicon, not notarized) is built by `release.yml`. "My Mac (Designed for iPad)" from `apps/app/ios` is NOT this surface (Xcode GUI only).
 - **iOS**: `tools/build-platforms.sh --ios`; AcctMind goes on Sean's handset only (phone list by udid in the script). Switched-off phone skipped, refusing phone warned, fails only if none took it. Team 2LGYTL3FSJ is PAID: no per-phone app cap.
 - **Android**: `tools/build-platforms.sh --android` (local emulator).
 - **No watchOS.**

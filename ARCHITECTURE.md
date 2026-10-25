@@ -351,7 +351,8 @@ carries the why next to the code.
 `npm run dtp` and `npm run tdtp` are the release lanes — deploy, tag, push,
 with the full test run in front for `tdtp`. `AGENTS.md` carries both in full,
 along with the version files, the hand-bumped iOS build number, and which
-platform each lane builds.
+platform each lane builds. The pushed tag also builds the Windows and macOS
+installers on GitHub and publishes them as one release (README.md, "Releases").
 
 ## Where the rest is written down
 
