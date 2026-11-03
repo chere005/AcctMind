@@ -66,13 +66,16 @@ for a in "$@"; do
     --ios)     WANT_IOS=1;     PICKED=1 ;;
     --android) WANT_ANDROID=1; PICKED=1 ;;
     # The release on its own. Not the same as naming no flag at all, which
-    # means every platform — this is the way to say none.
+    # means every platform for tdtp — this is the way to say none.
     --web)     PICKED=1 ;;
     *) echo "unknown flag: $a" >&2; exit 1 ;;
   esac
 done
-# --full is not a platform, so `tdtp` with no other flag still means all three.
-[ "$PICKED" = 1 ] || { WANT_MAC=1; WANT_IOS=1; WANT_ANDROID=1; }
+# --full is not a platform: `tdtp` with no other flag means all three, `dtp`
+# with no other flag means the web release alone (Sean, 2026-11-02: "dtp needs
+# to be significantly faster … make sure tdtp is thorough"). Name a platform
+# to build it in a dtp.
+[ "$PICKED" = 1 ] || [ "$FULL" = 0 ] || { WANT_MAC=1; WANT_IOS=1; WANT_ANDROID=1; }
 
 # ---------------------------------------------------------------- the branch
 # The push below names main explicitly, so a lane run from any other branch
@@ -307,6 +310,17 @@ if [ "$FULL" = 1 ]; then
   fi
 fi
 
+# What the Release workflow builds from, changed since the last tag? Read
+# BEFORE the bump commit, which touches the manifests every time. A dtp skips
+# the preflight when the answer is no and leaves the Release run unwatched;
+# tdtp always runs and watches both.
+LAST_TAG=$(git describe --tags --abbrev=0 --match '[0-9]*.[0-9]*.[0-9]*' 2>/dev/null || true)
+RELEASE_INPUTS=1
+if [ -n "$LAST_TAG" ] && ! git diff --name-only "$LAST_TAG" HEAD \
+    | grep -qE '^(\.github/|desktop/)|(^|/)package(-lock)?\.json$|(^|/)Cargo\.(toml|lock)$|^app\.config\.js$'; then
+  RELEASE_INPUTS=0
+fi
+
 # ------------------------------------------------------------------ the version
 CUR=$(node -p "require('./package.json').version")
 # x.y.z, three digit parts, nothing else. The glob this replaces claimed to
@@ -425,6 +439,8 @@ fi
 # and a re-run reuses ${NEW}. NEVER tag around it; --skip-preflight is the only way past it, and it is typed.
 if [ "$SKIP_PREFLIGHT" = 1 ]; then
   echo "==> preflight SKIPPED (--skip-preflight)"
+elif [ "$FULL" = 0 ] && [ "$RELEASE_INPUTS" = 0 ]; then
+  echo "==> preflight: skipped (dtp; nothing the Release builds from changed since $LAST_TAG — tdtp always runs it)"
 else
   echo "==> preflight: the Release workflow's jobs against $(git rev-parse --short HEAD), no publishing"
   if ! sh tools/preflight.sh "$NEW"; then
@@ -480,17 +496,22 @@ if command -v gh >/dev/null 2>&1; then
     echo "    gh workflow run release.yml -f tag=$NEW" >&2
   else
     RELEASE_URL=$(gh run view "$RELEASE_RUN" --json url --jq .url 2>/dev/null | tr -d '\r') || RELEASE_URL=""
-    echo "==> Release run: ${RELEASE_URL:-run $RELEASE_RUN} (watching: the Windows and macOS builds take a while)"
-    if gh run watch "$RELEASE_RUN" --interval 30 --exit-status >/dev/null 2>&1; then
-      echo "==> Release run finished: success"
-      gh release view "$NEW" --json url,isDraft --jq '"==> release: \(.url)" + (if .isDraft then " (STILL A DRAFT - publish did not run)" else " (published)" end)' | tr -d '\r' || true
+    if [ "$FULL" = 0 ]; then
+      # dtp does not wait (GitHub mails a red run; tdtp is the lane that watches).
+      echo "==> Release run: ${RELEASE_URL:-run $RELEASE_RUN} (left running: dtp does not watch it)"
     else
-      RELEASE_FAILED="the Release run for $NEW did not succeed"
-      echo "" >&2
-      echo "THE RELEASE RUN FAILED. $NEW is deployed and tagged; the GitHub release stays a DRAFT (nothing is published)." >&2
-      echo "  Run:  ${RELEASE_URL:-gh run view $RELEASE_RUN}" >&2
-      echo "  Fix the cause if it is in the code (a new tag is then needed), else re-run what failed:" >&2
-      echo "    gh run rerun $RELEASE_RUN --failed" >&2
+      echo "==> Release run: ${RELEASE_URL:-run $RELEASE_RUN} (watching: the Windows and macOS builds take a while)"
+      if gh run watch "$RELEASE_RUN" --interval 30 --exit-status >/dev/null 2>&1; then
+        echo "==> Release run finished: success"
+        gh release view "$NEW" --json url,isDraft --jq '"==> release: \(.url)" + (if .isDraft then " (STILL A DRAFT - publish did not run)" else " (published)" end)' | tr -d '\r' || true
+      else
+        RELEASE_FAILED="the Release run for $NEW did not succeed"
+        echo "" >&2
+        echo "THE RELEASE RUN FAILED. $NEW is deployed and tagged; the GitHub release stays a DRAFT (nothing is published)." >&2
+        echo "  Run:  ${RELEASE_URL:-gh run view $RELEASE_RUN}" >&2
+        echo "  Fix the cause if it is in the code (a new tag is then needed), else re-run what failed:" >&2
+        echo "    gh run rerun $RELEASE_RUN --failed" >&2
+      fi
     fi
   fi
 fi
